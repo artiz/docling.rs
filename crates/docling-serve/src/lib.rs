@@ -112,6 +112,9 @@
 //! - `pandoc_api_version` — the Pandoc API the client's `pandoc` reads (`to=pandoc`,
 //!   #515): only `1.23` is written, so another version is a 400, not a document
 //!   Pandoc would reject
+//! - `pandoc_heading_depth` — `docling` (default) | `source`: the `Header` depth
+//!   a section heading gets in the AST (#848; docling's title-reserving `n + 1`,
+//!   or the depth the DOCX / ODT author wrote)
 //! - `page_break_placeholder` (alias `md_page_break_placeholder`, this
 //!   server's historical spelling) — text inserted between pages in Markdown
 //!   output (docling-core's `MarkdownParams.page_break_placeholder`; e.g.
@@ -714,6 +717,9 @@ struct ConvertOptions {
     /// `to=pandoc` (#515): the Pandoc API version the client needs; anything
     /// but the one written (1.23) is rejected.
     pandoc_api_version: Option<String>,
+    /// `to=pandoc` (#848): the `Header` depth of a section heading —
+    /// `docling` (default, the title-reserving `n + 1`) or `source`.
+    pandoc_heading_depth: Option<String>,
     /// `to=images` render scale in pixels per PDF point (#243): default 2.0
     /// (144 dpi, the pipeline's own render scale), accepted range 0.1–4.0.
     scale: Option<f32>,
@@ -1087,6 +1093,7 @@ fn validate_output(options: &ConvertOptions) -> Result<(String, ImageMode), ApiE
         docling::pandoc::check_api_version(v)
             .map_err(|e| ApiError::Bad(format!("pandoc_api_version: {e}")))?;
     }
+    pandoc_heading_depth(options)?;
     // #537: `to=pandoc` embeds its pictures unless `images` says otherwise —
     // the AST is fed to `pandoc -t docx`, whose writers drop a target-less
     // picture.
@@ -2268,7 +2275,7 @@ fn render_stored(
             disposition: None,
             confidence,
             redaction: None,
-            body: pandoc_string(document, image_mode).into_bytes(),
+            body: pandoc_string(document, image_mode, options).into_bytes(),
         },
         // #492: docling-core's HTML serializer; pictures follow `images`
         // exactly as the Markdown body does.
@@ -2356,7 +2363,7 @@ fn batch_item(
         "html" => item["html"] = json!(html_string(document, image_mode)),
         // #515: the AST inline as an object, like the docling JSON document.
         "pandoc" => {
-            item["pandoc"] = serde_json::from_str(&pandoc_string(document, image_mode))
+            item["pandoc"] = serde_json::from_str(&pandoc_string(document, image_mode, options))
                 .expect("the Pandoc export is valid JSON")
         }
         _ => unreachable!("validated above"),
@@ -2417,13 +2424,33 @@ fn html_string(document: &DoclingDocument, image_mode: ImageMode) -> String {
     }
 }
 
+/// `pandoc_heading_depth` parsed (#848): unset is docling's depth.
+fn pandoc_heading_depth(
+    options: &ConvertOptions,
+) -> Result<docling::pandoc::HeadingDepth, ApiError> {
+    options
+        .pandoc_heading_depth
+        .as_deref()
+        .unwrap_or_default()
+        .parse()
+        .map_err(|e| ApiError::Bad(format!("pandoc_heading_depth: {e}")))
+}
+
 /// The Pandoc AST for `to=pandoc` (#515), pictures per `images` (embedded
 /// `data:` URIs, or captioned figures without image data by default). The
 /// API version was checked by `validate_output`.
-fn pandoc_string(document: &DoclingDocument, image_mode: ImageMode) -> String {
+fn pandoc_string(
+    document: &DoclingDocument,
+    image_mode: ImageMode,
+    options: &ConvertOptions,
+) -> String {
     document
         .export_to_pandoc_json_with(&docling::pandoc::PandocExportOptions {
             image_mode,
+            // Validated by `validate_output`.
+            heading_depth: pandoc_heading_depth(options).unwrap_or_default(),
+            // Validated with the conversion options (#851).
+            track_changes: options.convert.track_changes().ok().flatten(),
             ..Default::default()
         })
         .expect("the Pandoc API version was validated")

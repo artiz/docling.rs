@@ -810,7 +810,12 @@ fn convert(state: &State, request: &Request) -> Result<String, String> {
         options.compact_tables = Some(true);
     }
     let document = convert_document(state, &source, &options)?;
-    render(&document, &request.to, request.images)
+    render(
+        &document,
+        &request.to,
+        request.images,
+        request.options.track_changes().ok().flatten(),
+    )
 }
 
 /// The tools answer with the document alone, so the problems a partial
@@ -882,6 +887,7 @@ fn render(
     document: &docling::DoclingDocument,
     to: &str,
     images: ImageMode,
+    track_changes: Option<docling::TrackChanges>,
 ) -> Result<String, String> {
     Ok(match to {
         "md" => match images {
@@ -902,6 +908,7 @@ fn render(
             document
                 .export_to_pandoc_json_with(&docling::pandoc::PandocExportOptions {
                     image_mode: images,
+                    track_changes,
                     ..Default::default()
                 })
                 .map_err(|e| e.to_string())?

@@ -21,10 +21,12 @@
 //! | docling | Pandoc |
 //! |---|---|
 //! | `title` | `Header 1` |
-//! | `section_header` (level *n*) | `Header (n+1)`, capped at 6 |
+//! | `section_header` (level *n*) | `Header (n+1)`, capped at 6 — docling's title-reserving depth; under [`HeadingDepth::Source`] (#848) `Header n`, the depth the DOCX / ODT author wrote |
 //! | `text`, `paragraph` | `Para` (`Plain` inside lists and table cells) |
 //! | `inline` group | the runs' inlines joined by `Space` |
-//! | formatting / hyperlink | `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`, then `Link` around it all |
+//! | formatting / hyperlink | `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`, then `Link` around it all — an internal link's target is `#id` (#849); a Markdown `[label](target)` inside an item's text, the flat node chain's hyperlink (`.doc`, AbiWord, …), is a `Link` too (#852) |
+//! | a numbered heading (#850: a DOCX heading numbered through `w:numPr`, docling's `1.2 Title` text with `_number`) | the `Header` holds the authored text alone, `Title` — Pandoc numbers sections itself (`--number-sections`), and its docx reader writes no number, so a numbered AST would show `1.2 1.2 Title`; the Markdown and JSON keep docling's numbered text |
+//! | a link destination (#849: a DOCX bookmark, `_anchors`) | on a heading, its `Header` identifier (Pandoc's own auto-identifier of the heading text, `target-section`, so `#target-section` resolves as it does from `pandoc -f docx`); anywhere else an empty `Span` with the identifier and the class `anchor`, Pandoc's docx reader's shape, at the start of the item's inlines |
 //! | `list` group | `OrderedList` (first item enumerated; start, number style and delimiter from the items' markers — `a)` LowerAlpha OneParen, `iii.` LowerRoman from 3, `(3)` Decimal TwoParens, #835) / `BulletList`, nested lists inside their item |
 //! | `code` | `CodeBlock` with the language as its class (`Code` inline) |
 //! | `formula` | `Para [Math DisplayMath]` (`Math InlineMath` inline) |
@@ -36,6 +38,7 @@
 //! | form `field_region` | `Div .field-region` holding a `DefinitionList`: `marker` + `field_key` as the term, each `field_value` a definition |
 //! | any other text label (`caption` without an owner, `footnote` without one, `reference`, `handwritten_text`, `page_header`, …) | `Div .docling-<label> [Para]` |
 //! | the document's metadata (#836) | `meta`: `title`, `subject`, `description`, `date` (the document's own, else its creation date), `publisher`, `rights`, `identifier` as `MetaInlines`, `author` and `keywords` as `MetaList`s of `MetaInlines`, `lang` as `MetaString` |
+//! | a tracked change kept under `track_changes=all` (#851: a DOCX `w:ins` / `w:del` / `w:moveTo` / `w:moveFrom` run, `_revision`) | `Span .insertion` / `Span .deletion` with `author` and `date` around the run's inlines — Pandoc's docx reader's `--track-changes=all` shape; under an explicit `accept` / `reject` the document holds that view's text alone and the comments below are left out, as Pandoc leaves them |
 //! | a reviewer comment on an item (#836) | Pandoc's docx reader's `--track-changes=all` shape: a `Span .comment-start` with `comment-id`, `author` and `date` holding the comment's text before the item's inlines, and an empty `Span .comment-end` with the `comment-id` after them; a thread's replies follow as further pairs |
 //!
 //! No Pandoc equivalent, so not written: provenance (pages, bounding boxes),
@@ -67,6 +70,7 @@ use serde_json::Value;
 
 use crate::document::{ContentLayers, DoclingDocument};
 use crate::markdown::ImageMode;
+use crate::TrackChanges;
 
 /// The `pandoc-api-version` written — `pandoc-types` 1.23.1.1 (Pandoc 3.x).
 pub const PANDOC_API_VERSION: [u32; 4] = [1, 23, 1, 1];
@@ -74,6 +78,55 @@ pub const PANDOC_API_VERSION: [u32; 4] = [1, 23, 1, 1];
 /// A Pandoc export: the JSON AST, and — for [`ImageMode::Referenced`] — the
 /// image files it links to, as `(path under artifacts_dir, bytes)`.
 pub type PandocOutput = (String, Vec<(String, Vec<u8>)>);
+
+/// How a `section_header`'s `level` becomes a Pandoc `Header` depth (#848).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum HeadingDepth {
+    /// docling's convention, the default: `Header 1` is the document title
+    /// and a `section_header` of level *n* is `Header (n+1)` (capped at 6),
+    /// the depth docling's Markdown and HTML serializers give it (`##` for
+    /// level 1). The flat `Node::Heading` round trip relies on it — a
+    /// level-2 heading is stored as a level-1 `section_header` and comes
+    /// back as `Header 2` — as do consumers of docling's JSON, so it is not
+    /// changed under them.
+    #[default]
+    Docling,
+    /// The source's own depth: a `section_header` of level *n* is `Header n`
+    /// (clamped to 1–6; a missing or zero level is 1) and the `title` stays
+    /// `Header 1` — what Pandoc's own docx / odt readers give (a DOCX
+    /// `Heading 1` is `Header 1`), so `--number-sections`, TOC depths and
+    /// `--shift-heading-level-by` behave as on `pandoc -f docx`. A document
+    /// whose backend reserves level 1 for the title (HTML, Markdown: an
+    /// `<h2>` is a level-1 `section_header`) comes out one depth shallower
+    /// under it.
+    Source,
+}
+
+impl HeadingDepth {
+    /// The spellings every surface accepts (`docling` = the default).
+    pub const NAMES: [&'static str; 2] = ["docling", "source"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HeadingDepth::Docling => "docling",
+            HeadingDepth::Source => "source",
+        }
+    }
+}
+
+impl std::str::FromStr for HeadingDepth {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "docling" | "" => Ok(HeadingDepth::Docling),
+            "source" => Ok(HeadingDepth::Source),
+            other => Err(format!(
+                "unknown heading depth {other:?} (expected docling or source)"
+            )),
+        }
+    }
+}
 
 /// Options for [`to_pandoc`].
 #[derive(Debug, Clone)]
@@ -89,6 +142,15 @@ pub struct PandocExportOptions {
     /// The Pandoc API version the caller needs (`"1.23"`, `"1.23.1.1"`, …);
     /// `None` = [`PANDOC_API_VERSION`]. Only that API is supported.
     pub api_version: Option<String>,
+    /// The `Header` depth of a `section_header` (#848): docling's
+    /// title-reserving `n + 1` by default, or the source's own `n`.
+    pub heading_depth: HeadingDepth,
+    /// The tracked-changes policy the document was read under (#851).
+    /// `None` (no policy asked for) and `Some(All)` write the reviewer
+    /// comments as `Span .comment-start` / `.comment-end` pairs; an
+    /// explicit `Accept` / `Reject` leaves them out, as Pandoc's
+    /// `--track-changes=accept|reject` do.
+    pub track_changes: Option<TrackChanges>,
 }
 
 impl Default for PandocExportOptions {
@@ -98,6 +160,8 @@ impl Default for PandocExportOptions {
             artifacts_dir: "artifacts".to_string(),
             layers: ContentLayers::BODY,
             api_version: None,
+            heading_depth: HeadingDepth::Docling,
+            track_changes: None,
         }
     }
 }
@@ -210,6 +274,27 @@ pub fn from_docling_json(
     }
 }
 
+/// Pandoc's auto-identifier of a heading (`Text.Pandoc.Shared.
+/// stringToIdentifier`, the default `auto_identifiers` rule, #849): the
+/// text lower-cased, everything but letters, digits, `_`, `-`, `.` and
+/// spaces removed, the words joined by `-`, anything up to the first letter
+/// dropped; `section` when nothing is left. `Target section` →
+/// `target-section`, `2026 Results` → `results`.
+pub fn auto_identifier(text: &str) -> String {
+    let kept: String = text
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace() || matches!(c, '_' | '-' | '.'))
+        .flat_map(char::to_lowercase)
+        .collect();
+    let joined = kept.split_whitespace().collect::<Vec<_>>().join("-");
+    let id = joined.trim_start_matches(|c: char| !c.is_alphabetic());
+    if id.is_empty() {
+        "section".to_string()
+    } else {
+        id.to_string()
+    }
+}
+
 /// The Pandoc AST constructors (`Text.Pandoc.Definition`, JSON per
 /// `Text.Pandoc.JSON`): every node this module writes is built here.
 pub mod ast {
@@ -258,6 +343,15 @@ pub mod ast {
     }
     pub fn header(level: usize, inlines: Vec<Value>) -> Value {
         node("Header", json!([level, attr(&[]), inlines]))
+    }
+    /// A `Header` with an identifier (#849: a bookmarked heading).
+    pub fn header_with_id(level: usize, id: &str, inlines: Vec<Value>) -> Value {
+        node("Header", json!([level, [id, [], []], inlines]))
+    }
+    /// An empty `Span` carrying an identifier and the class `anchor` — the
+    /// link destination Pandoc's docx reader writes for a bookmark (#849).
+    pub fn anchor(id: &str) -> Value {
+        node("Span", json!([[id, ["anchor"], []], []]))
     }
     pub fn code_block(language: Option<&str>, text: &str) -> Value {
         let classes: Vec<&str> = language.into_iter().collect();
@@ -371,26 +465,92 @@ pub mod ast {
 
 /// Text as `Str` words and `Space`s, `\n` as `LineBreak`; surrounding
 /// whitespace trimmed (a no-break space stays inside its word, as Pandoc's
-/// readers keep it).
+/// readers keep it). A Markdown link `[label](target)` in the text — how
+/// the flat node chain (the `.doc`, AbiWord, … readers) carries a
+/// hyperlink, #852 — is a `Link`.
 fn text_inlines(text: &str) -> Vec<Value> {
     let mut out = Vec::new();
     for (i, line) in text.trim().split('\n').enumerate() {
         if i > 0 {
             out.push(ast::line_break());
         }
-        let mut first = true;
-        for word in line
-            .split(|c: char| c.is_whitespace() && c != '\u{a0}')
-            .filter(|w| !w.is_empty())
-        {
-            if !first {
-                out.push(ast::space());
+        let is_ws = |c: char| c.is_whitespace() && c != '\u{a0}';
+        let line_start = out.len();
+        // Whitespace seen since the last inline of this line: one `Space`
+        // before the next.
+        let mut pending_space = false;
+        let mut rest = line;
+        while !rest.is_empty() {
+            let (plain, link) = match markdown_link(rest) {
+                Some((before, label, target, after)) => {
+                    rest = after;
+                    (before, Some((label, target)))
+                }
+                None => (std::mem::take(&mut rest), None),
+            };
+            let words: Vec<&str> = plain.split(is_ws).filter(|w| !w.is_empty()).collect();
+            if words.is_empty() {
+                pending_space |= !plain.is_empty();
+            } else {
+                if out.len() > line_start && (pending_space || plain.starts_with(is_ws)) {
+                    out.push(ast::space());
+                }
+                for (k, word) in words.iter().enumerate() {
+                    if k > 0 {
+                        out.push(ast::space());
+                    }
+                    out.push(ast::str_(word));
+                }
+                pending_space = plain.ends_with(is_ws);
             }
-            out.push(ast::str_(word));
-            first = false;
+            if let Some((label, target)) = link {
+                if out.len() > line_start && pending_space {
+                    out.push(ast::space());
+                }
+                let mut label_inlines = Vec::new();
+                for (k, word) in label.split_whitespace().enumerate() {
+                    if k > 0 {
+                        label_inlines.push(ast::space());
+                    }
+                    label_inlines.push(ast::str_(word));
+                }
+                out.push(ast::link(label_inlines, target));
+                pending_space = false;
+            }
         }
     }
     out
+}
+
+/// The first Markdown link of `text` as `(before, label, target, after)`:
+/// `[label](target)` with a label free of brackets and newlines and a
+/// target free of whitespace and parentheses — the shape the flat readers
+/// write; an image's `![alt](src)` is not one.
+fn markdown_link(text: &str) -> Option<(&str, &str, &str, &str)> {
+    let mut from = 0;
+    while let Some(open) = text[from..].find('[') {
+        let open = from + open;
+        from = open + 1;
+        if text[..open].ends_with('!') {
+            continue;
+        }
+        let close = text[open + 1..].find(']')?;
+        let close = open + 1 + close;
+        let label = &text[open + 1..close];
+        if label.is_empty() || label.contains(['[', '\n']) || !text[close + 1..].starts_with('(') {
+            continue;
+        }
+        let Some(end) = text[close + 2..].find(')') else {
+            continue;
+        };
+        let end = close + 2 + end;
+        let target = &text[close + 2..end];
+        if target.is_empty() || target.contains(|c: char| c.is_whitespace() || c == '(') {
+            continue;
+        }
+        return Some((&text[..open], label, target, &text[end + 1..]));
+    }
+    None
 }
 
 /// [`text_inlines`] with a `Note` spliced in at each call: `notes` is
@@ -683,6 +843,8 @@ struct Serializer<'a> {
     image_mode: ImageMode,
     artifacts_dir: String,
     layers: ContentLayers,
+    heading_depth: HeadingDepth,
+    track_changes: Option<TrackChanges>,
     artifacts: Vec<(String, Vec<u8>)>,
     pic_index: usize,
     visited: HashSet<String>,
@@ -721,6 +883,8 @@ impl<'a> Serializer<'a> {
             image_mode: options.image_mode,
             artifacts_dir: options.artifacts_dir.clone(),
             layers: options.layers,
+            heading_depth: options.heading_depth,
+            track_changes: options.track_changes,
             artifacts: Vec::new(),
             pic_index: 0,
             visited: HashSet::new(),
@@ -762,6 +926,19 @@ impl<'a> Serializer<'a> {
 
     fn text(item: &Value) -> &str {
         item.get("text").and_then(Value::as_str).unwrap_or("")
+    }
+
+    /// The item's link destinations (`_anchors`, #849).
+    fn anchors(item: &Value) -> Vec<String> {
+        item.get("_anchors")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn is_group(item: &Value) -> bool {
@@ -1027,6 +1204,14 @@ impl<'a> Serializer<'a> {
         if refs.is_empty() {
             return inlines;
         }
+        // An explicit accept / reject view carries no comments (#851),
+        // as Pandoc's `--track-changes=accept|reject` write none.
+        if matches!(
+            self.track_changes,
+            Some(TrackChanges::Accept | TrackChanges::Reject)
+        ) {
+            return inlines;
+        }
         let mut starts = Vec::new();
         let mut ends = Vec::new();
         for cref in refs {
@@ -1090,12 +1275,44 @@ impl<'a> Serializer<'a> {
             "formula" if !Self::text(item).is_empty() => {
                 vec![ast::math(false, Self::text(item).trim())]
             }
-            _ => match item.get("_notes").and_then(Value::as_array) {
-                Some(notes) if !notes.is_empty() => text_with_notes(Self::text(item), notes),
-                _ => text_inlines(Self::text(item)),
-            },
+            _ => {
+                let (text, skipped) = Self::authored_text(item);
+                match item.get("_notes").and_then(Value::as_array) {
+                    Some(notes) if !notes.is_empty() => {
+                        if skipped == 0 {
+                            text_with_notes(text, notes)
+                        } else {
+                            // The note offsets count the numbered text.
+                            let shifted: Vec<Value> = notes
+                                .iter()
+                                .map(|n| {
+                                    let off = n[0].as_u64().unwrap_or(0).saturating_sub(skipped);
+                                    serde_json::json!([off, n[1]])
+                                })
+                                .collect();
+                            text_with_notes(text, &shifted)
+                        }
+                    }
+                    _ => text_inlines(text),
+                }
+            }
         };
         Self::decorate(base, item)
+    }
+
+    /// The item's text without the generated numbering it opens with
+    /// (`_number`, #850), and how many chars were dropped.
+    fn authored_text(item: &Value) -> (&str, u64) {
+        let text = Self::text(item);
+        if let Some(number) = item.get("_number").and_then(Value::as_str) {
+            if let Some(rest) = text
+                .strip_prefix(number)
+                .and_then(|rest| rest.strip_prefix(' '))
+            {
+                return (rest, (number.chars().count() + 1) as u64);
+            }
+        }
+        (text, 0)
     }
 
     /// A furniture `footnote` item that is the body of a note a text item
@@ -1131,6 +1348,19 @@ impl<'a> Serializer<'a> {
         if let Some(url) = item.get("hyperlink").and_then(Value::as_str) {
             inlines = vec![ast::link(inlines, url)];
         }
+        // A tracked change kept under `all` (#851): Pandoc's docx reader's
+        // span, outermost.
+        if let Some(rev) = item.get("_revision") {
+            if let Some(kind) = rev.get("kind").and_then(Value::as_str) {
+                let mut attrs = Vec::new();
+                for key in ["author", "date"] {
+                    if let Some(v) = rev.get(key).and_then(Value::as_str) {
+                        attrs.push((key.to_string(), v.to_string()));
+                    }
+                }
+                inlines = vec![ast::span(&[kind], &attrs, inlines)];
+            }
+        }
         inlines
     }
 
@@ -1155,7 +1385,12 @@ impl<'a> Serializer<'a> {
                 {
                     continue;
                 }
-                runs.push(self.formatted(node));
+                let mut run: Vec<Value> = Self::anchors(node)
+                    .iter()
+                    .map(|id| ast::anchor(id))
+                    .collect();
+                run.append(&mut self.formatted(node));
+                runs.push(run);
                 continue;
             }
             if Self::is_group(node) && Self::label(node) == "inline" {
@@ -1198,16 +1433,43 @@ impl<'a> Serializer<'a> {
             _ => {
                 let (inlines, rest, _) = self.own_inlines(item);
                 let mut inlines = self.with_comments(item, inlines);
+                // The item's link destinations (#849): a heading takes
+                // the first as its identifier, the rest open its inlines
+                // as anchor spans; any other item opens with them all.
+                let mut anchors = Self::anchors(item);
+                let header_id =
+                    if matches!(label, "title" | "section_header") && !anchors.is_empty() {
+                        Some(anchors.remove(0))
+                    } else {
+                        None
+                    };
+                if !anchors.is_empty() && (header_id.is_some() || !inlines.is_empty()) {
+                    let mut with_anchors: Vec<Value> =
+                        anchors.iter().map(|id| ast::anchor(id)).collect();
+                    with_anchors.append(&mut inlines);
+                    inlines = with_anchors;
+                }
                 match label {
                     "title" | "section_header" => {
                         let level = if label == "title" {
                             1
                         } else {
-                            (item.get("level").and_then(Value::as_u64).unwrap_or(1) as usize + 1)
-                                .min(6)
+                            let n = item.get("level").and_then(Value::as_u64).unwrap_or(1) as usize;
+                            match self.heading_depth {
+                                // docling's depth: level 1 is `##`, under
+                                // the title's `#`.
+                                HeadingDepth::Docling => (n + 1).min(6),
+                                // The source's depth (#848): a DOCX
+                                // `Heading 1` is `Header 1`, as Pandoc's
+                                // docx reader writes it.
+                                HeadingDepth::Source => n.clamp(1, 6),
+                            }
                         };
                         if !inlines.is_empty() {
-                            out.push(ast::header(level, inlines));
+                            out.push(match &header_id {
+                                Some(id) => ast::header_with_id(level, id, inlines),
+                                None => ast::header(level, inlines),
+                            });
                         }
                     }
                     "text" | "paragraph" => {
@@ -2193,6 +2455,248 @@ mod tests {
                 [ast::plain(vec![ast::str_("insects")])]
             ])
         );
+    }
+
+    /// #848: the two heading projections at their bounds — docling's
+    /// title-reserving `n + 1` (missing → 2, 0 → 1, capped at 6) and the
+    /// source's own `n` (missing / 0 → 1, 7 → 6); the title is `Header 1`
+    /// under both.
+    #[test]
+    fn heading_depths_under_both_projections() {
+        let j = doc(
+            &[
+                "#/texts/0",
+                "#/texts/1",
+                "#/texts/2",
+                "#/texts/3",
+                "#/texts/4",
+                "#/texts/5",
+                "#/texts/6",
+                "#/texts/7",
+            ],
+            json!([
+                text(0, "title", "T", json!({})),
+                text(1, "section_header", "d1", json!({"level": 1})),
+                text(2, "section_header", "d2", json!({"level": 2})),
+                text(3, "section_header", "d5", json!({"level": 5})),
+                text(4, "section_header", "d6", json!({"level": 6})),
+                text(5, "section_header", "none", json!({})),
+                text(6, "section_header", "zero", json!({"level": 0})),
+                text(7, "section_header", "seven", json!({"level": 7})),
+            ]),
+            json!([]),
+            json!([]),
+        );
+        let depths = |heading_depth: HeadingDepth| -> Vec<u64> {
+            let options = PandocExportOptions {
+                heading_depth,
+                ..Default::default()
+            };
+            let (s, _) = from_docling_json(&j, &options).unwrap();
+            let v: Value = serde_json::from_str(&s).unwrap();
+            v["blocks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|b| b["c"][0].as_u64().unwrap())
+                .collect()
+        };
+        assert_eq!(depths(HeadingDepth::Docling), [1, 2, 3, 6, 6, 2, 1, 6]);
+        assert_eq!(depths(HeadingDepth::Source), [1, 1, 2, 5, 6, 1, 1, 6]);
+        assert_eq!("Source".parse::<HeadingDepth>(), Ok(HeadingDepth::Source));
+        assert!("deep".parse::<HeadingDepth>().is_err());
+    }
+
+    /// #852: a Markdown link in an item's text (the flat chain's
+    /// hyperlink) is a `Link`; brackets that are not one stay text.
+    #[test]
+    fn markdown_links_in_text_become_links() {
+        assert_eq!(
+            text_inlines("Jump to [target](#target-section) now [x] (y)"),
+            vec![
+                ast::str_("Jump"),
+                ast::space(),
+                ast::str_("to"),
+                ast::space(),
+                ast::link(vec![ast::str_("target")], "#target-section"),
+                ast::space(),
+                ast::str_("now"),
+                ast::space(),
+                ast::str_("[x]"),
+                ast::space(),
+                ast::str_("(y)"),
+            ]
+        );
+        assert_eq!(
+            text_inlines("[a](https://x.org/a)[b](https://x.org/b)"),
+            vec![
+                ast::link(vec![ast::str_("a")], "https://x.org/a"),
+                ast::link(vec![ast::str_("b")], "https://x.org/b"),
+            ]
+        );
+        assert_eq!(
+            text_inlines("see ![alt](img.png) here"),
+            vec![
+                ast::str_("see"),
+                ast::space(),
+                ast::str_("![alt](img.png)"),
+                ast::space(),
+                ast::str_("here"),
+            ]
+        );
+    }
+
+    /// #851: a run's `_revision` is Pandoc's insertion / deletion span,
+    /// and an explicit accept / reject view drops the comment spans.
+    #[test]
+    fn revisions_become_spans_and_views_drop_comments() {
+        let j = doc(
+            &["#/texts/0", "#/texts/1"],
+            json!([
+                text(
+                    0,
+                    "text",
+                    "old",
+                    json!({"_revision": {"kind": "deletion", "author": "Fixture", "date": "2025-01-01T00:00:00Z"}})
+                ),
+                text(
+                    1,
+                    "text",
+                    "Commented",
+                    json!({"comments": [{"$ref": "#/groups/0"}]})
+                ),
+                text(
+                    2,
+                    "text",
+                    "[author: Fixture, time: 2025-01-01T00:00:00Z]: Review note",
+                    json!({"content_layer": "notes"})
+                ),
+            ]),
+            json!([{"self_ref": "#/groups/0", "children": [{"$ref": "#/texts/2"}], "label": "comment_section", "name": "comment-3", "content_layer": "notes"}]),
+            json!([]),
+        );
+        let b = blocks(&j);
+        assert_eq!(
+            b[0],
+            ast::para(vec![ast::span(
+                &["deletion"],
+                &[
+                    ("author".into(), "Fixture".into()),
+                    ("date".into(), "2025-01-01T00:00:00Z".into())
+                ],
+                vec![ast::str_("old")]
+            )])
+        );
+        assert_eq!(
+            b[1]["c"][0]["t"], "Span",
+            "comments written without a policy"
+        );
+        let accept = PandocExportOptions {
+            track_changes: Some(TrackChanges::Accept),
+            ..Default::default()
+        };
+        let (s, _) = from_docling_json(&j, &accept).unwrap();
+        let v: Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["blocks"][1], ast::para(vec![ast::str_("Commented")]));
+    }
+
+    /// #850: a heading numbered by the backend (`_number`) writes its
+    /// authored text alone; text that merely starts with digits is kept.
+    #[test]
+    fn numbered_headings_write_the_authored_text() {
+        let j = doc(
+            &["#/texts/0", "#/texts/1", "#/texts/2"],
+            json!([
+                text(
+                    0,
+                    "section_header",
+                    "1.1 2026 Results",
+                    json!({"level": 2, "_number": "1.1"})
+                ),
+                text(1, "section_header", "2026 Results", json!({"level": 1})),
+                text(
+                    2,
+                    "section_header",
+                    "3 Odd",
+                    json!({"level": 1, "_number": "4"})
+                ),
+            ]),
+            json!([]),
+            json!([]),
+        );
+        let b = blocks(&j);
+        assert_eq!(
+            b[0],
+            ast::header(
+                3,
+                vec![ast::str_("2026"), ast::space(), ast::str_("Results")]
+            )
+        );
+        assert_eq!(
+            b[1],
+            ast::header(
+                2,
+                vec![ast::str_("2026"), ast::space(), ast::str_("Results")]
+            )
+        );
+        // A `_number` the text does not open with is left alone.
+        assert_eq!(
+            b[2],
+            ast::header(2, vec![ast::str_("3"), ast::space(), ast::str_("Odd")])
+        );
+    }
+
+    /// #849: a bookmarked heading carries its identifier, a bookmark in
+    /// body text an empty anchor span, and an internal link's `#id` target
+    /// is written as is.
+    #[test]
+    fn anchors_become_header_ids_and_anchor_spans() {
+        let j = doc(
+            &["#/texts/0", "#/texts/1", "#/texts/2"],
+            json!([
+                text(
+                    0,
+                    "section_header",
+                    "Target section",
+                    json!({"level": 1, "_anchors": ["target-section", "Alias"]})
+                ),
+                text(1, "text", "Jump", json!({"hyperlink": "#target-section"})),
+                text(2, "text", "Body mark", json!({"_anchors": ["BodyMark"]})),
+            ]),
+            json!([]),
+            json!([]),
+        );
+        let b = blocks(&j);
+        assert_eq!(
+            b[0],
+            ast::header_with_id(
+                2,
+                "target-section",
+                vec![
+                    ast::anchor("Alias"),
+                    ast::str_("Target"),
+                    ast::space(),
+                    ast::str_("section")
+                ]
+            )
+        );
+        assert_eq!(
+            b[1],
+            ast::para(vec![ast::link(vec![ast::str_("Jump")], "#target-section")])
+        );
+        assert_eq!(
+            b[2],
+            ast::para(vec![
+                ast::anchor("BodyMark"),
+                ast::str_("Body"),
+                ast::space(),
+                ast::str_("mark")
+            ])
+        );
+        assert_eq!(auto_identifier("Target section"), "target-section");
+        assert_eq!(auto_identifier("2026 Results"), "results");
+        assert_eq!(auto_identifier("1.1 Été & hiver!"), "été-hiver");
+        assert_eq!(auto_identifier("***"), "section");
     }
 
     #[test]

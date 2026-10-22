@@ -397,6 +397,12 @@ impl PyDocumentConverter {
     ///   `"json"` (a `metadata` object in the docling JSON, and
     ///   `result.metadata`) or `"frontmatter"` (YAML front matter at the top
     ///   of the Markdown as well).
+    /// * `track_changes` — tracked changes in DOCX / DOC / ODT (#851,
+    ///   Pandoc's `--track-changes`): `"accept"` (insertions shown,
+    ///   deletions left out), `"reject"` (the reverse) or `"all"` (both,
+    ///   typed with author and date in the Pandoc AST). `None` (default):
+    ///   each reader's own view. DOCX reads all three, DOC accept and
+    ///   reject, ODT accept; a mode a reader lacks raises.
     /// * `pipeline` — `"standard"` (default) or `"vlm"` (#304): convert PDF /
     ///   image inputs by sending each page to a remote OpenAI-compatible
     ///   vision model instead of the local ML stack. The `vlm_*` kwargs
@@ -452,6 +458,7 @@ impl PyDocumentConverter {
         encoding = None,
         ipynb_outputs = None,
         metadata = None,
+        track_changes = None,
         video_frames = None,
         video_scene_threshold = None,
         video_frame_max_side = None,
@@ -528,6 +535,7 @@ impl PyDocumentConverter {
         encoding: Option<String>,
         ipynb_outputs: Option<String>,
         metadata: Option<String>,
+        track_changes: Option<String>,
         video_frames: Option<usize>,
         video_scene_threshold: Option<f32>,
         video_frame_max_side: Option<u32>,
@@ -588,6 +596,7 @@ impl PyDocumentConverter {
             encoding,
             ipynb_outputs,
             metadata,
+            track_changes,
             use_web_browser: Some(use_web_browser),
             xbrl_taxonomy: xbrl_taxonomy.map(|p| p.to_string_lossy().into_owned()),
             asr_model,
@@ -1439,12 +1448,15 @@ type PyArtifacts<'py> = Vec<(String, Bound<'py, PyBytes>)>;
 /// `referenced` returns the image files as `(path under artifacts_dir,
 /// bytes)` pairs for the caller to write. `api_version`, when given, must be
 /// one the serializer writes (1.23) — anything else raises `ValueError`.
+/// `heading_depth` is `"docling"` (default) or `"source"` (#848).
 #[pyfunction]
 #[pyo3(signature = (
     document_json,
     image_mode = "embedded".to_string(),
     artifacts_dir = "artifacts".to_string(),
     api_version = None,
+    heading_depth = None,
+    track_changes = None,
 ))]
 fn pandoc_from_json<'py>(
     py: Python<'py>,
@@ -1452,7 +1464,22 @@ fn pandoc_from_json<'py>(
     image_mode: String,
     artifacts_dir: String,
     api_version: Option<String>,
+    heading_depth: Option<String>,
+    track_changes: Option<String>,
 ) -> PyResult<(String, PyArtifacts<'py>)> {
+    let track_changes = track_changes
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| {
+            s.parse::<docling::TrackChanges>()
+                .map_err(|e| PyValueError::new_err(format!("track_changes: {e}")))
+        })
+        .transpose()?;
+    let heading_depth = heading_depth
+        .as_deref()
+        .unwrap_or_default()
+        .parse()
+        .map_err(|e: String| PyValueError::new_err(format!("heading_depth: {e}")))?;
     let image_mode = match image_mode.as_str() {
         "placeholder" => docling::ImageMode::Placeholder,
         "embedded" => docling::ImageMode::Embedded,
@@ -1467,6 +1494,8 @@ fn pandoc_from_json<'py>(
         image_mode,
         artifacts_dir,
         api_version,
+        heading_depth,
+        track_changes,
         ..Default::default()
     };
     let (json, images) = py

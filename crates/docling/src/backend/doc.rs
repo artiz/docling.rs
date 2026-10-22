@@ -70,7 +70,8 @@
 //! such a file converts to; pictures and fast-saved (`fComplex`) files are
 //! not read.
 
-use docling_core::{DoclingDocument, Node, PictureImage, Table};
+use docling_core::{DoclingDocument, Node, PictureImage, Table, TrackChanges};
+use std::collections::{HashMap, HashSet};
 
 use crate::backend::cfb::CompoundFile;
 use crate::backend::markdown::escape_text;
@@ -80,10 +81,25 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 
-pub struct DocBackend;
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DocBackend {
+    /// How tracked changes are read (#851): `accept` leaves the deleted runs
+    /// out, `reject` the inserted ones (`sprmCFRMarkDel` / `sprmCFRMark`);
+    /// `None` keeps every run's text, as this reader did before #851.
+    /// `all` is refused: the typed revisions it asks for are not read.
+    pub track_changes: Option<TrackChanges>,
+}
 
 impl DeclarativeBackend for DocBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+        if self.track_changes == Some(TrackChanges::All) {
+            return Err(ConversionError::UnsupportedOption(
+                "doc: track_changes=all is not implemented by the .doc reader (the typed \
+                 revisions it asks for are not read); accept and reject are"
+                    .into(),
+            ));
+        }
+        let policy = self.track_changes;
         // A Word for Windows 1.x / 2.0 file is flat — no container to open.
         if is_word2(&source.bytes) {
             return convert_word2(&source.name, &source.bytes);
@@ -107,7 +123,7 @@ impl DeclarativeBackend for DocBackend {
         }
         if w_ident != 0xA5EC {
             if (101..=105).contains(&n_fib) {
-                return convert_word6(&source.name, &word, flags);
+                return convert_word6(&source.name, &word, flags, policy);
             }
             return Err(ConversionError::Parse(format!(
                 "doc: unsupported Word binary format (wIdent {w_ident:#06X}, nFib {n_fib}); \
@@ -199,6 +215,20 @@ impl DeclarativeBackend for DocBackend {
             fonts: &fonts,
             lists: &lists,
             comment_cps: &comment_cps,
+            track_changes: policy,
+            bookmarks: HashMap::new(),
+            anchor_cps: Vec::new(),
+        };
+        // The bookmarks' destinations (#852), once the text is readable.
+        let (bookmarks, anchor_cps) = story.bookmark_targets(
+            &parse_sttb_strings(fib.part(&table, Fib::STTBF_BKMK)),
+            &parse_plcf_bkf_starts(fib.part(&table, Fib::PLCF_BKF)),
+            fib.ccp_text as u64,
+        );
+        let story = Story {
+            bookmarks,
+            anchor_cps,
+            ..story
         };
 
         // Walk the main-document text paragraph by paragraph, assembling nodes.
@@ -323,9 +353,122 @@ struct Story<'a> {
     /// The main-text CP of each comment's reference mark (#699), in
     /// comment order — the paragraph holding it gets the back-reference.
     comment_cps: &'a [u64],
+    /// The tracked-changes view (#851): `accept` drops a run marked deleted,
+    /// `reject` one marked inserted; `None` keeps both (the pre-#851 text).
+    track_changes: Option<TrackChanges>,
+    /// The document's bookmarks (#852): name → the identifier its
+    /// destination is written with, and each destination's start CP with
+    /// that identifier, in CP order — see [`Story::bookmark_targets`].
+    bookmarks: HashMap<String, String>,
+    anchor_cps: Vec<(u64, String)>,
 }
 
 impl Story<'_> {
+    /// A `HYPERLINK` instruction's link (#852): the URL, `#id` for a
+    /// bookmark of this document (resolved through [`Self::bookmarks`]; an
+    /// unknown one is a `DOCLING_RS_DEBUG` diagnostic and no link), or
+    /// `file#bookmark` for another file's bookmark, the file not opened.
+    /// Any other field, or a malformed instruction, links nothing — its
+    /// result stays plain text, as before.
+    fn field_link(&self, code: &str) -> Option<String> {
+        let (url, bookmark) = hyperlink_instruction(code)?;
+        match (url, bookmark) {
+            (Some(url), Some(bm)) => Some(format!("{url}#{bm}")),
+            (Some(url), None) => Some(url),
+            (None, Some(bm)) => match self.bookmarks.get(&bm) {
+                Some(id) => Some(format!("#{id}")),
+                None => {
+                    docling_core::debug_log!("doc: HYPERLINK \\l names no bookmark {bm:?}");
+                    None
+                }
+            },
+            (None, None) => None,
+        }
+    }
+
+    /// The link destinations of the document (#852): its bookmarks
+    /// (`SttbfBkmk` names, `PlcfBkf` start CPs) as name → identifier and
+    /// start CP → identifier. The DOCX reader's policy (#849): a bookmark
+    /// in a heading takes Pandoc's auto-identifier of the heading's text
+    /// (shared by every bookmark of that heading), any other its own name,
+    /// sanitized; a repeated identifier gets `-1`, `-2`, …; `_GoBack` is
+    /// skipped. The paragraph is read as the walk reads it (fields
+    /// resolved to their results).
+    fn bookmark_targets(
+        &self,
+        names: &[String],
+        starts: &[u64],
+        ccp_text: u64,
+    ) -> (HashMap<String, String>, Vec<(u64, String)>) {
+        let mut by_name = HashMap::new();
+        let mut by_cp = Vec::new();
+        let mut taken: HashSet<String> = HashSet::new();
+        let mut heading_ids: HashMap<u64, String> = HashMap::new();
+        let mut order: Vec<usize> = (0..names.len().min(starts.len())).collect();
+        order.sort_by_key(|&i| starts[i]);
+        let is_mark = |c: char| matches!(c, '\r' | '\u{0007}' | '\u{000C}');
+        for i in order {
+            let name = names[i].trim();
+            if name.is_empty() || name == "_GoBack" || by_name.contains_key(name) {
+                continue;
+            }
+            let cp = starts[i].min(ccp_text);
+            // The paragraph holding the start: back to the previous mark,
+            // forward to its own.
+            let mut start = cp;
+            while start > 0 && self.char_at(start - 1).is_some_and(|(c, _)| !is_mark(c)) {
+                start -= 1;
+            }
+            let mut end = cp;
+            while end < ccp_text && self.char_at(end).is_some_and(|(c, _)| !is_mark(c)) {
+                end += 1;
+            }
+            let heading = self
+                .char_at(end)
+                .map(|(_, fc)| paragraph_props(self.word, self.bte, self.data, fc, self.format))
+                .is_some_and(|props| style_heading_level(self.stis, props.istd).is_some());
+            if heading {
+                if let Some(id) = heading_ids.get(&start) {
+                    by_name.insert(name.to_string(), id.clone());
+                    by_cp.push((cp, id.clone()));
+                    continue;
+                }
+            }
+            let base = if heading {
+                let mut para = ParaAccum::default();
+                for c in start..end {
+                    if let Some((ch, _)) = self.char_at(c) {
+                        para.push(ch, CharFmt::default());
+                    }
+                }
+                docling_core::pandoc::auto_identifier(para.plain().trim())
+            } else {
+                name.chars()
+                    .map(|c| {
+                        if c.is_alphanumeric() || matches!(c, '_' | '-' | '.') {
+                            c
+                        } else {
+                            '-'
+                        }
+                    })
+                    .collect()
+            };
+            let mut id = base.clone();
+            let mut n = 0;
+            while taken.contains(&id) {
+                n += 1;
+                id = format!("{base}-{n}");
+            }
+            taken.insert(id.clone());
+            if heading {
+                heading_ids.insert(start, id.clone());
+            }
+            by_name.insert(name.to_string(), id.clone());
+            by_cp.push((cp, id));
+        }
+        (by_name, by_cp)
+    }
+
     /// The character at absolute `cp` and its FC, via the piece table.
     fn char_at(&self, cp: u64) -> Option<(char, u64)> {
         let k = self.pieces.partition_point(|p| p.cp_end <= cp);
@@ -342,6 +485,22 @@ impl Story<'_> {
     /// and symbol-font runs. A font the table does not name, or a code with
     /// no glyph, leaves the character as it was.
     fn push_char(&self, para: &mut ParaAccum, ch: char, fmt: CharFmt) {
+        // At a field's separator its instruction is complete (#852): a
+        // `HYPERLINK`'s target links the result that follows.
+        if ch == '\u{0014}' {
+            if let Some(field) = para.field_stack.last_mut().filter(|f| !f.in_result) {
+                field.link = self.field_link(&field.code);
+            }
+        }
+        // A run the view leaves out (#851) — field marks still pair up.
+        let hidden = match self.track_changes {
+            Some(TrackChanges::Accept) => fmt.deleted,
+            Some(TrackChanges::Reject) => fmt.inserted,
+            _ => false,
+        };
+        if hidden && !matches!(ch, '\u{0013}' | '\u{0014}' | '\u{0015}') {
+            return;
+        }
         let font = |ftc: u16| {
             self.fonts
                 .get(ftc as usize)
@@ -390,6 +549,14 @@ impl Story<'_> {
                 .map(|(i, _)| i)
                 .collect()
         };
+        // The bookmarks starting in CPs `a..=b` (#852), their identifiers.
+        let anchors_in = |a: u64, b: u64| -> Vec<String> {
+            self.anchor_cps
+                .iter()
+                .filter(|(c, _)| (a..=b).contains(c))
+                .map(|(_, id)| id.clone())
+                .collect()
+        };
         for cp in from..to {
             let Some((ch, fc)) = self.char_at(cp) else {
                 break;
@@ -400,10 +567,15 @@ impl Story<'_> {
                     // the mark's own FC.
                     let props = paragraph_props(self.word, self.bte, self.data, fc, self.format);
                     para.comments = comments_in(para_start, cp);
+                    para.anchors = anchors_in(para_start, cp);
                     para_start = cp + 1;
                     para.finish(ch, props, self.stis, &mut builder, doc);
                 }
-                // Inline picture anchor: the run's CHPX locates the PICF.
+                // Inline picture anchor: the run's CHPX locates the PICF —
+                // unless it sits in a field's instruction, where Word
+                // keeps a `HYPERLINK`'s data behind the same anchor (#852:
+                // it printed a picture placeholder per link).
+                '\u{0001}' if para.in_field_code() => {}
                 '\u{0001}' => {
                     if let Some(pic_fc) = cache.props(self.word, self.btec, fc, self.format).pic_fc
                     {
@@ -435,6 +607,7 @@ impl Story<'_> {
             }
         }
         para.comments = comments_in(para_start, to);
+        para.anchors = anchors_in(para_start, to);
         para.finish('\r', ParaProps::default(), self.stis, &mut builder, doc);
         builder.flush(doc);
     }
@@ -995,6 +1168,8 @@ impl<'a> Fib<'a> {
     const PLCF_BTE_CHPX: usize = 12;
     const PLCF_BTE_PAPX: usize = 13;
     const STTBF_FFN: usize = 15;
+    const STTBF_BKMK: usize = 21;
+    const PLCF_BKF: usize = 22;
     const CLX: usize = 33;
     const PLCSPA_MOM: usize = 40;
     const PLCSPA_HDR: usize = 41;
@@ -1094,7 +1269,12 @@ impl<'a> Fib<'a> {
 /// read: pictures (a Word 6 PICF holds a WMF / DIB the Word 97 decoder does
 /// not take — the anchor is a placeholder picture), text boxes, autonumber
 /// lists (`sprmPAnld`), endnotes.
-fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument, ConversionError> {
+fn convert_word6(
+    name: &str,
+    word: &[u8],
+    flags: u16,
+    policy: Option<TrackChanges>,
+) -> Result<DoclingDocument, ConversionError> {
     let field = |o: usize, what: &str| {
         u32_at(word, o).map(|v| v as usize).ok_or_else(|| {
             ConversionError::Parse(format!(
@@ -1170,6 +1350,9 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
         fonts: &[],
         lists: &lists,
         comment_cps: &comment_cps,
+        track_changes: policy,
+        bookmarks: HashMap::new(),
+        anchor_cps: Vec::new(),
     };
     let mut cache = ChpxCache::default();
     let mut doc = DoclingDocument::new(name);
@@ -2012,6 +2195,9 @@ fn apply_word6_chp_sprms(sprms: &[u8], fmt: &mut CharFmt) {
             v => fmt.italic = v == 1,
         },
         93 => fmt.ftc_ascii = Some(u16::from_le_bytes([operand[0], operand[1]])),
+        // sprmCFRMarkDel / sprmCFRMark (#851).
+        65 => fmt.deleted = operand[0] == 1,
+        66 => fmt.inserted = operand[0] == 1,
         68 => {
             if let Some(fc) = operand.get(1..5) {
                 fmt.pic_fc = Some(u32::from_le_bytes([fc[0], fc[1], fc[2], fc[3]]));
@@ -2410,6 +2596,14 @@ fn parse_stsh(stsh: &[u8], format: DocFormat) -> Vec<StyleDef> {
 struct CharFmt {
     bold: bool,
     italic: bool,
+    /// `sprmCFRMark` / `sprmCFRMarkDel` (#851): the run is a tracked
+    /// insertion / deletion.
+    inserted: bool,
+    deleted: bool,
+    /// The run is a `HYPERLINK` field's result (#852): an index into the
+    /// paragraph's [`ParaAccum::links`]. Set as the character is kept, not
+    /// by the CHPX.
+    link: Option<u16>,
     /// Word 6/95 (#640): the run's bold / italic is the *opposite of its
     /// paragraph style's* (operand 0x81) or the style's own (0x80) —
     /// resolved against the style when the paragraph ends
@@ -2517,6 +2711,8 @@ fn apply_chp_sprms(mut sprms: &[u8], fmt: &mut CharFmt) {
         match sprm {
             0x0835 => fmt.bold = sprms[0] == 1 || sprms[0] == 0x81, // sprmCFBold
             0x0836 => fmt.italic = sprms[0] == 1 || sprms[0] == 0x81, // sprmCFItalic
+            0x0800 => fmt.deleted = sprms[0] == 1,                  // sprmCFRMarkDel
+            0x0801 => fmt.inserted = sprms[0] == 1,                 // sprmCFRMark
             0x4A4F => fmt.ftc_ascii = Some(u16::from_le_bytes([sprms[0], sprms[1]])), // sprmCRgFtc0
             0x4A51 => fmt.ftc_other = Some(u16::from_le_bytes([sprms[0], sprms[1]])), // sprmCRgFtc2
             // sprmCSymbol: the font and the glyph code of an inserted symbol.
@@ -2566,6 +2762,55 @@ fn inline_picture(data: &[u8], pic_fc: u32) -> Option<PictureImage> {
             .then(|| super::metafile::render(body, hint))
             .flatten()
     })
+}
+
+/// The strings of an STTB ([MS-DOC] 2.9.258): `0xFFFF` marks an extended
+/// table of UTF-16 strings with 2-byte counts, else the strings are 8-bit
+/// with 1-byte counts; `cbExtra` bytes follow each. `SttbfBkmk` (#852) is
+/// one: the bookmark names, in `PlcfBkf` order.
+fn parse_sttb_strings(sttb: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let Some(first) = u16_at(sttb, 0) else {
+        return out;
+    };
+    let (extended, c_data, mut pos) = if first == 0xFFFF {
+        (true, u16_at(sttb, 2).unwrap_or(0) as usize, 6)
+    } else {
+        (false, first as usize, 4)
+    };
+    let cb_extra = u16_at(sttb, pos - 2).unwrap_or(0) as usize;
+    for _ in 0..c_data {
+        let s = if extended {
+            let Some(cch) = u16_at(sttb, pos) else { break };
+            let units: Vec<u16> = (0..cch as usize)
+                .filter_map(|i| u16_at(sttb, pos + 2 + i * 2))
+                .collect();
+            pos += 2 + cch as usize * 2;
+            String::from_utf16_lossy(&units)
+        } else {
+            let Some(&cb) = sttb.get(pos) else { break };
+            let s: String = sttb
+                .get(pos + 1..pos + 1 + cb as usize)
+                .unwrap_or(&[])
+                .iter()
+                .map(|&b| cp1252(b))
+                .collect();
+            pos += 1 + cb as usize;
+            s
+        };
+        out.push(s);
+        pos += cb_extra;
+    }
+    out
+}
+
+/// The start CP of each bookmark (#852): `PlcfBkf` ([MS-DOC] 2.8.6) is
+/// `n + 1` CPs then `n` 4-byte `BKF`s, so `n = (len - 4) / 8`.
+fn parse_plcf_bkf_starts(plc: &[u8]) -> Vec<u64> {
+    let n = plc.len().saturating_sub(4) / 8;
+    (0..n)
+        .filter_map(|i| u32_at(plc, i * 4).map(u64::from))
+        .collect()
 }
 
 /// The font table ([MS-DOC] 2.9.272 `SttbfFfn`, #588): an STTB whose
@@ -2915,14 +3160,91 @@ struct ParaAccum {
     segments: Vec<(String, CharFmt)>,
     /// Pictures anchored in this paragraph: `(before any text, image)`.
     pictures: Vec<(bool, Option<PictureImage>)>,
-    /// Result-text state of any field (`0x13 code 0x14 result 0x15`) stack:
-    /// characters inside the *code* part are dropped.
-    field_stack: Vec<bool>, // true = in result part
+    /// The open fields (`0x13 code 0x14 result 0x15`), innermost last:
+    /// characters inside a *code* part are gathered as the field's
+    /// instruction (a `HYPERLINK`'s target, #852), never shown.
+    field_stack: Vec<Field>,
+    /// The `HYPERLINK` targets of this paragraph's runs (#852), by
+    /// [`CharFmt::link`].
+    links: Vec<String>,
     /// Text boxes anchored in this paragraph, each its story's nodes (#535).
     textboxes: Vec<Vec<Node>>,
     /// The comments anchored in this paragraph (#699), as indices into
     /// the document's comment sections.
     comments: Vec<usize>,
+    /// The link destinations starting in this paragraph (#852): the
+    /// identifiers of its bookmarks.
+    anchors: Vec<String>,
+}
+
+/// One open field of a paragraph (#852).
+#[derive(Default)]
+struct Field {
+    /// Past the `0x14` separator: the characters are the field's result.
+    in_result: bool,
+    /// The instruction (the text between `0x13` and `0x14`).
+    code: String,
+    /// A `HYPERLINK` instruction's target, resolved at the separator.
+    link: Option<String>,
+}
+
+/// A `HYPERLINK` field instruction's target (#852): `HYPERLINK "url"`,
+/// `HYPERLINK \l "bookmark"` (a bookmark of this document) or
+/// `HYPERLINK "file" \l "bookmark"` (one of another file). The URL may
+/// be unquoted; `\o`, `\t`, `\m`, `\h` and other switches are skipped;
+/// anything else (another field, a malformed instruction) is `None`.
+fn hyperlink_instruction(code: &str) -> Option<(Option<String>, Option<String>)> {
+    let mut tokens = Vec::new();
+    let mut rest = code.trim();
+    while !rest.is_empty() {
+        rest = rest.trim_start();
+        if rest.is_empty() {
+            break;
+        }
+        let token = if let Some(quoted) = rest.strip_prefix('"') {
+            let end = quoted.find('"').unwrap_or(quoted.len());
+            let t = &quoted[..end];
+            rest = quoted.get(end + 1..).unwrap_or("");
+            t.to_string()
+        } else {
+            let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+            let t = &rest[..end];
+            rest = &rest[end..];
+            t.to_string()
+        };
+        tokens.push(token);
+    }
+    if !tokens
+        .first()
+        .is_some_and(|t| t.eq_ignore_ascii_case("HYPERLINK"))
+    {
+        return None;
+    }
+    let mut url = None;
+    let mut bookmark = None;
+    let mut i = 1;
+    while i < tokens.len() {
+        let t = &tokens[i];
+        if let Some(switch) = t.strip_prefix('\\') {
+            // A switch with an argument takes the next token.
+            if matches!(switch, "l" | "o" | "t") {
+                if switch == "l" {
+                    bookmark = tokens.get(i + 1).cloned();
+                }
+                i += 2;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+        if url.is_none() {
+            url = Some(t.clone());
+        }
+        i += 1;
+    }
+    let url = url.filter(|u| !u.is_empty());
+    let bookmark = bookmark.filter(|b| !b.is_empty());
+    (url.is_some() || bookmark.is_some()).then_some((url, bookmark))
 }
 
 impl ParaAccum {
@@ -2933,12 +3255,18 @@ impl ParaAccum {
         self.pictures.push((before_text, image));
     }
 
+    /// Inside a field's instruction part (#852): the characters there,
+    /// and a `0x01` data anchor, are no text and no picture.
+    fn in_field_code(&self) -> bool {
+        self.field_stack.last().is_some_and(|f| !f.in_result)
+    }
+
     fn push(&mut self, ch: char, fmt: CharFmt) {
         match ch {
-            '\u{0013}' => self.field_stack.push(false),
+            '\u{0013}' => self.field_stack.push(Field::default()),
             '\u{0014}' => {
                 if let Some(top) = self.field_stack.last_mut() {
-                    *top = true;
+                    top.in_result = true;
                 }
             }
             '\u{0015}' => {
@@ -2954,8 +3282,29 @@ impl ParaAccum {
     }
 
     fn keep(&mut self, ch: char, fmt: CharFmt) {
-        if !self.field_stack.iter().all(|&r| r) {
+        if let Some(field) = self.field_stack.last_mut().filter(|f| !f.in_result) {
+            field.code.push(ch);
             return;
+        }
+        if !self.field_stack.iter().all(|f| f.in_result) {
+            return;
+        }
+        // The result of a `HYPERLINK` field is its link's text (#852).
+        let mut fmt = fmt;
+        if let Some(target) = self
+            .field_stack
+            .iter()
+            .rev()
+            .find_map(|f| f.link.as_deref())
+        {
+            let i = match self.links.iter().position(|l| l == target) {
+                Some(i) => i,
+                None => {
+                    self.links.push(target.to_string());
+                    self.links.len() - 1
+                }
+            };
+            fmt.link = u16::try_from(i).ok();
         }
         match self.segments.last_mut() {
             Some((text, last)) if *last == fmt => text.push(ch),
@@ -2975,7 +3324,8 @@ impl ParaAccum {
     fn markdown(&self) -> String {
         let mut out = String::new();
         for (text, fmt) in &self.segments {
-            if !fmt.bold && !fmt.italic {
+            let link = fmt.link.and_then(|i| self.links.get(i as usize));
+            if !fmt.bold && !fmt.italic && link.is_none() {
                 out.push_str(text);
                 continue;
             }
@@ -2990,12 +3340,22 @@ impl ParaAccum {
                 (true, true) => "***",
                 (true, false) => "**",
                 (false, true) => "*",
-                _ => unreachable!(),
+                _ => "",
             };
             out.push_str(lead);
+            // A `HYPERLINK` field's result as a Markdown link (#852), the
+            // DOCX backend's shape, the formatting markers inside it.
+            if link.is_some() {
+                out.push('[');
+            }
             out.push_str(marker);
             out.push_str(core);
             out.push_str(marker);
+            if let Some(url) = link {
+                out.push_str("](");
+                out.push_str(url);
+                out.push(')');
+            }
             out.push_str(trail);
         }
         out
@@ -3041,10 +3401,12 @@ impl ParaAccum {
         let pictures = std::mem::take(&mut self.pictures);
         let textboxes = std::mem::take(&mut self.textboxes);
         let comments = std::mem::take(&mut self.comments);
+        let anchors = std::mem::take(&mut self.anchors);
         self.segments.clear();
         self.field_stack.clear();
+        self.links.clear();
         builder.paragraph(
-            plain, markdown, pictures, textboxes, comments, mark, props, stis, doc,
+            plain, markdown, pictures, textboxes, comments, anchors, mark, props, stis, doc,
         );
     }
 }
@@ -3151,6 +3513,7 @@ impl NodeBuilder {
         pictures: Vec<(bool, Option<PictureImage>)>,
         textboxes: Vec<Vec<Node>>,
         comments: Vec<usize>,
+        anchors: Vec<String>,
         mark: char,
         props: ParaProps,
         stis: &[StyleDef],
@@ -3248,6 +3611,14 @@ impl NodeBuilder {
             caption_parent: Default::default(),
             caption_location: None,
         };
+        // The bookmarks starting here (#852), the destinations of the
+        // document's internal links, in front of the paragraph's node — a
+        // cell's are not placed (the flat table has no inline anchors).
+        if !props.in_table {
+            for id in anchors {
+                doc.push(Node::Anchor { id });
+            }
+        }
         let plain = plain.trim().to_string();
         // Prose is Markdown-escaped like every other backend's text nodes
         // (docling-core's `serialize_run`: `_` → `\_`, then `& < >`), #567 —
@@ -3745,7 +4116,7 @@ mod tests {
             .expect("FIB sector");
         data[at..at + 4].copy_from_slice(&[0x34, 0x12, 0x40, 0x00]);
         let src = SourceDocument::from_bytes("x.doc", InputFormat::Doc, data);
-        let Err(err) = DocBackend.convert(&src) else {
+        let Err(err) = DocBackend::default().convert(&src) else {
             panic!("an unknown Word version must be rejected");
         };
         let err = err.to_string();
@@ -3777,7 +4148,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&SourceDocument::from_bytes(
                 "doc_textbox_header_footnote.doc",
                 InputFormat::Doc,
@@ -3820,7 +4191,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&SourceDocument::from_bytes(
                 "h.doc",
                 InputFormat::Doc,
@@ -3907,6 +4278,7 @@ mod tests {
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
+                Vec::new(),
                 '\r',
                 props,
                 &stis,
@@ -3945,7 +4317,7 @@ mod tests {
                 env!("CARGO_MANIFEST_DIR")
             );
             let bytes = std::fs::read(&path).expect("fixture exists");
-            DocBackend
+            DocBackend::default()
                 .convert(&SourceDocument::from_bytes(name, InputFormat::Doc, bytes))
                 .expect("converts")
                 .export_to_markdown()
@@ -3971,7 +4343,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        DocBackend
+        DocBackend::default()
             .convert(&SourceDocument::from_bytes(name, InputFormat::Doc, bytes))
             .expect("converts")
     }
@@ -4169,7 +4541,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&SourceDocument::from_bytes(
                 "c.doc",
                 InputFormat::Doc,
@@ -4217,7 +4589,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&SourceDocument::from_bytes(
                 "h.doc",
                 InputFormat::Doc,
@@ -4250,7 +4622,7 @@ mod tests {
             .join("tests/data/doc/sources/doc_underscores.doc");
         let bytes = std::fs::read(path).expect("fixture");
         let src = SourceDocument::from_bytes("u", InputFormat::Doc, bytes);
-        let doc = DocBackend.convert(&src).expect("converts");
+        let doc = DocBackend::default().convert(&src).expect("converts");
         assert_eq!(
             doc.export_to_markdown(),
             "Identifiers: OBJ\\_DIR, MER\\_BAX, LO\\_SNO02, plain text.\n"
@@ -4265,12 +4637,12 @@ mod tests {
     #[test]
     fn garbage_is_an_error_not_a_panic() {
         let src = SourceDocument::from_bytes("x.doc", InputFormat::Doc, vec![0u8; 128]);
-        assert!(DocBackend.convert(&src).is_err());
+        assert!(DocBackend::default().convert(&src).is_err());
     }
 
     #[test]
     fn extracts_inline_and_floating_images_with_bytes() {
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&fixture("docx_grouped_images.doc"))
             .expect("converts");
         let images: Vec<_> = doc
@@ -4304,7 +4676,7 @@ mod tests {
         assert!(is_word2(&bytes));
         assert_eq!(crate::sniff::detect(&bytes), Some(InputFormat::Doc));
         let src = SourceDocument::from_bytes("word2", InputFormat::Doc, bytes.clone());
-        let doc = DocBackend.convert(&src).expect("converts");
+        let doc = DocBackend::default().convert(&src).expect("converts");
         let md = doc.export_to_markdown();
         assert_eq!(
             md.trim_end(),
@@ -4319,7 +4691,7 @@ mod tests {
         // A fast-saved file is refused with a reason, not a container error.
         let mut complex = bytes;
         complex[0x0A] |= 0x04;
-        let err = DocBackend
+        let err = DocBackend::default()
             .convert(&SourceDocument::from_bytes("c", InputFormat::Doc, complex))
             .unwrap_err()
             .to_string();
@@ -4344,7 +4716,7 @@ mod tests {
             assert_eq!(styles[stc as usize].sti, 0x0FFF, "stc {stc}");
         }
         let src = SourceDocument::from_bytes("w2", InputFormat::Doc, bytes);
-        let md = DocBackend
+        let md = DocBackend::default()
             .convert(&src)
             .expect("converts")
             .export_to_markdown();
@@ -4506,6 +4878,7 @@ mod tests {
                 builder.paragraph(
                     text.into(),
                     text.into(),
+                    Vec::new(),
                     Vec::new(),
                     Vec::new(),
                     Vec::new(),

@@ -20,7 +20,8 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use docling_core::{
-    DoclingDocument, InlineRun, ListItemDclx, Node, PictureDescription, PictureImage, Script, Table,
+    DoclingDocument, InlineRun, ListItemDclx, Node, PictureDescription, PictureImage, Revision,
+    RevisionKind, Script, Table, TrackChanges,
 };
 use roxmltree::{Document, Node as XmlNode};
 
@@ -31,7 +32,12 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 
-pub struct DocxBackend;
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DocxBackend {
+    /// How tracked changes are read (#851); `None` = docling's reading
+    /// (insertions shown, deletions left out, every table row kept).
+    pub track_changes: Option<TrackChanges>,
+}
 
 impl DeclarativeBackend for DocxBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
@@ -72,12 +78,17 @@ impl DeclarativeBackend for DocxBackend {
             even_and_odd_headers,
             table_depth: std::cell::Cell::new(0),
             orphan_inline_groups: std::cell::Cell::new(0),
+            bookmarks: &HashMap::new(),
+            track_changes: self.track_changes,
         };
 
         let mut doc = DoclingDocument::new(&source.name);
         let Some(body) = dom.descendants().find(|n| n.has_tag_name("body")) else {
             return Ok(doc);
         };
+        // The bookmarks' destinations (#849), for both walks' internal links.
+        let bookmarks = bookmark_targets(body, &ctx);
+        let ctx = ctx.with_bookmarks(&bookmarks);
         let mut state = ListState::default();
         // Reviewer comments, by docx `w:id` in `word/comments.xml` order — the
         // order they become `comment_section` groups below, which is the order
@@ -500,6 +511,11 @@ pub(super) struct Ctx<'a> {
     /// the body (see [`super::docx_tree::rich_cell_orphan_groups`]) — taken
     /// by the caller that pushes the table.
     pub(super) orphan_inline_groups: std::cell::Cell<usize>,
+    /// Bookmark name → the link destination's identifier (#849), from
+    /// [`bookmark_targets`]: what a `w:hyperlink w:anchor` resolves to.
+    pub(super) bookmarks: &'a HashMap<String, String>,
+    /// The tracked-changes policy (#851); `None` = docling's reading.
+    pub(super) track_changes: Option<TrackChanges>,
 }
 
 impl<'a> Ctx<'a> {
@@ -525,6 +541,212 @@ impl<'a> Ctx<'a> {
             even_and_odd_headers: self.even_and_odd_headers,
             table_depth: std::cell::Cell::new(0),
             orphan_inline_groups: std::cell::Cell::new(0),
+            bookmarks: self.bookmarks,
+            track_changes: self.track_changes,
+        }
+    }
+
+    /// The view the runs are read in (#851): `accept` unless asked
+    /// otherwise — docling's reading.
+    pub(super) fn policy(&self) -> TrackChanges {
+        self.track_changes.unwrap_or_default()
+    }
+
+    /// This context with the document's bookmarks resolved (#849) — they
+    /// need the style maps to tell a heading's bookmark from a body one, so
+    /// the map is built from a context without them first.
+    pub(super) fn with_bookmarks(&self, bookmarks: &'a HashMap<String, String>) -> Ctx<'a> {
+        Ctx {
+            bookmarks,
+            ..self.for_part(self.rels, self.images, self.charts)
+        }
+    }
+}
+
+/// Whether a table row stays under the tracked-changes policy (#851): a
+/// row Word marks inserted (`w:trPr/w:ins`) goes under `reject`, one marked
+/// deleted (`w:trPr/w:del`) under an explicit `accept`; without a policy
+/// every row stays, as docling reads it.
+pub(super) fn row_kept(tr: XmlNode, ctx: &Ctx) -> bool {
+    let Some(policy) = ctx.track_changes else {
+        return true;
+    };
+    let marked = |tag: &str| {
+        tr.children()
+            .find(|n| n.has_tag_name("trPr"))
+            .is_some_and(|pr| pr.children().any(|n| n.has_tag_name(tag)))
+    };
+    match policy {
+        TrackChanges::Accept => !marked("del"),
+        TrackChanges::Reject => !marked("ins"),
+        TrackChanges::All => true,
+    }
+}
+
+/// The revision a `w:ins` / `w:del` / `w:moveTo` / `w:moveFrom` wrapper
+/// marks its runs with (#851): the kind, the reviewer and the date.
+pub(super) fn revision_of(wrapper: XmlNode, kind: RevisionKind) -> Revision {
+    Revision {
+        kind,
+        author: attr(wrapper, "author").map(str::to_string),
+        date: attr(wrapper, "date").map(str::to_string),
+    }
+}
+
+/// Word's bookmark at the cursor (`_GoBack`): never a link target.
+const DUMMY_BOOKMARKS: [&str; 1] = ["_GoBack"];
+
+/// Is `p` a heading or title paragraph — the style checks both walks make,
+/// without the numbering / text they add.
+pub(super) fn is_heading_paragraph(p: XmlNode, ctx: &Ctx) -> bool {
+    let style_id = p
+        .children()
+        .find(|n| n.has_tag_name("pPr"))
+        .and_then(|pr| pr.children().find(|n| n.has_tag_name("pStyle")))
+        .and_then(|s| attr(s, "val"))
+        .unwrap_or("");
+    let style_name = ctx
+        .style_names
+        .get(style_id)
+        .map(String::as_str)
+        .unwrap_or(style_id);
+    named_heading_level(style_id, style_name, ctx).is_some()
+        || inherited_outline(style_id, ctx).is_some_and(|l| (1..=9).contains(&l))
+        || is_title_style(style_id, style_name, ctx)
+}
+
+/// The paragraph a bookmark start belongs to (#849): the one it sits in,
+/// else — Word writes a bookmark around a whole table or paragraph at the
+/// body level — the next paragraph in document order.
+fn bookmark_paragraph<'a, 'i>(start: XmlNode<'a, 'i>) -> Option<XmlNode<'a, 'i>> {
+    if let Some(p) = start.ancestors().find(|n| n.has_tag_name("p")) {
+        return Some(p);
+    }
+    start
+        .next_siblings()
+        .skip(1)
+        .filter(XmlNode::is_element)
+        .find_map(|n| {
+            if n.has_tag_name("p") {
+                Some(n)
+            } else {
+                n.descendants().find(|d| d.has_tag_name("p"))
+            }
+        })
+}
+
+/// Every bookmark of the document, name → the identifier its destination
+/// is written with (#849). A bookmark in a heading takes the heading's
+/// Pandoc auto-identifier (`Target section` → `target-section`), so
+/// `pandoc -f json` and `pandoc -f docx` agree on the link; one in body
+/// text or a table cell keeps its own name (Pandoc's choice, too), its
+/// characters outside letters, digits, `_`, `-`, `.` replaced by `-`. Two
+/// bookmarks on one heading share its identifier; an identifier a second
+/// destination would repeat gets `-1`, `-2`, … (Pandoc's rule), so every
+/// identifier names exactly one destination. `_GoBack` is skipped.
+pub(super) fn bookmark_targets(body: XmlNode, ctx: &Ctx) -> HashMap<String, String> {
+    let mut by_name = HashMap::new();
+    let mut taken: HashSet<String> = HashSet::new();
+    let mut heading_ids: HashMap<roxmltree::NodeId, String> = HashMap::new();
+    for start in body
+        .descendants()
+        .filter(|n| n.has_tag_name("bookmarkStart"))
+    {
+        let Some(name) = attr(start, "name").filter(|n| !n.is_empty()) else {
+            continue;
+        };
+        if DUMMY_BOOKMARKS.contains(&name) || by_name.contains_key(name) {
+            continue;
+        }
+        let Some(p) = bookmark_paragraph(start) else {
+            continue;
+        };
+        if is_heading_paragraph(p, ctx) {
+            if let Some(id) = heading_ids.get(&p.id()) {
+                by_name.insert(name.to_string(), id.clone());
+                continue;
+            }
+        }
+        let base = if is_heading_paragraph(p, ctx) {
+            docling_core::pandoc::auto_identifier(&plain_paragraph_text(p))
+        } else {
+            name.chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || matches!(c, '_' | '-' | '.') {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect()
+        };
+        let mut id = base.clone();
+        let mut n = 0;
+        while taken.contains(&id) {
+            n += 1;
+            id = format!("{base}-{n}");
+        }
+        taken.insert(id.clone());
+        if is_heading_paragraph(p, ctx) {
+            heading_ids.insert(p.id(), id.clone());
+        }
+        by_name.insert(name.to_string(), id);
+    }
+    by_name
+}
+
+/// The identifiers of the bookmarks that start in `p` — inside it, or just
+/// before it at the body / cell level (see [`bookmark_paragraph`]) — in
+/// document order, each once (#849).
+pub(super) fn paragraph_anchors(p: XmlNode, ctx: &Ctx) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |start: XmlNode| {
+        if let Some(id) = attr(start, "name").and_then(|n| ctx.bookmarks.get(n)) {
+            if !out.contains(id) {
+                out.push(id.clone());
+            }
+        }
+    };
+    // Body-level bookmarks between the previous paragraph and this one.
+    let before: Vec<XmlNode> = p
+        .prev_siblings()
+        .filter(XmlNode::is_element)
+        .take_while(|n| {
+            matches!(
+                n.tag_name().name(),
+                "bookmarkStart" | "bookmarkEnd" | "proofErr" | "permStart" | "permEnd"
+            )
+        })
+        .filter(|n| n.has_tag_name("bookmarkStart"))
+        .collect();
+    for start in before.into_iter().rev() {
+        push(start);
+    }
+    for start in p.descendants().filter(|n| n.has_tag_name("bookmarkStart")) {
+        push(start);
+    }
+    out
+}
+
+/// A `w:hyperlink`'s target (#849): the relationship `r:id` names when it
+/// resolves; else the bookmark `w:anchor` names, as `#id`. A relationship
+/// the part lacks and a bookmark the document lacks are diagnosed under
+/// `DOCLING_RS_DEBUG` and leave the text unlinked — never a failed
+/// conversion. `r:id` wins when both are present (Word writes both for a
+/// link into another file's bookmark; the file is the destination).
+pub(super) fn hyperlink_target(h: XmlNode, ctx: &Ctx) -> Option<String> {
+    if let Some(id) = attr(h, "id") {
+        match ctx.rels.get(id).filter(|t| !t.is_empty()) {
+            Some(target) => return Some(target.clone()),
+            None => docling_core::debug_log!("docx: hyperlink relationship {id} is missing"),
+        }
+    }
+    let anchor = attr(h, "anchor").filter(|a| !a.is_empty())?;
+    match ctx.bookmarks.get(anchor) {
+        Some(id) => Some(format!("#{id}")),
+        None => {
+            docling_core::debug_log!("docx: hyperlink anchor {anchor:?} names no bookmark");
+            None
         }
     }
 }
@@ -562,7 +784,10 @@ fn process_block(node: XmlNode, ctx: &Ctx, state: &mut ListState, doc: &mut Docl
         "tbl" => {
             // A 1×1 table is treated as furniture: its single cell's content is
             // processed as document-body blocks (docling unwraps it).
-            let rows: Vec<XmlNode> = node.children().filter(|n| n.has_tag_name("tr")).collect();
+            let rows: Vec<XmlNode> = node
+                .children()
+                .filter(|n| n.has_tag_name("tr") && row_kept(*n, ctx))
+                .collect();
             let num_cols = rows
                 .iter()
                 .map(|r| row_cells(*r).into_iter().map(grid_span).sum::<usize>())
@@ -1878,7 +2103,7 @@ fn collect_one(
             }
         }
         "hyperlink" => {
-            let url = attr(child, "id").and_then(|id| ctx.rels.get(id)).cloned();
+            let url = hyperlink_target(child, ctx);
             let mut inner = Vec::new();
             collect_run_tuples(child, fmt, None, ctx, &mut inner);
             let text: String = inner.iter().map(|(t, _, _)| t.as_str()).collect();
@@ -1891,9 +2116,33 @@ fn collect_one(
         // inside a custom XML markup element is ordinary text to Word,
         // python-docx and the JSON walk alike, and the Markdown used to drop
         // it (`Prefix text.  Suffix text.`).
-        "smartTag" | "customXml" | "ins" | "moveTo" | "fldSimple" | "sdt" | "sdtContent" => {
+        "smartTag" | "customXml" | "fldSimple" | "sdt" | "sdtContent" => {
             collect_run_tuples(child, fmt, link, ctx, out)
         }
+        // Tracked changes (#851): an insertion (or a move's destination)
+        // shows unless the view rejects it; a deletion (or a move's
+        // source) shows under `reject`, and under `all` as struck text —
+        // the Markdown's only way to show what Pandoc's `Span .deletion`
+        // types (the item tree carries the typed revision).
+        "ins" | "moveTo" => {
+            if ctx.policy() != TrackChanges::Reject {
+                collect_run_tuples(child, fmt, link, ctx, out)
+            }
+        }
+        "del" | "moveFrom" => match ctx.policy() {
+            TrackChanges::Accept => {}
+            TrackChanges::Reject => collect_run_tuples(child, fmt, link, ctx, out),
+            TrackChanges::All => collect_run_tuples(
+                child,
+                Fmt {
+                    strike: true,
+                    ..fmt
+                },
+                link,
+                ctx,
+                out,
+            ),
+        },
         _ => {}
     }
 }
@@ -1963,7 +2212,10 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
 }
 
 fn parse_table_inner(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
-    let rows: Vec<XmlNode> = tbl.children().filter(|n| n.has_tag_name("tr")).collect();
+    let rows: Vec<XmlNode> = tbl
+        .children()
+        .filter(|n| n.has_tag_name("tr") && row_kept(*n, ctx))
+        .collect();
     // A row's width in grid columns includes the leading/trailing skipped
     // columns (`w:gridBefore`/`w:gridAfter`) — a row that starts late still
     // spans the full grid.
@@ -2165,6 +2417,9 @@ pub(super) fn sym_text(n: XmlNode) -> String {
 pub(super) fn run_child_text(n: XmlNode) -> String {
     match n.tag_name().name() {
         "t" => t_text(n).into_owned(),
+        // A deleted run's text (#851): read only when its `w:del` wrapper
+        // is walked — under `reject` or `all`.
+        "delText" => n.text().unwrap_or("").to_string(),
         "sym" => sym_text(n),
         // A *line* break is a newline; a page or column break has no text
         // equivalent at all.
@@ -3577,7 +3832,9 @@ mod tests {
                 crate::format::InputFormat::Docx,
                 bytes,
             );
-            super::DocxBackend.convert(&src).expect("converts")
+            super::DocxBackend::default()
+                .convert(&src)
+                .expect("converts")
         };
         let flags = |doc: &docling_core::DoclingDocument| -> Vec<(String, bool)> {
             doc.nodes
@@ -3729,7 +3986,7 @@ mod inherited_heading_tests {
         }
         let bytes = zw.finish().unwrap().into_inner();
         let src = SourceDocument::from_bytes("t.docx", InputFormat::Docx, bytes);
-        super::DocxBackend.convert(&src).unwrap()
+        super::DocxBackend::default().convert(&src).unwrap()
     }
 
     fn style(id: &str, based_on: Option<&str>, outline: Option<u8>) -> String {
@@ -3822,7 +4079,7 @@ mod fragment_rels_tests {
         }
         let bytes = zw.finish().unwrap().into_inner();
         let src = SourceDocument::from_bytes("t.docx", InputFormat::Docx, bytes);
-        let md = super::DocxBackend
+        let md = super::DocxBackend::default()
             .convert(&src)
             .unwrap()
             .export_to_markdown();

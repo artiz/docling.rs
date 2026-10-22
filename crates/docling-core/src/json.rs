@@ -265,6 +265,10 @@ pub fn to_json(doc: &DoclingDocument) -> Value {
 /// [`to_json`] plus the note calls docling's model cannot express: a text
 /// item calling footnotes carries `"_notes": [[offset, text], …]`, a
 /// footnote item that is such a note's body `"_note_body": true` (#538),
+/// a text item that is a link destination `"_anchors": ["id", …]` (#849),
+/// a heading whose text opens with generated numbering `"_number": "1.2"`
+/// (#850), a run kept as a tracked change `"_revision": {"kind":
+/// "insertion" | "deletion", "author", "date"}` (#851),
 /// a picture's image its displayed size `"_display": [width, height]` in
 /// inches (#834), and the document's `metadata` whether or not the JSON
 /// export was asked for it (#836). The Pandoc writer reads these; nothing
@@ -1074,6 +1078,9 @@ struct Builder {
     /// The enclosing [`Node::Track`]'s timing, for the text item it wraps
     /// (#614).
     pending_track: Option<(crate::tree::TreeTrack, String)>,
+    /// [`Node::Anchor`]s met since the last text item (#852): that item's
+    /// `_anchors` on the Pandoc path.
+    pending_anchors: Vec<String>,
     /// `$ref`s an item wants placed in its parent's `children` *before* its
     /// own — a chart's caption item, which docling's office backends add to
     /// the container ahead of the picture that references it.
@@ -1380,6 +1387,23 @@ impl Builder {
                         }
                         if item.note_body {
                             item_json["_note_body"] = json!(true);
+                        }
+                        if !item.anchors.is_empty() {
+                            item_json["_anchors"] = json!(item.anchors);
+                        }
+                        if let Some(number) = &item.number {
+                            item_json["_number"] = json!(number);
+                        }
+                        if let Some(rev) = &item.revision {
+                            let mut r = serde_json::Map::new();
+                            r.insert("kind".into(), json!(rev.kind.as_str()));
+                            if let Some(a) = &rev.author {
+                                r.insert("author".into(), json!(a));
+                            }
+                            if let Some(d) = &rev.date {
+                                r.insert("date".into(), json!(d));
+                            }
+                            item_json["_revision"] = Value::Object(r);
                         }
                     }
                     self.texts.push(Item::json(item_json));
@@ -1831,6 +1855,10 @@ impl Builder {
                 self.pending_loc = None;
                 r
             }
+            Node::Anchor { id } => {
+                self.pending_anchors.push(id.clone());
+                None
+            }
             Node::Track { track, cue, inner } => {
                 self.pending_track = Some((track.clone(), cue.clone()));
                 let r = self.add_node(inner, parent);
@@ -2029,6 +2057,12 @@ impl Builder {
         };
         if extra.as_object().is_some_and(|e| !e.is_empty()) {
             merge(item.value_mut(index), extra);
+        }
+        // The link destinations met before this item (#852), on the Pandoc
+        // path only — docling's model has no field for them.
+        let anchors = std::mem::take(&mut self.pending_anchors);
+        if self.note_keys && !anchors.is_empty() {
+            merge(item.value_mut(index), json!({ "_anchors": anchors }));
         }
         self.texts.push(item);
         self_ref

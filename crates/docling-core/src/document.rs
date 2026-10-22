@@ -315,6 +315,11 @@ pub enum Node {
         inner: Box<Node>,
     },
     /// A text node taken from a time-based track — an ASR segment (#614):
+    /// A link destination (#852: a `.doc` bookmark; the DOCX item tree
+    /// keeps its own, #849): the identifier the document's internal links
+    /// (`#id`) point at. Rendered by nothing but the JSON builder, which
+    /// hands it to the next text item for the Pandoc AST (`_anchors`).
+    Anchor { id: String },
     /// docling's `TrackSource`. The JSON writes docling's ASR text item — `cue`
     /// (the segment's words) as its text, `track` as its `source: [{"kind":
     /// "track", …}]` — which the WebVTT export makes a cue of; every other

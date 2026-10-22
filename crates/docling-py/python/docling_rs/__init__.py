@@ -385,6 +385,12 @@ class DocumentConverter:
       the kernel's language, raw cells as code blocks) or ``"text"`` (stream
       and ``text/plain`` results as code blocks after their cell, image
       outputs as pictures).
+    * ``track_changes`` — tracked changes in DOCX / DOC / ODT (#851, Pandoc's
+      ``--track-changes``): ``"accept"`` (insertions shown, deletions left
+      out), ``"reject"`` (the reverse) or ``"all"`` (both kept, typed with
+      author and date in the Pandoc AST). ``None`` (default): each reader's
+      own view. DOCX reads all three, DOC accept and reject, ODT accept; a
+      mode a reader lacks raises.
     * ``metadata`` — document metadata (#679): the file's own (an EPUB's
       Dublin Core, Office properties, ODF ``meta.xml``, a photo's EXIF,
       audio tags, a PDF's Info dictionary). ``"none"`` (default) reads
@@ -494,6 +500,7 @@ class DocumentConverter:
         encoding: Optional[str] = None,
         ipynb_outputs: Optional[str] = None,
         metadata: Optional[str] = None,
+        track_changes: Optional[str] = None,
         pipeline: Optional[str] = None,
         vlm_endpoint: Optional[str] = None,
         vlm_model: Optional[str] = None,
@@ -758,6 +765,7 @@ class DocumentConverter:
             encoding=encoding,
             ipynb_outputs=ipynb_outputs,
             metadata=metadata,
+            track_changes=track_changes,
             pipeline=pipeline,
             vlm_endpoint=vlm_endpoint,
             vlm_model=vlm_model,

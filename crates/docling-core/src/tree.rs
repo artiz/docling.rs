@@ -193,6 +193,25 @@ pub struct TreeItem {
     /// calls (it travels in that item's [`Self::notes`]); the Pandoc AST then
     /// leaves it out as a standalone block.
     pub note_body: bool,
+    /// Link destinations at this item (#849): the identifiers a document's
+    /// internal links (`hyperlink: "#id"`) point at — a DOCX bookmark in
+    /// a heading, say. docling's model has no slot for them, so the JSON
+    /// shows them only on the Pandoc path (`_anchors`), where a heading's
+    /// first one is its `Header` id and the rest empty `Span .anchor`s.
+    pub anchors: Vec<String>,
+    /// The generated numbering `text` opens with, when the backend put one
+    /// there (#850: a DOCX heading numbered through `w:numPr` is docling's
+    /// `1.2 Title`): `"1.2"` — the authored text follows it after one
+    /// space. docling's JSON keeps the numbered text; the Pandoc AST writes
+    /// the authored text alone (`_number` on that path), since Pandoc
+    /// numbers sections itself (`--number-sections`) and its docx reader
+    /// never writes the number into the `Header`.
+    pub number: Option<String>,
+    /// The tracked change this run carries under
+    /// [`TrackChanges::All`](crate::TrackChanges::All) (#851): the Pandoc
+    /// AST wraps the run in `Span .insertion` / `.deletion` (`_revision`
+    /// on that path); docling's JSON has no field for it.
+    pub revision: Option<crate::Revision>,
 }
 
 /// A note call inside a text item ([`TreeItem::notes`]).
@@ -296,6 +315,9 @@ impl ItemTree {
             deleted: false,
             notes: Vec::new(),
             note_body: false,
+            anchors: Vec::new(),
+            number: None,
+            revision: None,
         });
         match parent {
             Some(p) => self.items[p].children.push(id),

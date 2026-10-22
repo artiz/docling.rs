@@ -29,16 +29,20 @@
 use std::collections::{HashMap, HashSet};
 
 use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind, TreeNote};
-use docling_core::{ContentLayer, PictureDescription, PictureImage, Script, Table, TableCell};
+use docling_core::{
+    ContentLayer, PictureDescription, PictureImage, Revision, RevisionKind, Script, Table,
+    TableCell, TrackChanges,
+};
 use roxmltree::{Document, Node as XmlNode, NodeId};
 
 use super::docx::{
     attr, build_enum_marker, caption_numbering_marker, chart_rels, child_elements,
     clean_checkbox_symbols, detect_code_language, footnote_texts, get_list_counter,
-    header_footer_parts, heading_labels, in_textbox, inherited_outline, is_code_by_font,
-    is_code_style, is_title_style, numbered_heading_text, on_off, part_rels, row_cells,
-    row_grid_offsets, run_child_text, style_chain_bold, style_numbering, sync_heading_counter,
-    t_text, Ctx, MAX_TABLE_DEPTH,
+    header_footer_parts, heading_labels, hyperlink_target, in_textbox, inherited_outline,
+    is_code_by_font, is_code_style, is_title_style, numbered_heading_text, on_off,
+    paragraph_anchors, part_rels, revision_of, row_cells, row_grid_offsets, row_kept,
+    run_child_text, style_chain_bold, style_numbering, sync_heading_counter, t_text, Ctx,
+    MAX_TABLE_DEPTH,
 };
 use super::html_tree::docling_href;
 use super::ooxml::Package;
@@ -53,6 +57,9 @@ struct Part {
     text: String,
     fmt: Option<Formatting>,
     link: Option<String>,
+    /// The tracked change the run sits in, under `track_changes=all`
+    /// (#851).
+    revision: Option<Revision>,
 }
 
 /// A `w:footnoteReference` / `w:endnoteReference` placed in a text item
@@ -284,7 +291,7 @@ fn note_references(p: XmlNode) -> Vec<(usize, &'static str, String)> {
 /// paragraph (`w:r | w:hyperlink`), nothing inside content controls or
 /// tracked insertions.
 fn py_paragraph_text(p: XmlNode) -> String {
-    paragraph_text(p, false)
+    paragraph_text(p, false, TrackChanges::Accept)
 }
 
 /// The runs and hyperlinks of a paragraph; with `accepted`, also those inside
@@ -296,7 +303,7 @@ fn py_paragraph_text(p: XmlNode) -> String {
 /// control or a field result came out empty in docling's JSON while the
 /// Markdown walk (`push_inline_text`) printed it — the same loss #545 fixed
 /// for tracked changes, found by the chain-parity matrix.
-fn paragraph_text(p: XmlNode, accepted: bool) -> String {
+fn paragraph_text(p: XmlNode, accepted: bool, policy: TrackChanges) -> String {
     let mut out = String::new();
     for c in child_elements(p) {
         if is_math(c) {
@@ -309,8 +316,15 @@ fn paragraph_text(p: XmlNode, accepted: bool) -> String {
                     out.push_str(&run_text(r));
                 }
             }
-            "ins" | "moveTo" | "customXml" | "smartTag" | "fldSimple" if accepted => {
-                out.push_str(&paragraph_text(c, true))
+            // Tracked changes (#851): the view's runs only.
+            "ins" | "moveTo" if accepted && policy != TrackChanges::Reject => {
+                out.push_str(&paragraph_text(c, true, policy))
+            }
+            "del" | "moveFrom" if accepted && policy != TrackChanges::Accept => {
+                out.push_str(&paragraph_text(c, true, policy))
+            }
+            "customXml" | "smartTag" | "fldSimple" if accepted => {
+                out.push_str(&paragraph_text(c, true, policy))
             }
             // A checkbox control's glyph (`w14:checkbox`, its `w:t` is ☐/☒)
             // stays out as in python-docx: the state is already the cell's
@@ -318,7 +332,7 @@ fn paragraph_text(p: XmlNode, accepted: bool) -> String {
             // for the mirrored `docx_checkboxes` is matched exactly.
             "sdt" if accepted && !c.descendants().any(|n| n.has_tag_name("checkbox")) => {
                 for content in c.children().filter(|n| n.has_tag_name("sdtContent")) {
-                    out.push_str(&paragraph_text(content, true));
+                    out.push_str(&paragraph_text(content, true, policy));
                 }
             }
             _ => {}
@@ -334,10 +348,10 @@ fn paragraph_text(p: XmlNode, accepted: bool) -> String {
 /// writes an empty cell for one whose text was inserted or moved there with
 /// track changes on, and — a plain cell having no child items — the JSON
 /// lost that text outright; Markdown always printed it.
-fn py_cell_text(tc: XmlNode) -> String {
+fn py_cell_text(tc: XmlNode, policy: TrackChanges) -> String {
     tc.children()
         .filter(|n| n.has_tag_name("p"))
-        .map(|p| paragraph_text(p, true))
+        .map(|p| paragraph_text(p, true, policy))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -703,13 +717,14 @@ impl Walker {
     }
 
     /// `_get_hyperlink_target`: the relationship's target as docling
-    /// serializes it (`AnyUrl` with a scheme, `Path` without).
+    /// serializes it (`AnyUrl` with a scheme, `Path` without) — or, past
+    /// docling, a bookmark's `#id` (#849, [`hyperlink_target`]).
     fn hyperlink_target(&self, h: XmlNode, ctx: &Ctx) -> Option<String> {
-        let address = attr(h, "id").and_then(|id| ctx.rels.get(id))?;
-        if address.is_empty() {
-            return None;
+        let address = hyperlink_target(h, ctx)?;
+        if address.starts_with('#') {
+            return Some(address);
         }
-        Some(docling_href(address))
+        Some(docling_href(&address))
     }
 
     /// `_iter_paragraph_content`: one part per run, hyperlink or content
@@ -718,23 +733,54 @@ impl Walker {
     /// which docling skips (its text vanished, #545; the source `moveFrom`
     /// stays out, like a deletion).
     fn iter_paragraph_content(&self, p: XmlNode, ctx: &Ctx) -> Vec<Part> {
-        fn children_recursive<'a, 'i>(node: XmlNode<'a, 'i>, out: &mut Vec<XmlNode<'a, 'i>>) {
+        // Each child with the tracked change it sits in (#851): under
+        // `accept` an insertion's runs read as plain and a deletion's are
+        // left out, under `reject` the reverse, under `all` both read,
+        // typed; a move's destination counts as an insertion, its source
+        // as a deletion (Pandoc's reading).
+        fn children_recursive<'a, 'i>(
+            node: XmlNode<'a, 'i>,
+            policy: TrackChanges,
+            rev: Option<&Revision>,
+            out: &mut Vec<(XmlNode<'a, 'i>, Option<Revision>)>,
+        ) {
             for c in child_elements(node) {
-                if matches!(
-                    c.tag_name().name(),
-                    "smartTag" | "customXml" | "ins" | "moveTo" | "fldSimple"
-                ) && !is_math(c)
-                {
-                    children_recursive(c, out);
-                } else {
-                    out.push(c);
+                if is_math(c) {
+                    out.push((c, rev.cloned()));
+                    continue;
+                }
+                match c.tag_name().name() {
+                    "smartTag" | "customXml" | "fldSimple" => {
+                        children_recursive(c, policy, rev, out)
+                    }
+                    "ins" | "moveTo" => match policy {
+                        TrackChanges::Reject => {}
+                        TrackChanges::Accept => children_recursive(c, policy, rev, out),
+                        TrackChanges::All => children_recursive(
+                            c,
+                            policy,
+                            Some(&revision_of(c, RevisionKind::Insertion)),
+                            out,
+                        ),
+                    },
+                    "del" | "moveFrom" => match policy {
+                        TrackChanges::Accept => {}
+                        TrackChanges::Reject => children_recursive(c, policy, rev, out),
+                        TrackChanges::All => children_recursive(
+                            c,
+                            policy,
+                            Some(&revision_of(c, RevisionKind::Deletion)),
+                            out,
+                        ),
+                    },
+                    _ => out.push((c, rev.cloned())),
                 }
             }
         }
         let mut children = Vec::new();
-        children_recursive(p, &mut children);
+        children_recursive(p, ctx.policy(), None, &mut children);
         let mut parts = Vec::new();
-        for child in children {
+        for (child, revision) in children {
             if is_math(child) {
                 continue;
             }
@@ -762,12 +808,14 @@ impl Walker {
                         text,
                         fmt,
                         link: None,
+                        revision,
                     });
                 }
                 "r" => parts.push(Part {
                     text: run_text(child),
                     fmt: Some(self.format_from_run(child, Some(p), Some(p), ctx)),
                     link: None,
+                    revision,
                 }),
                 "hyperlink" => {
                     let runs: Vec<XmlNode> = child
@@ -782,6 +830,7 @@ impl Walker {
                         text,
                         fmt,
                         link: self.hyperlink_target(child, ctx),
+                        revision,
                     });
                 }
                 _ => {}
@@ -806,19 +855,26 @@ fn paragraph_elements(content: &[Part]) -> Vec<Part> {
                 text: String::new(),
                 fmt: None,
                 link: None,
+                revision: None,
             }];
         }
         let mut elements = Vec::new();
         let mut group_text = String::new();
         let mut previous_format: Option<Formatting> = None;
+        // A tracked change splits a run like a format change does (#851).
+        let mut previous_revision: Option<Revision> = None;
         for part in content {
             let mut text = part.text.as_str();
-            if (!text.trim().is_empty() && part.fmt != previous_format) || part.link.is_some() {
+            if (!text.trim().is_empty()
+                && (part.fmt != previous_format || part.revision != previous_revision))
+                || part.link.is_some()
+            {
                 if !group_text.trim().is_empty() {
                     elements.push(Part {
                         text: group_text.trim().to_string(),
                         fmt: previous_format,
                         link: None,
+                        revision: previous_revision.clone(),
                     });
                 }
                 group_text.clear();
@@ -827,10 +883,12 @@ fn paragraph_elements(content: &[Part]) -> Vec<Part> {
                         text: text.trim().to_string(),
                         fmt: part.fmt,
                         link: part.link.clone(),
+                        revision: part.revision.clone(),
                     });
                     text = "";
                 } else {
                     previous_format = part.fmt;
+                    previous_revision = part.revision.clone();
                 }
             }
             group_text.push_str(text);
@@ -840,6 +898,7 @@ fn paragraph_elements(content: &[Part]) -> Vec<Part> {
                 text: group_text.trim().to_string(),
                 fmt: previous_format,
                 link: None,
+                revision: previous_revision,
             });
         }
         elements
@@ -1496,7 +1555,10 @@ impl Walker {
     }
 
     fn handle_tables_inner(&mut self, tbl: XmlNode, ctx: &Ctx) -> Vec<usize> {
-        let rows: Vec<XmlNode> = tbl.children().filter(|n| n.has_tag_name("tr")).collect();
+        let rows: Vec<XmlNode> = tbl
+            .children()
+            .filter(|n| n.has_tag_name("tr") && row_kept(*n, ctx))
+            .collect();
         let num_rows = rows.len();
         // python-docx's `len(table.columns)` is the `w:tblGrid` column count;
         // a table without a grid fails to load upstream and is dropped.
@@ -1549,7 +1611,7 @@ impl Walker {
                         continue;
                     }
                 }
-                let cell_text = py_cell_text(tc);
+                let cell_text = py_cell_text(tc, ctx.policy());
                 let (with_eq, equations) = equations_in_text(tc, &cell_text);
                 let text = if equations.is_empty() {
                     cell_text
@@ -1632,6 +1694,20 @@ impl Walker {
         let calls = note_references(p);
         let first_new = self.tree.items.len();
         let refs = self.handle_text_elements_inner(p, ctx, skip_empty_text);
+        // The bookmarks starting in this paragraph land on its first text
+        // item (#849): the heading, the list item, the first run of a
+        // formatted paragraph.
+        if !ctx.bookmarks.is_empty() {
+            let anchors = paragraph_anchors(p, ctx);
+            if !anchors.is_empty() {
+                if let Some(&item) = refs
+                    .iter()
+                    .find(|&&i| matches!(self.tree.items[i].kind, TreeKind::Text { .. }))
+                {
+                    self.tree.items[item].anchors = anchors;
+                }
+            }
+        }
         if !calls.is_empty() {
             let full_text: String = self
                 .iter_paragraph_content(p, ctx)
@@ -1902,11 +1978,13 @@ impl Walker {
                     continue;
                 }
                 let label = checkbox_label.unwrap_or("text");
-                refs.push(self.add(
+                let item = self.add(
                     parent,
                     self.layer,
                     text_kind(label, &clean, el.fmt, el.link.clone()),
-                ));
+                );
+                self.tree.items[item].revision = el.revision.clone();
+                refs.push(item);
             }
         }
         self.update_history(numid, ilevel);
@@ -1959,6 +2037,7 @@ impl Walker {
             }
             None => (self.level, self.level - 1, 1),
         };
+        let authored_len = text.len();
         let text = if is_numbered {
             let text = numbered_heading_text(&mut self.numbered_headers, add_level as u8, text);
             if let Some(numid) = numid {
@@ -1977,6 +2056,10 @@ impl Walker {
         } else {
             text.to_string()
         };
+        // The generated prefix, kept apart from the authored text (#850):
+        // `numbered_heading_text` writes `<number> <text>`.
+        let number = (is_numbered && text.len() > authored_len + 1)
+            .then(|| text[..text.len() - authored_len - 1].to_string());
         let hd = self.add(
             self.parent_at(parent_level),
             None,
@@ -1990,6 +2073,7 @@ impl Walker {
                 list: None,
             },
         );
+        self.tree.items[hd].number = number;
         self.set_parent(current_level, Some(hd));
         refs.push(hd);
         refs
@@ -2177,7 +2261,7 @@ impl Walker {
         if elements.len() == 1 {
             let e = &elements[0];
             if !e.text.is_empty() {
-                self.add(
+                let item = self.add(
                     parent,
                     None,
                     TreeKind::Text {
@@ -2190,6 +2274,7 @@ impl Walker {
                         list,
                     },
                 );
+                self.tree.items[item].revision = e.revision.clone();
             }
         } else {
             let item = self.add(
@@ -2427,6 +2512,7 @@ mod tests {
             text: t.into(),
             fmt: f,
             link: l.map(str::to_string),
+            revision: None,
         };
         let els = paragraph_elements(&[
             part("Para", plain, None),
@@ -2564,7 +2650,7 @@ mod tests {
     #[test]
     fn tree_has_upstreams_shape() {
         let src = SourceDocument::from_bytes("t.docx", InputFormat::Docx, tiny_docx());
-        let doc = DocxBackend.convert(&src).expect("converts");
+        let doc = DocxBackend::default().convert(&src).expect("converts");
         let tree = doc.tree.as_ref().expect("docx hands the JSON a tree");
         let items = &tree.items;
         let find = |t: &str| {

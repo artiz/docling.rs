@@ -30,6 +30,7 @@ pub mod metadata;
 pub mod pandoc;
 mod pixel_digest;
 pub mod redact;
+mod revisions;
 pub mod tree;
 mod vtt;
 
@@ -49,4 +50,5 @@ pub use redact::{
     CustomPattern, ImageRedaction, PiiDetector, PiiKind, RedactionOptions, RedactionReport,
     Replacement,
 };
+pub use revisions::{Revision, RevisionKind, TrackChanges};
 pub use vtt::VttExportOptions;

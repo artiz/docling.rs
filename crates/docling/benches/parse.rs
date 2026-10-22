@@ -50,7 +50,7 @@ fn docx(c: &mut Criterion) {
     ] {
         let src = load(file, InputFormat::Docx);
         g.bench_function(name, |b| {
-            b.iter(|| black_box(DocxBackend.convert(black_box(&src)).unwrap()))
+            b.iter(|| black_box(DocxBackend::default().convert(black_box(&src)).unwrap()))
         });
     }
     g.finish();
