@@ -266,6 +266,8 @@ pub fn to_json(doc: &DoclingDocument) -> Value {
 /// item calling footnotes carries `"_notes": [[offset, text], …]`, a
 /// footnote item that is such a note's body `"_note_body": true` (#538),
 /// a text item that is a link destination `"_anchors": ["id", …]` (#849),
+/// a heading whose text opens with generated numbering `"_number": "1.2"`
+/// (#850),
 /// a picture's image its displayed size `"_display": [width, height]` in
 /// inches (#834), and the document's `metadata` whether or not the JSON
 /// export was asked for it (#836). The Pandoc writer reads these; nothing
@@ -1384,6 +1386,9 @@ impl Builder {
                         }
                         if !item.anchors.is_empty() {
                             item_json["_anchors"] = json!(item.anchors);
+                        }
+                        if let Some(number) = &item.number {
+                            item_json["_number"] = json!(number);
                         }
                     }
                     self.texts.push(Item::json(item_json));

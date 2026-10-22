@@ -199,6 +199,14 @@ pub struct TreeItem {
     /// shows them only on the Pandoc path (`_anchors`), where a heading's
     /// first one is its `Header` id and the rest empty `Span .anchor`s.
     pub anchors: Vec<String>,
+    /// The generated numbering `text` opens with, when the backend put one
+    /// there (#850: a DOCX heading numbered through `w:numPr` is docling's
+    /// `1.2 Title`): `"1.2"` — the authored text follows it after one
+    /// space. docling's JSON keeps the numbered text; the Pandoc AST writes
+    /// the authored text alone (`_number` on that path), since Pandoc
+    /// numbers sections itself (`--number-sections`) and its docx reader
+    /// never writes the number into the `Header`.
+    pub number: Option<String>,
 }
 
 /// A note call inside a text item ([`TreeItem::notes`]).
@@ -303,6 +311,7 @@ impl ItemTree {
             notes: Vec::new(),
             note_body: false,
             anchors: Vec::new(),
+            number: None,
         });
         match parent {
             Some(p) => self.items[p].children.push(id),

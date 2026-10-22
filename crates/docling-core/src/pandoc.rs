@@ -25,6 +25,7 @@
 //! | `text`, `paragraph` | `Para` (`Plain` inside lists and table cells) |
 //! | `inline` group | the runs' inlines joined by `Space` |
 //! | formatting / hyperlink | `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`, then `Link` around it all — an internal link's target is `#id` (#849) |
+//! | a numbered heading (#850: a DOCX heading numbered through `w:numPr`, docling's `1.2 Title` text with `_number`) | the `Header` holds the authored text alone, `Title` — Pandoc numbers sections itself (`--number-sections`), and its docx reader writes no number, so a numbered AST would show `1.2 1.2 Title`; the Markdown and JSON keep docling's numbered text |
 //! | a link destination (#849: a DOCX bookmark, `_anchors`) | on a heading, its `Header` identifier (Pandoc's own auto-identifier of the heading text, `target-section`, so `#target-section` resolves as it does from `pandoc -f docx`); anywhere else an empty `Span` with the identifier and the class `anchor`, Pandoc's docx reader's shape, at the start of the item's inlines |
 //! | `list` group | `OrderedList` (first item enumerated; start, number style and delimiter from the items' markers — `a)` LowerAlpha OneParen, `iii.` LowerRoman from 3, `(3)` Decimal TwoParens, #835) / `BulletList`, nested lists inside their item |
 //! | `code` | `CodeBlock` with the language as its class (`Code` inline) |
@@ -1189,12 +1190,44 @@ impl<'a> Serializer<'a> {
             "formula" if !Self::text(item).is_empty() => {
                 vec![ast::math(false, Self::text(item).trim())]
             }
-            _ => match item.get("_notes").and_then(Value::as_array) {
-                Some(notes) if !notes.is_empty() => text_with_notes(Self::text(item), notes),
-                _ => text_inlines(Self::text(item)),
-            },
+            _ => {
+                let (text, skipped) = Self::authored_text(item);
+                match item.get("_notes").and_then(Value::as_array) {
+                    Some(notes) if !notes.is_empty() => {
+                        if skipped == 0 {
+                            text_with_notes(text, notes)
+                        } else {
+                            // The note offsets count the numbered text.
+                            let shifted: Vec<Value> = notes
+                                .iter()
+                                .map(|n| {
+                                    let off = n[0].as_u64().unwrap_or(0).saturating_sub(skipped);
+                                    serde_json::json!([off, n[1]])
+                                })
+                                .collect();
+                            text_with_notes(text, &shifted)
+                        }
+                    }
+                    _ => text_inlines(text),
+                }
+            }
         };
         Self::decorate(base, item)
+    }
+
+    /// The item's text without the generated numbering it opens with
+    /// (`_number`, #850), and how many chars were dropped.
+    fn authored_text(item: &Value) -> (&str, u64) {
+        let text = Self::text(item);
+        if let Some(number) = item.get("_number").and_then(Value::as_str) {
+            if let Some(rest) = text
+                .strip_prefix(number)
+                .and_then(|rest| rest.strip_prefix(' '))
+            {
+                return (rest, (number.chars().count() + 1) as u64);
+            }
+        }
+        (text, 0)
     }
 
     /// A furniture `footnote` item that is the body of a note a text item
@@ -2374,6 +2407,52 @@ mod tests {
         assert_eq!(depths(HeadingDepth::Source), [1, 1, 2, 5, 6, 1, 1, 6]);
         assert_eq!("Source".parse::<HeadingDepth>(), Ok(HeadingDepth::Source));
         assert!("deep".parse::<HeadingDepth>().is_err());
+    }
+
+    /// #850: a heading numbered by the backend (`_number`) writes its
+    /// authored text alone; text that merely starts with digits is kept.
+    #[test]
+    fn numbered_headings_write_the_authored_text() {
+        let j = doc(
+            &["#/texts/0", "#/texts/1", "#/texts/2"],
+            json!([
+                text(
+                    0,
+                    "section_header",
+                    "1.1 2026 Results",
+                    json!({"level": 2, "_number": "1.1"})
+                ),
+                text(1, "section_header", "2026 Results", json!({"level": 1})),
+                text(
+                    2,
+                    "section_header",
+                    "3 Odd",
+                    json!({"level": 1, "_number": "4"})
+                ),
+            ]),
+            json!([]),
+            json!([]),
+        );
+        let b = blocks(&j);
+        assert_eq!(
+            b[0],
+            ast::header(
+                3,
+                vec![ast::str_("2026"), ast::space(), ast::str_("Results")]
+            )
+        );
+        assert_eq!(
+            b[1],
+            ast::header(
+                2,
+                vec![ast::str_("2026"), ast::space(), ast::str_("Results")]
+            )
+        );
+        // A `_number` the text does not open with is left alone.
+        assert_eq!(
+            b[2],
+            ast::header(2, vec![ast::str_("3"), ast::space(), ast::str_("Odd")])
+        );
     }
 
     /// #849: a bookmarked heading carries its identifier, a bookmark in

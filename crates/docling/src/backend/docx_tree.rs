@@ -1974,6 +1974,7 @@ impl Walker {
             }
             None => (self.level, self.level - 1, 1),
         };
+        let authored_len = text.len();
         let text = if is_numbered {
             let text = numbered_heading_text(&mut self.numbered_headers, add_level as u8, text);
             if let Some(numid) = numid {
@@ -1992,6 +1993,10 @@ impl Walker {
         } else {
             text.to_string()
         };
+        // The generated prefix, kept apart from the authored text (#850):
+        // `numbered_heading_text` writes `<number> <text>`.
+        let number = (is_numbered && text.len() > authored_len + 1)
+            .then(|| text[..text.len() - authored_len - 1].to_string());
         let hd = self.add(
             self.parent_at(parent_level),
             None,
@@ -2005,6 +2010,7 @@ impl Walker {
                 list: None,
             },
         );
+        self.tree.items[hd].number = number;
         self.set_parent(current_level, Some(hd));
         refs.push(hd);
         refs
