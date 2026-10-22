@@ -4,12 +4,13 @@
 # gates pass). Computes the next version from the commits since the last tag
 # (scripts/ci/bump_version.sh: fix:/perf:/revert:-only range -> patch, anything
 # else -> the 0.x "major"; no automatic 1.0.0); if there is one, it bumps the
-# workspace version, commits + tags it, pushes to master, and assembles the
-# GitHub Release notes (a commit list since the previous tag) for the workflow
-# to cut the Release with. A clean no-op when nothing landed since the last tag.
-# Nothing is built and nothing is uploaded here: the crates go to crates.io
-# from crates-publish.yml, one of the channels release.yml dispatches for the
-# release the maintainer picks (scripts/ci/ci_publish.sh).
+# workspace version, commits + tags it and pushes to master. A clean no-op
+# when nothing landed since the last tag. Nothing is built, uploaded or
+# released here: the GitHub Release for the tag is cut by release.yml when
+# the maintainer publishes it (scripts/ci/release_notes.sh writes its notes
+# from the tags then), and the crates go to crates.io from
+# crates-publish.yml, one of the channels release.yml dispatches
+# (scripts/ci/ci_publish.sh).
 #
 # The release commit is pushed with RELEASE_PAT (an admin token, so it satisfies
 # the master branch ruleset) and carries `[skip ci]`, so it does not re-trigger CI.
@@ -79,24 +80,6 @@ fi
 current="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
 echo ">> releasing v$new (was v$current)"
 
-# Assemble the GitHub Release notes BEFORE the version-bump commit lands, so the
-# range is exactly the feature commits going into this release (everything since
-# the previous tag, the release chore commit excluded). The workflow turns this
-# into the Release description.
-prev_tag="$(git tag --list 'v*' --sort=-version:refname | head -n1)"
-notes_range="${prev_tag:+$prev_tag..}HEAD"
-notes_file="$(pwd)/release-notes.md"
-repo="${GITHUB_REPOSITORY:-docling-project/docling.rs}"
-{
-  echo "## What's changed"
-  echo
-  git log "$notes_range" --no-merges --format='- %s (%h)'
-  if [[ -n "$prev_tag" ]]; then
-    echo
-    echo "**Full changelog**: https://github.com/$repo/compare/$prev_tag...v$new"
-  fi
-} >"$notes_file"
-
 # Bump the single version key in the root manifest's [workspace.package].
 sed -i -E "0,/^version = \"[^\"]+\"/ s//version = \"$new\"/" Cargo.toml
 
@@ -129,14 +112,12 @@ fi
 git push origin HEAD:master
 git push origin "v$new"
 
-# Hand the released version + notes file to the workflow, which cuts the GitHub
-# Release for the tag we just pushed. Guarded so the script still runs locally
-# (where $GITHUB_OUTPUT is unset).
+# Hand the released version to the workflow (the issue comments). Guarded so
+# the script still runs locally (where $GITHUB_OUTPUT is unset).
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   {
     echo "released=true"
     echo "version=$new"
-    echo "notes_file=$notes_file"
   } >>"$GITHUB_OUTPUT"
 fi
 

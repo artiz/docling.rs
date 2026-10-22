@@ -26,7 +26,7 @@
 # release notes, and the version tags stay for anyone pinning.)
 #
 # Trigger: manual dispatch only — release.yml runs it, with PyPI, npm and the
-# CLI binaries, for a release the maintainer picks (a GitHub Release is cut on
+# CLI binaries, for a release the maintainer picks (a version tag is pushed on
 # every merge; not every one is published):
 #   - `tag` (a release tag, e.g. v2.23.0): checks that tag out and tags the
 #     images with its semantic versions (X.Y.Z, vX.Y.Z, X.Y, X) and, unless

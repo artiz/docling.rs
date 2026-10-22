@@ -458,41 +458,25 @@ jobs:
       # tag it and push to master. A no-op when no release-worthy commit landed.
       # The release commit is pushed with RELEASE_PAT (an admin token, so it
       # satisfies the master ruleset) and carries [skip ci], so it does not
-      # re-trigger CI. Nothing goes to crates.io from here.
+      # re-trigger CI. Nothing goes to crates.io from here, and no GitHub
+      # Release is cut: a merge only tags. release.yml creates the Release —
+      # notes from the tags (scripts/ci/release_notes.sh), not marked latest
+      # until its channels succeed — for the tag the maintainer publishes, so
+      # the Releases page lists what was published, not every merge.
       - name: Release
         id: release
         env:
           FORCE_VERSION: ${{ github.event.inputs.force_version }}
         run: bash scripts/ci/release.sh
 
-      # Cut a GitHub Release for the tag release.sh just pushed, using the commit
-      # list it assembled as the description. Skipped when the release step was a
-      # no-op (no release-worthy commits). Idempotent: if a release for the tag
-      # already exists (e.g. a forced re-release), refresh its notes instead of
-      # failing. Not marked latest: nothing is published to crates.io, PyPI, npm,
-      # GHCR or the release's assets until the maintainer runs release.yml for
-      # it, which then marks it latest (install.sh itself takes the newest
-      # release that has its binary, #707).
-      - name: Create GitHub Release
-        if: steps.release.outputs.released == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          tag="v${{ steps.release.outputs.version }}"
-          notes="${{ steps.release.outputs.notes_file }}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" --title "$tag" --notes-file "$notes"
-          else
-            gh release create "$tag" --title "$tag" --notes-file "$notes" --verify-tag --latest=false
-          fi
-
       # Tell the issues this release shipped (`Closes/Refs #NN` in the commits
       # and the merged PRs since the previous tag) that it did: one "Shipped in
-      # vX.Y.Z" comment each, linking the Release just cut. Posted as
-      # github-actions[bot] (`issues: write` above); idempotent on a forced
-      # re-release. Upstream only — a fork's CI must not comment on issues
-      # whose numbers mean something else there. Never fails the job: the
-      # release is already tagged and cut, so the script only warns.
+      # vX.Y.Z" comment each, linking the tag's page (GitHub renders it for a
+      # bare tag; the Release release.yml cuts later lands at the same URL).
+      # Posted as github-actions[bot] (`issues: write` above); idempotent on a
+      # forced re-release. Upstream only — a fork's CI must not comment on
+      # issues whose numbers mean something else there. Never fails the job:
+      # the release is already tagged, so the script only warns.
       - name: Comment on the released issues
         if: steps.release.outputs.released == 'true' && github.repository == 'docling-project/docling.rs'
         env:

@@ -772,7 +772,7 @@ sdist and the `docling-rs-cuda` wheel, and uploads them to PyPI at the release's
 version — then the pure-Python [`docling-rs-mcp`](./mcp/) launcher, pinned to
 that version, as its own PyPI project, and the MCP registry entry
 (`docs/MCP_REGISTRIES.md`). It runs **only by hand** (`workflow_dispatch`):
-a GitHub Release is cut on every merge, which would outgrow PyPI's per-project
+a version is tagged on every merge, which would outgrow PyPI's per-project
 size limit (below) within weeks, so the maintainer publishes the releases
 worth it. Run alone, it publishes PyPI only — e.g. to repair a failed PyPI
 channel. Files already on PyPI are skipped, so re-runs are safe — within 14

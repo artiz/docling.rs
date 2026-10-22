@@ -2,9 +2,11 @@
 #
 # Tell the issues a release shipped that it shipped: for every issue the
 # commits of release vX.Y.Z reference, post one "Shipped in vX.Y.Z" comment
-# linking the GitHub Release. Run by the master-only `release` job of
-# .github/workflows/ci.yml right after release.sh pushed the tag and the
-# workflow cut the Release, so the comment's link is live when it lands.
+# linking the tag's page. Run by the master-only `release` job of
+# .github/workflows/ci.yml right after release.sh pushed the tag; GitHub
+# renders `/releases/tag/<tag>` for a bare tag, and the GitHub Release
+# release.yml cuts when the maintainer publishes the tag lands at the same
+# URL, so the link is live when the comment lands and gets richer later.
 #
 # Where the issue numbers come from — the whole range since the previous
 # release tag, not only the merge that triggered this release: a docs- or

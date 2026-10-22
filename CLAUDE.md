@@ -19,11 +19,13 @@ reproduce it byte for byte (see "Conformance & fixtures").
   `python/` and `src/`, docling-node's, docling-wasm's, docling-ffi's, since
   PyPI / npm / the binaries publish them from the tag). No automatic semver-major: majors are
   cut by hand (`force_version` dispatch input) — v1.0.0 marks the breaking
-  `.models/` asset-dir rename. ci.yml bumps the version, tags it and cuts
-  the GitHub Release (not marked latest) and builds nothing; **everything
-  is published by hand**, for a release the maintainer picks:
-  `gh workflow run release.yml` (the newest `vX.Y.Z` release; `-f tag=vX.Y.Z`
-  for another) dispatches `crates-publish.yml` (the crates, in dependency
+  `.models/` asset-dir rename. ci.yml bumps the version and tags it, builds
+  nothing and cuts no GitHub Release; **everything is published by hand**,
+  for a tag the maintainer picks: `gh workflow run release.yml` (the newest
+  `vX.Y.Z` tag; `-f tag=vX.Y.Z` for another) first cuts the GitHub Release
+  for the tag (notes from the tags, `scripts/ci/release_notes.sh` — the
+  Releases page thus lists what was published, not every merge), then
+  dispatches `crates-publish.yml` (the crates, in dependency
   order), `pypi-publish.yml` (`docling-rs` + `docling-rs-cuda`,
   the `docling-rs-mcp` launcher, then the MCP catalogs), `npm-publish.yml`
   (`docling.rs`, the platform packages, `docling.rs-cuda`,
