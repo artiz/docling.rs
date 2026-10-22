@@ -140,7 +140,7 @@ fn node_words(node: &Node, into: &mut Words) {
         | Node::Located { inner, .. }
         | Node::Prov { inner, .. }
         | Node::DoclangOnly(inner) => node_words(inner, into),
-        Node::PageBreak | Node::PageInfo { .. } => {}
+        Node::PageBreak | Node::PageInfo { .. } | Node::Anchor { .. } => {}
     }
 }
 

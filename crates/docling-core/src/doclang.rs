@@ -1133,6 +1133,10 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
             Node::PageInfo { .. } => {
                 *i += 1;
             }
+            // A link destination (#852) feeds the JSON export only.
+            Node::Anchor { .. } => {
+                *i += 1;
+            }
             // A PDF picture's contained text feeds the JSON export only, so
             // the DocLang output is unchanged. (Upstream's DocLang picture
             // serializer does print a picture's children inside its body.)

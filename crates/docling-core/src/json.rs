@@ -1078,6 +1078,9 @@ struct Builder {
     /// The enclosing [`Node::Track`]'s timing, for the text item it wraps
     /// (#614).
     pending_track: Option<(crate::tree::TreeTrack, String)>,
+    /// [`Node::Anchor`]s met since the last text item (#852): that item's
+    /// `_anchors` on the Pandoc path.
+    pending_anchors: Vec<String>,
     /// `$ref`s an item wants placed in its parent's `children` *before* its
     /// own — a chart's caption item, which docling's office backends add to
     /// the container ahead of the picture that references it.
@@ -1852,6 +1855,10 @@ impl Builder {
                 self.pending_loc = None;
                 r
             }
+            Node::Anchor { id } => {
+                self.pending_anchors.push(id.clone());
+                None
+            }
             Node::Track { track, cue, inner } => {
                 self.pending_track = Some((track.clone(), cue.clone()));
                 let r = self.add_node(inner, parent);
@@ -2050,6 +2057,12 @@ impl Builder {
         };
         if extra.as_object().is_some_and(|e| !e.is_empty()) {
             merge(item.value_mut(index), extra);
+        }
+        // The link destinations met before this item (#852), on the Pandoc
+        // path only — docling's model has no field for them.
+        let anchors = std::mem::take(&mut self.pending_anchors);
+        if self.note_keys && !anchors.is_empty() {
+            merge(item.value_mut(index), json!({ "_anchors": anchors }));
         }
         self.texts.push(item);
         self_ref

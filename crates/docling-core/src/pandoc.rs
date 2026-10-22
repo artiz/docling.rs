@@ -24,7 +24,7 @@
 //! | `section_header` (level *n*) | `Header (n+1)`, capped at 6 — docling's title-reserving depth; under [`HeadingDepth::Source`] (#848) `Header n`, the depth the DOCX / ODT author wrote |
 //! | `text`, `paragraph` | `Para` (`Plain` inside lists and table cells) |
 //! | `inline` group | the runs' inlines joined by `Space` |
-//! | formatting / hyperlink | `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`, then `Link` around it all — an internal link's target is `#id` (#849) |
+//! | formatting / hyperlink | `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`, then `Link` around it all — an internal link's target is `#id` (#849); a Markdown `[label](target)` inside an item's text, the flat node chain's hyperlink (`.doc`, AbiWord, …), is a `Link` too (#852) |
 //! | a numbered heading (#850: a DOCX heading numbered through `w:numPr`, docling's `1.2 Title` text with `_number`) | the `Header` holds the authored text alone, `Title` — Pandoc numbers sections itself (`--number-sections`), and its docx reader writes no number, so a numbered AST would show `1.2 1.2 Title`; the Markdown and JSON keep docling's numbered text |
 //! | a link destination (#849: a DOCX bookmark, `_anchors`) | on a heading, its `Header` identifier (Pandoc's own auto-identifier of the heading text, `target-section`, so `#target-section` resolves as it does from `pandoc -f docx`); anywhere else an empty `Span` with the identifier and the class `anchor`, Pandoc's docx reader's shape, at the start of the item's inlines |
 //! | `list` group | `OrderedList` (first item enumerated; start, number style and delimiter from the items' markers — `a)` LowerAlpha OneParen, `iii.` LowerRoman from 3, `(3)` Decimal TwoParens, #835) / `BulletList`, nested lists inside their item |
@@ -465,26 +465,92 @@ pub mod ast {
 
 /// Text as `Str` words and `Space`s, `\n` as `LineBreak`; surrounding
 /// whitespace trimmed (a no-break space stays inside its word, as Pandoc's
-/// readers keep it).
+/// readers keep it). A Markdown link `[label](target)` in the text — how
+/// the flat node chain (the `.doc`, AbiWord, … readers) carries a
+/// hyperlink, #852 — is a `Link`.
 fn text_inlines(text: &str) -> Vec<Value> {
     let mut out = Vec::new();
     for (i, line) in text.trim().split('\n').enumerate() {
         if i > 0 {
             out.push(ast::line_break());
         }
-        let mut first = true;
-        for word in line
-            .split(|c: char| c.is_whitespace() && c != '\u{a0}')
-            .filter(|w| !w.is_empty())
-        {
-            if !first {
-                out.push(ast::space());
+        let is_ws = |c: char| c.is_whitespace() && c != '\u{a0}';
+        let line_start = out.len();
+        // Whitespace seen since the last inline of this line: one `Space`
+        // before the next.
+        let mut pending_space = false;
+        let mut rest = line;
+        while !rest.is_empty() {
+            let (plain, link) = match markdown_link(rest) {
+                Some((before, label, target, after)) => {
+                    rest = after;
+                    (before, Some((label, target)))
+                }
+                None => (std::mem::take(&mut rest), None),
+            };
+            let words: Vec<&str> = plain.split(is_ws).filter(|w| !w.is_empty()).collect();
+            if words.is_empty() {
+                pending_space |= !plain.is_empty();
+            } else {
+                if out.len() > line_start && (pending_space || plain.starts_with(is_ws)) {
+                    out.push(ast::space());
+                }
+                for (k, word) in words.iter().enumerate() {
+                    if k > 0 {
+                        out.push(ast::space());
+                    }
+                    out.push(ast::str_(word));
+                }
+                pending_space = plain.ends_with(is_ws);
             }
-            out.push(ast::str_(word));
-            first = false;
+            if let Some((label, target)) = link {
+                if out.len() > line_start && pending_space {
+                    out.push(ast::space());
+                }
+                let mut label_inlines = Vec::new();
+                for (k, word) in label.split_whitespace().enumerate() {
+                    if k > 0 {
+                        label_inlines.push(ast::space());
+                    }
+                    label_inlines.push(ast::str_(word));
+                }
+                out.push(ast::link(label_inlines, target));
+                pending_space = false;
+            }
         }
     }
     out
+}
+
+/// The first Markdown link of `text` as `(before, label, target, after)`:
+/// `[label](target)` with a label free of brackets and newlines and a
+/// target free of whitespace and parentheses — the shape the flat readers
+/// write; an image's `![alt](src)` is not one.
+fn markdown_link(text: &str) -> Option<(&str, &str, &str, &str)> {
+    let mut from = 0;
+    while let Some(open) = text[from..].find('[') {
+        let open = from + open;
+        from = open + 1;
+        if text[..open].ends_with('!') {
+            continue;
+        }
+        let close = text[open + 1..].find(']')?;
+        let close = open + 1 + close;
+        let label = &text[open + 1..close];
+        if label.is_empty() || label.contains(['[', '\n']) || !text[close + 1..].starts_with('(') {
+            continue;
+        }
+        let Some(end) = text[close + 2..].find(')') else {
+            continue;
+        };
+        let end = close + 2 + end;
+        let target = &text[close + 2..end];
+        if target.is_empty() || target.contains(|c: char| c.is_whitespace() || c == '(') {
+            continue;
+        }
+        return Some((&text[..open], label, target, &text[end + 1..]));
+    }
+    None
 }
 
 /// [`text_inlines`] with a `Note` spliced in at each call: `notes` is
@@ -2439,6 +2505,45 @@ mod tests {
         assert_eq!(depths(HeadingDepth::Source), [1, 1, 2, 5, 6, 1, 1, 6]);
         assert_eq!("Source".parse::<HeadingDepth>(), Ok(HeadingDepth::Source));
         assert!("deep".parse::<HeadingDepth>().is_err());
+    }
+
+    /// #852: a Markdown link in an item's text (the flat chain's
+    /// hyperlink) is a `Link`; brackets that are not one stay text.
+    #[test]
+    fn markdown_links_in_text_become_links() {
+        assert_eq!(
+            text_inlines("Jump to [target](#target-section) now [x] (y)"),
+            vec![
+                ast::str_("Jump"),
+                ast::space(),
+                ast::str_("to"),
+                ast::space(),
+                ast::link(vec![ast::str_("target")], "#target-section"),
+                ast::space(),
+                ast::str_("now"),
+                ast::space(),
+                ast::str_("[x]"),
+                ast::space(),
+                ast::str_("(y)"),
+            ]
+        );
+        assert_eq!(
+            text_inlines("[a](https://x.org/a)[b](https://x.org/b)"),
+            vec![
+                ast::link(vec![ast::str_("a")], "https://x.org/a"),
+                ast::link(vec![ast::str_("b")], "https://x.org/b"),
+            ]
+        );
+        assert_eq!(
+            text_inlines("see ![alt](img.png) here"),
+            vec![
+                ast::str_("see"),
+                ast::space(),
+                ast::str_("![alt](img.png)"),
+                ast::space(),
+                ast::str_("here"),
+            ]
+        );
     }
 
     /// #851: a run's `_revision` is Pandoc's insertion / deletion span,

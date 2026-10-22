@@ -3,11 +3,15 @@
     , Space
     , Str "1:**"
     , Space
-    , Str "[Multi-run"
-    , Space
-    , Str "caption"
-    , Space
-    , Str "text](https://example.org/caption)"
+    , Link
+        ( "" , [] , [] )
+        [ Str "Multi-run"
+        , Space
+        , Str "caption"
+        , Space
+        , Str "text"
+        ]
+        ( "https://example.org/caption" , "" )
     ]
 , Table
     ( "" , [] , [] )

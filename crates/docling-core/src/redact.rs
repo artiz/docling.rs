@@ -1309,7 +1309,7 @@ impl<'a> Redactor<'a> {
                 self.redact_text(text);
             }
             Node::PictureChildren(children) => self.redact_nodes(children),
-            Node::PageBreak | Node::PageInfo { .. } => {}
+            Node::PageBreak | Node::PageInfo { .. } | Node::Anchor { .. } => {}
         }
     }
 
