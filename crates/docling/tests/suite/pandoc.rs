@@ -43,6 +43,12 @@ const CASES: &[&str] = &[
     "docx/pandoc_images.docx",
     "docx/pandoc_footnotes.docx",
     "odf/footnotes.odt",
+    // #833: a formatted, linked caption and a multi-run list item with a
+    // nested list; a hyperlink in a one-paragraph table cell; a multi-run
+    // caption and heading from a docling JSON document.
+    "html/pandoc_inlines.html",
+    "docx/pandoc_table_cell_hyperlink.docx",
+    "json_docling/pandoc_caption_heading_inline.json",
 ];
 
 fn root() -> PathBuf {

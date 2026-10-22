@@ -580,6 +580,12 @@ impl<'a> Serializer<'a> {
             if picture && !captions.contains(&cref) {
                 continue;
             }
+            // A caption or footnote some table / picture / graph owns is
+            // rendered by that owner, inline group and all (#833): neither
+            // it nor what nests under it is a block of the walk.
+            if self.owned_captions.contains(cref) || self.owned_footnotes.contains(cref) {
+                continue;
+            }
             let Some(child) = self.resolve(cref) else {
                 continue;
             };
@@ -611,7 +617,8 @@ impl<'a> Serializer<'a> {
         };
         self.visited.insert("#/body".to_string());
         let mut blocks = self.blocks_of(body);
-        blocks.extend(self.unplaced_notes());
+        let notes = self.unplaced_notes();
+        blocks.extend(notes);
         blocks
     }
 
@@ -620,16 +627,21 @@ impl<'a> Serializer<'a> {
     /// Python docling), or a call that could not be anchored — written while
     /// the furniture layer itself is off: each as a trailing `Note`, so a
     /// document rebuilt from the AST still has its notes (#538).
-    fn unplaced_notes(&self) -> Vec<Value> {
-        Self::array(self.json.get("texts"))
+    fn unplaced_notes(&mut self) -> Vec<Value> {
+        let notes: Vec<&'a Value> = Self::array(self.json.get("texts"))
             .filter(|t| Self::label(t) == "footnote" && !Self::is_note_body(t))
             .filter(|t| t.get("content_layer").and_then(Value::as_str) == Some("furniture"))
             .filter(|t| self.excluded(t) && !self.owned_footnotes.contains(Self::self_ref(t)))
-            .filter_map(|t| {
-                let text = text_inlines(Self::text(t));
-                (!text.is_empty()).then(|| ast::para(vec![ast::note(vec![ast::para(text)])]))
-            })
-            .collect()
+            .collect();
+        let mut out = Vec::new();
+        for t in notes {
+            // The note's formatting and links too (#833).
+            let (text, _, _) = self.own_inlines(t);
+            if !text.is_empty() {
+                out.push(ast::para(vec![ast::note(vec![ast::para(text)])]));
+            }
+        }
+        out
     }
 
     /// One item's blocks.
@@ -766,14 +778,17 @@ impl<'a> Serializer<'a> {
     }
 
     /// A text item's own inlines: its formatted text, or — for an empty
-    /// item wrapping one inline group (a list item or heading whose content
-    /// is a run of formatted spans) — that group's, with any blocks the
-    /// group held besides.
+    /// item whose first child is an inline group (a list item, heading or
+    /// caption whose content is a run of formatted spans; whatever else
+    /// nests under it — a sub-list, a section's paragraphs — follows as
+    /// blocks of its own, #833) — that group's, with any blocks the group
+    /// held besides.
     fn own_inlines(&mut self, item: &'a Value) -> (Vec<Value>, Vec<Value>, bool) {
         let children = Self::children(item);
-        if Self::text(item).is_empty() && children.len() == 1 {
-            if let Some(group) = self
-                .resolve(children[0])
+        if Self::text(item).is_empty() {
+            if let Some(group) = children
+                .first()
+                .and_then(|c| self.resolve(c))
                 .filter(|c| Self::is_group(c) && Self::label(c) == "inline")
             {
                 self.visited.insert(Self::self_ref(group).to_string());
@@ -1010,21 +1025,16 @@ impl<'a> Serializer<'a> {
     }
 
     /// The owner's caption texts as one `Caption`, with its footnotes as
-    /// `Note`s at the end — the float is their call site.
-    fn caption(&self, item: &'a Value) -> Value {
-        let mut parts: Vec<Vec<Value>> = Vec::new();
-        for cref in Self::refs(item.get("captions")) {
-            if let Some(cap) = self.resolve(cref) {
-                if cref.starts_with("#/texts/") && !self.excluded(cap) {
-                    parts.push(text_inlines(Self::text(cap)));
-                }
-            }
-        }
-        let mut inlines = join_inlines(parts);
+    /// `Note`s at the end — the float is their call site. Each caption and
+    /// note keeps its formatting, links and inline group (#833: a bold,
+    /// linked `<caption>` used to come out as bare words, a multi-run one
+    /// as an empty caption plus a stray `Para`).
+    fn caption(&mut self, item: &'a Value) -> Value {
+        let mut inlines = self.caption_text(item);
         for cref in Self::refs(item.get("footnotes")) {
             if let Some(note) = self.resolve(cref) {
                 if cref.starts_with("#/texts/") && !self.excluded(note) {
-                    let text = text_inlines(Self::text(note));
+                    let (text, _, _) = self.own_inlines(note);
                     if !text.is_empty() {
                         inlines.push(ast::note(vec![ast::para(text)]));
                     }
@@ -1040,14 +1050,18 @@ impl<'a> Serializer<'a> {
 
     /// The owner's caption texts alone (no notes) — a picture's alt text,
     /// as Pandoc's readers give a captioned image.
-    fn caption_text(&self, item: &'a Value) -> Vec<Value> {
-        let parts = Self::refs(item.get("captions"))
+    fn caption_text(&mut self, item: &'a Value) -> Vec<Value> {
+        let caps: Vec<&'a Value> = Self::refs(item.get("captions"))
             .into_iter()
             .filter(|cref| cref.starts_with("#/texts/"))
             .filter_map(|cref| self.resolve(cref))
             .filter(|cap| !self.excluded(cap))
-            .map(|cap| text_inlines(Self::text(cap)))
             .collect();
+        let mut parts = Vec::new();
+        for cap in caps {
+            let (inlines, _, _) = self.own_inlines(cap);
+            parts.push(inlines);
+        }
         join_inlines(parts)
     }
 
@@ -1501,6 +1515,105 @@ mod tests {
         let (s, _) = from_docling_json(&j, &opts).unwrap();
         assert!(!s.contains("base64") && !s.contains("RawBlock"), "{s}");
         assert_eq!(s.matches("docling-placeholder").count(), 3, "{s}");
+    }
+
+    /// #833: a caption of formatted runs (an inline group under the caption
+    /// item) is the table's caption, its runs decorated, and nothing of it
+    /// strays into the body; a multi-run heading with a section under it
+    /// is a `Header` followed by the section's blocks; a multi-run list
+    /// item with a nested list is `[Plain, BulletList]`; a formatted,
+    /// linked single-run caption keeps `Strong` and `Link`.
+    #[test]
+    fn captions_headings_and_items_keep_their_inline_groups() {
+        let mut j = doc(
+            &["#/texts/0", "#/tables/0", "#/texts/3", "#/groups/2"],
+            json!([
+                text(
+                    0,
+                    "caption",
+                    "",
+                    json!({"children": [{"$ref": "#/groups/0"}]})
+                ),
+                text(1, "text", "Table 1:", json!({"formatting": {"bold": true}})),
+                text(
+                    2,
+                    "text",
+                    "Multi-run caption",
+                    json!({"hyperlink": "https://x.org/c"})
+                ),
+                text(
+                    3,
+                    "section_header",
+                    "",
+                    json!({"level": 1, "children": [{"$ref": "#/groups/1"}, {"$ref": "#/texts/6"}]})
+                ),
+                text(4, "text", "1.1", json!({"formatting": {"bold": true}})),
+                text(5, "text", "Formatted header", json!({})),
+                text(6, "text", "Body under header.", json!({})),
+                text(
+                    7,
+                    "list_item",
+                    "",
+                    json!({"children": [{"$ref": "#/groups/3"}, {"$ref": "#/groups/4"}]})
+                ),
+                text(8, "text", "Bold run", json!({"formatting": {"bold": true}})),
+                text(9, "text", "and tail", json!({})),
+                text(10, "list_item", "Nested child", json!({})),
+                text(
+                    11,
+                    "caption",
+                    "Linked bold",
+                    json!({"formatting": {"bold": true}, "hyperlink": "https://x.org/spec"})
+                ),
+            ]),
+            json!([
+                {"self_ref": "#/groups/0", "children": [{"$ref": "#/texts/1"}, {"$ref": "#/texts/2"}], "label": "inline", "name": "group"},
+                {"self_ref": "#/groups/1", "children": [{"$ref": "#/texts/4"}, {"$ref": "#/texts/5"}], "label": "inline", "name": "group"},
+                {"self_ref": "#/groups/2", "children": [{"$ref": "#/texts/7"}], "label": "list", "name": "list"},
+                {"self_ref": "#/groups/3", "children": [{"$ref": "#/texts/8"}, {"$ref": "#/texts/9"}], "label": "inline", "name": "group"},
+                {"self_ref": "#/groups/4", "children": [{"$ref": "#/texts/10"}], "label": "list", "name": "list"},
+            ]),
+            json!([{"self_ref": "#/tables/0", "children": [], "label": "table",
+                    "captions": [{"$ref": "#/texts/0"}, {"$ref": "#/texts/11"}],
+                    "data": {"num_rows": 1, "num_cols": 1, "table_cells": [
+                        {"text": "v", "row_span": 1, "col_span": 1, "start_row_offset_idx": 0, "end_row_offset_idx": 1,
+                         "start_col_offset_idx": 0, "end_col_offset_idx": 1, "column_header": false}]}}]),
+        );
+        j["texts"][0]["children"] = json!([{"$ref": "#/groups/0"}]);
+        let b = blocks(&j);
+        assert_eq!(b.len(), 4, "{b:?}");
+        assert_eq!(b[0]["t"], "Table");
+        let caption = &b[0]["c"][1][1][0];
+        assert_eq!(caption["t"], "Plain");
+        assert_eq!(
+            caption["c"][0],
+            ast::wrap(
+                "Strong",
+                vec![ast::str_("Table"), ast::space(), ast::str_("1:")]
+            )
+        );
+        assert_eq!(caption["c"][2]["t"], "Link");
+        let linked = caption["c"].as_array().unwrap().last().unwrap();
+        assert_eq!(linked["t"], "Link");
+        assert_eq!(linked["c"][1][0]["t"], "Strong");
+        assert_eq!(b[1]["t"], "Header");
+        assert_eq!(b[1]["c"][2][0], ast::wrap("Strong", vec![ast::str_("1.1")]));
+        assert_eq!(
+            b[2],
+            ast::para(vec![
+                ast::str_("Body"),
+                ast::space(),
+                ast::str_("under"),
+                ast::space(),
+                ast::str_("header.")
+            ])
+        );
+        assert_eq!(b[3]["t"], "BulletList");
+        let item = b[3]["c"][0].as_array().unwrap();
+        assert_eq!(item.len(), 2);
+        assert_eq!(item[0]["t"], "Plain");
+        assert_eq!(item[0]["c"][0]["t"], "Strong");
+        assert_eq!(item[1]["t"], "BulletList");
     }
 
     #[test]

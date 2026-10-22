@@ -1,0 +1,94 @@
+[ Header
+    2 ( "" , [] , [] ) [ Str "Section" , Space , Str "1" ]
+, Table
+    ( "" , [] , [] )
+    (Caption
+       Nothing
+       [ Plain
+           [ Link
+               ( "" , [] , [] )
+               [ Strong
+                   [ Str "Table"
+                   , Space
+                   , Str "1:"
+                   , Space
+                   , Str "Linked"
+                   , Space
+                   , Str "Bold"
+                   , Space
+                   , Str "Caption"
+                   ]
+               ]
+               ( "https://example.org/spec" , "" )
+           ]
+       ])
+    [ ( AlignDefault , ColWidthDefault )
+    , ( AlignDefault , ColWidthDefault )
+    ]
+    (TableHead
+       ( "" , [] , [] )
+       [ Row
+           ( "" , [] , [] )
+           [ Cell
+               ( "" , [] , [] )
+               AlignDefault
+               (RowSpan 1)
+               (ColSpan 1)
+               [ Plain [ Str "Column" , Space , Str "A" ] ]
+           , Cell
+               ( "" , [] , [] )
+               AlignDefault
+               (RowSpan 1)
+               (ColSpan 1)
+               [ Plain [ Str "Column" , Space , Str "B" ] ]
+           ]
+       ])
+    [ TableBody
+        ( "" , [] , [] )
+        (RowHeadColumns 0)
+        []
+        [ Row
+            ( "" , [] , [] )
+            [ Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Plain [ Str "Alpha" ] ]
+            , Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Plain [ Str "Beta" ] ]
+            ]
+        ]
+    ]
+    (TableFoot ( "" , [] , [] ) [])
+, BulletList
+    [ [ Plain
+          [ Strong [ Str "Bold" , Space , Str "run" ]
+          , Space
+          , Str "and"
+          , Space
+          , Emph [ Str "italic" , Space , Str "run" ]
+          , Space
+          , Str "in"
+          , Space
+          , Str "parent"
+          , Space
+          , Str "item"
+          ]
+      , BulletList
+          [ [ Plain
+                [ Str "Nested"
+                , Space
+                , Str "child"
+                , Space
+                , Str "item"
+                ]
+            ]
+          ]
+      ]
+    ]
+]

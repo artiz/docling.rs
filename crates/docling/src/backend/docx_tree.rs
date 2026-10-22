@@ -1466,6 +1466,12 @@ impl Walker {
         if has_blip(tc) || has_textbox(tc) {
             return true;
         }
+        // A `w:hyperlink` alone does not make the cell rich (#833 asked for
+        // it): python-docx's `paragraph.runs` never lists a hyperlink's
+        // runs, so docling reads such a cell as plain text and its HTML of
+        // `docx_rich_tables_01` — a reference fixture here — has the link's
+        // text alone; the cell stays plain for that parity, and the link is
+        // lost with it, as in docling.
         for p in &paras {
             for r in child_elements(*p).filter(|c| c.has_tag_name("r") && !is_math(*c)) {
                 if self.format_from_run(r, None, None, ctx) != Formatting::default() {
