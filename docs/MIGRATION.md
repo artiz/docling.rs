@@ -133,7 +133,11 @@ docling's `do_ocr=False` — layout and TableFormer run, OCR never does —
 read, and the fast path is `--text-layer-only` / `text_layer_only` /
 `textLayerOnly` / `::text_layer_only` (Python's kwarg of that name, and
 `do_ocr`, are unchanged). Replaying the corpus, `--text-layer-only` gives
-byte for byte what `--no-ocr` gave on 1.104.3. The CLI also takes docling's
+byte for byte what `--no-ocr` gave on 1.104.3. The option also takes `auto`
+(`--text-layer-only=auto`, `text_layer_only="auto"`, `textLayerOnly: "auto"`,
+`::text_layer_only(TextLayerOnly::Auto)`): the text layer alone when it
+carries the document, the full pipeline — OCR included — when it does not
+(see §4, *Text layer first, OCR when there is none*). The CLI also takes docling's
 spellings `--page-range`, `--image-export-mode`, `--no-tables`,
 `--pdf-password` (and the `password` option on every surface — `pdf_password`
 before #625, still read — which the engine always had but no caller passed)
@@ -2323,6 +2327,29 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   endpoint errors warn without failing the conversion. docling's local
   describers (`PictureDescriptionVlmOptions`, SmolVLM in process) have no
   counterpart; a LangChain chat model still runs as the Python post-pass.
+- **Text layer first, OCR when there is none** — `text_layer_only=auto`
+  (`--text-layer-only=auto`; `"auto"` on every JSON surface, in Python and
+  Node; `TextLayerOnly::Auto` in Rust). docling runs its layout model on
+  every PDF page and OCRs the pages without a text layer; its only shortcut
+  is the backend's own text extraction with no pipeline at all. docling.rs
+  had the same two ends — the pipeline, and `text_layer_only=true` with
+  nothing for a scan — and now the middle: the embedded text layer is
+  parsed first (pure Rust, no render), and when it carries the document
+  (`docling_pdf::text_layer_has_text`: more than a line a page or 32
+  characters in all — the same rule that calls a layer of a few typed-in
+  form fields over scans vestigial) the conversion is `text_layer_only=true`'s
+  byte for byte, no model loaded; otherwise the full pipeline runs and OCR
+  reads the pages. The verdict is the whole document's, decided before any
+  model is touched, so a digital file with a few scanned pages inserted
+  keeps the text path (those pages come back empty, as under `true`). The
+  switch is per conversion on the full model set: a warm pipeline (serve,
+  the Python / Node `Pipeline`, the CLI batch) serving digital and scanned
+  documents in turn reloads nothing. `no_ocr` wins when both are set;
+  `force_full_page_ocr` is read only on the pipeline side of the verdict,
+  as under `true`. On an SVG, `auto` is the native `<text>` extraction when
+  the file has text and the ML image route when it has none; a DjVu already
+  falls back to OCR by itself. Streaming (`convert_streaming`) takes the
+  same verdict.
 - **Video frame sampling tunables** (#647) — docling's video path is the
   transcript; the frames are a docling.rs extension (#138), and their
   sampling now takes options on every surface: `video_frames=all` (every

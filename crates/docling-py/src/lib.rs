@@ -239,8 +239,10 @@ struct PyDocumentConverter {
     /// the interruptible worker threads can own a handle to it.
     pdf_pipeline: std::sync::Arc<std::sync::Mutex<Option<docling::Pipeline>>>,
     /// The warm `docling::Pipeline`'s switches, in its (pre-2.0) names:
-    /// `no_ocr` is `text_layer_only`, `skip_ocr` is `do_ocr=False` (#611).
+    /// `no_ocr` is `text_layer_only`, `skip_ocr` is `do_ocr=False` (#611);
+    /// `text_layer_auto` is `text_layer_only="auto"`.
     no_ocr: bool,
+    text_layer_auto: bool,
     skip_ocr: bool,
     no_table_former: bool,
     no_text_panels: bool,
@@ -290,7 +292,9 @@ impl PyDocumentConverter {
     ///   `do_ocr=False` now matches docling exactly (#244): layout detection
     ///   and TableFormer still run, only OCR is skipped — previously it
     ///   disabled the whole ML stack (that fast path is the docling.rs-only
-    ///   `text_layer_only=True`).
+    ///   `text_layer_only=True`; `text_layer_only="auto"` takes it per
+    ///   document, when the text layer carries the document, and the full
+    ///   pipeline — OCR included — when it does not).
     /// * `force_full_page_ocr` — OCR every PDF page even when it carries a
     ///   text layer (docling's `force_full_page_ocr`); ignored when
     ///   `do_ocr=False`.
@@ -473,7 +477,7 @@ impl PyDocumentConverter {
         allowed_formats = None,
         images_scale = None,
         generate_page_images = false,
-        text_layer_only = false,
+        text_layer_only = None,
         list_attachments = false,
         skip_empty_cells = false,
         compact_tables = false,
@@ -550,7 +554,7 @@ impl PyDocumentConverter {
         allowed_formats: Option<Vec<String>>,
         images_scale: Option<f32>,
         generate_page_images: bool,
-        text_layer_only: bool,
+        text_layer_only: Option<Py<PyAny>>,
         list_attachments: bool,
         skip_empty_cells: bool,
         compact_tables: bool,
@@ -572,6 +576,9 @@ impl PyDocumentConverter {
         // A malformed window (0-based, reversed) raises here instead of
         // silently selecting nothing (#518).
         let page_range = check_page_range(page_range)?;
+        let text_layer_only = text_layer_only
+            .map(|v| Python::attach(|py| py_text_layer_only(py, &v)))
+            .transpose()?;
         // The kwargs as the shared option set (#577): docling's positive
         // spellings (`do_ocr`, `do_table_structure`) and the docling.rs-only
         // `text_layer_only` map onto the engine's switches here, `page_range`
@@ -607,7 +614,7 @@ impl PyDocumentConverter {
             video_frame_dedupe,
             pages: page_range.map(|(first, last)| format!("{first}-{last}")),
             document_timeout,
-            text_layer_only: Some(text_layer_only),
+            text_layer_only,
             no_ocr: Some(!do_ocr),
             password: password.clone(),
             force_full_page_ocr: Some(force_full_page_ocr),
@@ -687,7 +694,8 @@ impl PyDocumentConverter {
         Ok(Self {
             inner,
             pdf_pipeline: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            no_ocr: text_layer_only,
+            no_ocr: text_layer_only == Some(docling::TextLayerOnly::On),
+            text_layer_auto: text_layer_only == Some(docling::TextLayerOnly::Auto),
             skip_ocr: !do_ocr,
             no_table_former: !do_table_structure,
             no_text_panels,
@@ -730,6 +738,7 @@ impl PyDocumentConverter {
         let slot = std::sync::Arc::clone(&self.pdf_pipeline);
         let no_table_former = self.no_table_former;
         let no_ocr = self.no_ocr;
+        let text_layer_auto = self.text_layer_auto;
         let skip_ocr = self.skip_ocr;
         let no_text_panels = self.no_text_panels;
         let heading_hierarchy = self.heading_hierarchy;
@@ -751,6 +760,7 @@ impl PyDocumentConverter {
                     .map_err(|e| ConversionError::new_err(e.to_string()))?
                     .no_table_former(no_table_former)
                     .no_ocr(no_ocr)
+                    .text_layer_auto(text_layer_auto)
                     .skip_ocr(skip_ocr)
                     .no_text_panels(no_text_panels)
                     .heading_hierarchy(docling::HeadingHierarchyOptions::enabled(heading_hierarchy))
@@ -1634,4 +1644,22 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
+}
+
+/// `text_layer_only` as Python passes it: the bool it always was, or the
+/// string `"auto"` (per document: the text layer alone when it carries the
+/// document, the full pipeline — OCR included — when it does not).
+fn py_text_layer_only(py: Python<'_>, v: &Py<PyAny>) -> PyResult<docling::TextLayerOnly> {
+    let v = v.bind(py);
+    if let Ok(flag) = v.extract::<bool>() {
+        return Ok(flag.into());
+    }
+    if let Ok(text) = v.extract::<String>() {
+        return text
+            .parse::<docling::TextLayerOnly>()
+            .map_err(pyo3::exceptions::PyValueError::new_err);
+    }
+    Err(pyo3::exceptions::PyTypeError::new_err(
+        "text_layer_only: expected a bool or \"auto\"",
+    ))
 }

@@ -85,7 +85,7 @@ pub(crate) struct StreamSettings {
     pub strict: bool,
     pub no_table_former: bool,
     pub no_text_panels: bool,
-    pub text_layer_only: bool,
+    pub text_layer_only: crate::TextLayerOnly,
     pub no_ocr: bool,
     pub password: Option<String>,
     pub force_full_page_ocr: bool,
@@ -273,7 +273,8 @@ fn run_pdf(
         p.no_table_former(settings.no_table_former)
             .no_text_panels(settings.no_text_panels)
             // docling-pdf's pre-2.0 names (see `DocumentConverter::ml_pipeline`).
-            .no_ocr(settings.text_layer_only)
+            .no_ocr(settings.text_layer_only == crate::TextLayerOnly::On)
+            .text_layer_auto(settings.text_layer_only == crate::TextLayerOnly::Auto)
             .skip_ocr(settings.no_ocr)
             .force_full_page_ocr(settings.force_full_page_ocr)
             .ocr_lang(settings.ocr_lang)

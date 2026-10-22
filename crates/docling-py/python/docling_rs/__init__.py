@@ -337,6 +337,10 @@ class DocumentConverter:
       not a kwarg of this wrapper.
     * ``text_layer_only`` — skip the whole PDF ML stack and read the embedded
       text layer only (the docling.rs fast path behind the CLI's ``--text-layer-only``).
+      ``"auto"`` decides per document: the text layer alone when it carries
+      the document (no model touched), the full pipeline — OCR included —
+      when it does not (a scanned / image-only file, or a vestigial layer
+      of a few typed-in form fields over scans).
     * ``list_attachments`` — email (.eml/.msg): append an Attachments section
       with names and content types (#251; the payload is never embedded).
     * ``ebcdic_layout`` — EBCDIC (#252): the copybook layout, inline
@@ -515,7 +519,7 @@ class DocumentConverter:
         page_range: Optional[Tuple[int, int]] = None,
         images_scale: Optional[float] = None,
         generate_page_images: bool = False,
-        text_layer_only: bool = False,
+        text_layer_only: Union[bool, str] = False,
         list_attachments: bool = False,
         ebcdic_layout: Optional[str] = None,
         video_frames: Optional[Union[int, str]] = None,

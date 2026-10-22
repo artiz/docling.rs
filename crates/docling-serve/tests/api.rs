@@ -2364,3 +2364,58 @@ async fn an_oversized_body_is_refused_with_413() {
         );
     }
 }
+
+/// `text_layer_only=auto` over the wire — a query parameter, a multipart
+/// field and a JSON string alike: a digital PDF converts from its text layer
+/// (no model needed, so this runs on a model-free checkout), the same bytes
+/// `text_layer_only=true` gives; a value that is neither a bool nor `auto`
+/// is a 400 naming the option.
+#[tokio::test]
+async fn text_layer_only_auto_converts_a_digital_pdf() {
+    let pdf = std::fs::read(repo_root().join("tests/data/pdf/sources/skipped_1page.pdf")).unwrap();
+    let app = app();
+    let run = |value: &'static str, app: axum::Router| {
+        let (ct, body) = multipart("t.pdf", &pdf, &[("to", "md"), ("text_layer_only", value)]);
+        async move {
+            let response = app.oneshot(convert_request(&ct, body, "")).await.unwrap();
+            let status = response.status();
+            (status, body_string(response).await)
+        }
+    };
+    let (status, on) = run("true", app.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, auto) = run("auto", app.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{auto}");
+    assert!(!auto.trim().is_empty());
+    assert_eq!(on, auto, "a digital PDF under auto is the text-layer path");
+    let (status, err) = run("sometimes", app.clone()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err.contains("text_layer_only"), "{err}");
+    // The query-string spelling.
+    let (ct, body) = multipart("t.pdf", &pdf, &[]);
+    let response = app
+        .clone()
+        .oneshot(convert_request(&ct, body, "?to=md&text_layer_only=auto"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, on);
+    // The JSON body, as the string.
+    let b64 = docling::base64::encode(&pdf);
+    let body = format!(
+        r#"{{"to": "md", "text_layer_only": "auto",
+            "sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "t.pdf"}}]}}"#
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/convert/source")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}

@@ -263,7 +263,11 @@
 //!                      headings then keep the flat level docling emits
 //!   --text-layer-only  skip layout detection, OCR, and TableFormer entirely for
 //!                      PDF/image input — no model load or inference at all
-//!                      (`--no-ocr` before 2.0, #611).
+//!                      (`--no-ocr` before 2.0, #611). `--text-layer-only=auto`
+//!                      decides per document: the text layer alone when it
+//!                      carries the document, the full pipeline (OCR) when it
+//!                      does not — a scanned file, or a vestigial layer of a
+//!                      few typed-in form fields.
 //!                      Emits the embedded text layer as flat paragraphs in
 //!                      reading order (no headings/lists/tables/pictures). The
 //!                      fastest option, but a scanned/image-only PDF (no
@@ -594,6 +598,8 @@ PDF / IMAGE PIPELINE
                           --skip-ocr is the same)
   --text-layer-only       no models at all: the embedded text layer as flat
                           paragraphs (what --no-ocr did before 2.0)
+  --text-layer-only=auto  per document: the text layer alone when it carries
+                          the document, the full pipeline (OCR) when it does not
   --password PASSWORD     password of an encrypted PDF or Office document
                           (.docx/.xlsx/.pptx/.doc/.xls/.ppt; also
                           --pdf-password, docling's spelling)
@@ -884,7 +890,19 @@ fn main() -> ExitCode {
             // pre-2.0 name; the old skip-everything fast path is
             // `--text-layer-only`.
             "--no-ocr" | "--skip-ocr" => opts.no_ocr = Some(true),
-            "--text-layer-only" => opts.text_layer_only = Some(true),
+            "--text-layer-only" => opts.text_layer_only = Some(docling::TextLayerOnly::On),
+            // `--text-layer-only=auto` (or `=true` / `=false`): the `=` form
+            // only — a bare value after the flag would be read as a source
+            // path.
+            s if s.starts_with("--text-layer-only=") => {
+                match s["--text-layer-only=".len()..].parse::<docling::TextLayerOnly>() {
+                    Ok(mode) => opts.text_layer_only = Some(mode),
+                    Err(e) => {
+                        eprintln!("error: {e}");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
             // The password of an encrypted PDF or Office document (#611,
             // #625); `--pdf-password` is docling's PDF-only spelling.
             "--password" | "--pdf-password" => match args.next() {
@@ -1447,7 +1465,10 @@ fn main() -> ExitCode {
     // need them.
     let pages = opts.page_range().ok().flatten();
     let strict = opts.strict.unwrap_or(false);
-    let text_layer_only = opts.text_layer_only.unwrap_or(false);
+    let text_layer_mode = opts.text_layer_only.unwrap_or_default();
+    // The missing-models fallback below is `true`'s alone: under `auto` a
+    // digital PDF never asks for a model, and a scanned one needs them.
+    let text_layer_only = text_layer_mode == docling::TextLayerOnly::On;
     let page_break_placeholder = opts.page_break_placeholder.clone();
     let image_mode = match images.as_deref().unwrap_or("placeholder") {
         "placeholder" => ImageMode::Placeholder,
@@ -1668,7 +1689,7 @@ fn main() -> ExitCode {
             &source,
             runs,
             opts.no_table_former.unwrap_or(false),
-            text_layer_only,
+            text_layer_mode,
             opts.ocr_disabled(),
             opts.password.as_deref(),
         ) {
@@ -2684,7 +2705,8 @@ fn batch_pipeline<'a>(
             .no_table_former(o.no_table_former.unwrap_or(false))
             // docling-pdf's pre-2.0 names: its `no_ocr` is the text-layer
             // fast path, its `skip_ocr` docling's do_ocr=False (#611).
-            .no_ocr(o.text_layer_only.unwrap_or(false))
+            .no_ocr(o.text_layer_only == Some(docling::TextLayerOnly::On))
+            .text_layer_auto(o.text_layer_only == Some(docling::TextLayerOnly::Auto))
             .skip_ocr(o.ocr_disabled())
             .force_full_page_ocr(o.force_full_page_ocr.unwrap_or(false))
             .no_text_panels(o.no_text_panels.unwrap_or(false))
@@ -3612,7 +3634,7 @@ fn bench_warm_conversion(
     source: &SourceDocument,
     runs: usize,
     no_table_former: bool,
-    text_layer_only: bool,
+    text_layer_only: docling::TextLayerOnly,
     no_ocr: bool,
     password: Option<&str>,
 ) -> Result<f64, String> {
@@ -3620,7 +3642,8 @@ fn bench_warm_conversion(
         .map_err(|e| e.to_string())?
         .no_table_former(no_table_former)
         // docling-pdf's pre-2.0 names (see `batch_pipeline`).
-        .no_ocr(text_layer_only)
+        .no_ocr(text_layer_only == docling::TextLayerOnly::On)
+        .text_layer_auto(text_layer_only == docling::TextLayerOnly::Auto)
         .skip_ocr(no_ocr);
     let once = |p: &mut Pipeline| -> Result<(), String> {
         match source.format {

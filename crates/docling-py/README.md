@@ -200,7 +200,7 @@ Office/HTML/EPUB/email backends — measured side by side in the main README's
 | picture alt text (`![alt](…)`) | kept (#676): the facade renders it — the `![alt](…)` of an image line, the text line above a `<!-- image -->` placeholder; `DocumentConverter(picture_alt_text=True)` elsewhere, and the document carries it always as the picture's description (`created_by="alt_text"`) |
 
 `MarkItDown(docling_options={...})` passes options through to
-`DocumentConverter` — `{"text_layer_only": True}` for pdfminer-speed PDFs,
+`DocumentConverter` — `{"text_layer_only": True}` for pdfminer-speed PDFs (or `"auto"`: that path when the text layer carries the document, OCR when it does not),
 `{"ocr_lang": "ch"}`, `{"do_picture_ocr": True}` — and `result.document` is
 the converted `DoclingDocument` for anything Markdown cannot carry.
 
