@@ -45,6 +45,7 @@ secret or network variable is missing from this page.
 | Audio sample rate (ASR) | header-declared rate clamped to 8 kHz–768 kHz, so the resampler can't be steered into an OOM-sized upsample | clamped | — |
 | Encrypted Office documents (#625) | the Agile spin count is capped at the spec's 10 000 000, key/salt/block/hash sizes are checked against the spec before any hashing or allocation, and the declared plaintext size of an `EncryptedPackage` may not exceed its ciphertext (the stream itself is under the part budget above) | the document fails with "encryption header is damaged" naming the field | — |
 | TableFormer matching | `median()` guards the empty slice (a crafted table row/column with zero matched cells no longer panics) | — | — |
+| CUDA arena per ONNX session (#842) | unbounded by default (ONNX Runtime's); every session shrinks its arena back after each run, and under a CUDA-class provider the page-worker pool and the OCR lanes default to one session each — a 16 GB T4 serving mixed PDFs for a day otherwise filled up and every conversion failed inside ONNX Runtime | with a limit set, a run that needs more fails with ONNX Runtime's allocation error for that document; the server stays up | `DOCLING_RS_CUDA_MEM_LIMIT_MB` (MiB per session), `DOCLING_RS_CUDA_ARENA_EXTEND=same_as_requested`, `DOCLING_RS_CUDA_ARENA_SHRINK=0` (keep the arena), `DOCLING_RS_CUDA_CONV_ALGO_SEARCH`, `DOCLING_RS_CUDA_CONV_MAX_WORKSPACE`, `DOCLING_RS_CUDA_DEVICE` |
 
 `docling-serve` adds request-level bounds:
 
@@ -55,6 +56,7 @@ secret or network variable is missing from this page.
 | `to=images` rasterization: 100 pages per request | **400** naming the variable (narrow with `pages=A-B`) | `DOCLING_RS_MAX_RASTER_PAGES` |
 | Memory admission control: the container's cgroup limit, else none; new conversions stop at 85 % of it | **503** + `Retry-After` while the process RSS is above the watermark; in-flight conversions keep running | `--max-memory-mb` / `DOCLING_RS_MAX_MEMORY_MB` (`0` disables), `DOCLING_RS_MEMORY_WATERMARK_PCT` |
 | Async jobs: 16 queued or unfetched at once, results kept 600 s | **429** | `--queue-size`, `--result-ttl` |
+| Idle unload (#842): off by default — the warm PDF/image pipeline (its ONNX sessions and, on a GPU, their device memory) is dropped after N seconds without a PDF/image conversion and reloaded by the next one; `/ready` reports `models: lazy` meanwhile | — (a lazy reload, ~1 s on a GPU) | `--idle-unload-secs N` / `DOCLING_RS_IDLE_UNLOAD_SECS` (`0` = never) |
 
 What is **not** bounded: there is no global page-count or input-size cap like
 Python docling's `convert(max_num_pages=…, max_file_size=…)` (both default to

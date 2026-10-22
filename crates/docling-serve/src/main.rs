@@ -2,7 +2,8 @@
 //!
 //! Usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N]
 //!                      [--queue-size N] [--result-ttl SECS] [--max-memory-mb N]
-//!                      [--warmup] [--allow-url-fetch] [--allow-local-images] [--strict] [--api-key KEY]
+//!                      [--warmup] [--idle-unload-secs N] [--allow-url-fetch] [--allow-local-images]
+//!                      [--strict] [--api-key KEY]
 //!
 //!   --addr HOST:PORT  bind address (default: 127.0.0.1:5001). Bind 0.0.0.0
 //!                     only behind a trusted proxy.
@@ -15,6 +16,8 @@
 //!                     (default: 600)
 //!   --warmup          load the PDF/image models at startup; /ready returns
 //!                     503 until they are loaded (and stays 503 if they fail)
+//!   --idle-unload-secs N  drop the warm PDF/image pipeline (and its GPU memory) after N
+//!                     seconds without a conversion; the next one reloads it (0 = never)
 //!   --allow-url-fetch accept {"url": …} inputs (outbound fetch — SSRF surface;
 //!                     off by default). A private/loopback/link-local IP guard
 //!                     applies even when enabled.
@@ -79,6 +82,12 @@ fn main() -> ExitCode {
                 None => return usage("--max-memory-mb needs a number (0 disables)"),
             },
             "--warmup" => cfg.warmup = true,
+            // #842: drop the warm pipeline (and its GPU memory) after N idle
+            // seconds; 0 = never. Unset = DOCLING_RS_IDLE_UNLOAD_SECS.
+            "--idle-unload-secs" => match args.next().and_then(|v| v.parse().ok()) {
+                Some(v) => cfg.idle_unload_secs = Some(v),
+                None => return usage("--idle-unload-secs needs a number of seconds (0 = never)"),
+            },
             "--allow-url-fetch" => cfg.allow_url_fetch = true,
             // #646: `image_sources=local` reads files next to a server-side
             // source; an operator opts in.
@@ -117,7 +126,7 @@ fn usage(err: &str) -> ExitCode {
         eprintln!("error: {err}");
     }
     eprintln!(
-        "usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--allow-url-fetch] [--allow-local-images] [--strict] [--api-key KEY]"
+        "usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--idle-unload-secs N] [--allow-url-fetch] [--allow-local-images] [--strict] [--api-key KEY]"
     );
     if err.is_empty() {
         ExitCode::SUCCESS

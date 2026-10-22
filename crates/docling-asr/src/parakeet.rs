@@ -207,10 +207,11 @@ impl Parakeet {
             .map_err(|e| format!("asr: parakeet features: {e}"))?;
         let len = Tensor::from_array(([1usize], vec![valid as i64]))
             .map_err(|e| format!("asr: parakeet length: {e}"))?;
-        let outputs = self
-            .encoder
-            .run(ort::inputs!["audio_signal" => feat, "length" => len])
-            .map_err(|e| format!("asr: parakeet encoder: {e}"))?;
+        let outputs = docling_onnx::run(
+            &mut self.encoder,
+            ort::inputs!["audio_signal" => feat, "length" => len],
+        )
+        .map_err(|e| format!("asr: parakeet encoder: {e}"))?;
         let (shape, enc) = outputs["outputs"]
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("asr: parakeet encoder output: {e}"))?;
@@ -293,16 +294,17 @@ impl Parakeet {
             .map_err(|e| format!("asr: parakeet state 1: {e}"))?;
         let s2 = Tensor::from_array(([2usize, 1, hidden(&state[1])], state[1].clone()))
             .map_err(|e| format!("asr: parakeet state 2: {e}"))?;
-        let outputs = self
-            .decoder
-            .run(ort::inputs![
+        let outputs = docling_onnx::run(
+            &mut self.decoder,
+            ort::inputs![
                 "encoder_outputs" => enc,
                 "targets" => targets,
                 "target_length" => target_len,
                 "input_states_1" => s1,
                 "input_states_2" => s2
-            ])
-            .map_err(|e| format!("asr: parakeet joint: {e}"))?;
+            ],
+        )
+        .map_err(|e| format!("asr: parakeet joint: {e}"))?;
         let (_, out) = outputs["outputs"]
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("asr: parakeet joint output: {e}"))?;

@@ -522,6 +522,50 @@ provider is registered; inference stays fully parallel, and CPU builds (or
 `DOCLING_RS_EP=cpu`) keep the parallel start-up. No configuration needed —
 the `=1` workarounds are no longer necessary.
 
+**CUDA memory on a long-running server** (#842). ONNX Runtime gives every
+session its own BFC arena with no limit, grown by powers of two, kept for
+the session's life — and a docling pipeline holds ~10 sessions (layout, the
+TableFormer graphs, the OCR lanes, enrichment). With page-shaped tensors
+every new document is a new high-water mark, so a `docling-serve` on a
+16 GB T4 reached the device's capacity after a day of mixed PDFs and every
+conversion then failed with `BFCArena::AllocateRawInternal … Failed to
+allocate memory` (while `/ready` stayed 200). What docling.rs does now, on
+every CUDA-class run:
+
+- **Arena shrinkage after each run** — the chunks a run grew the arena by
+  go back to the driver when the run ends (ONNX Runtime's
+  `memory.enable_memory_arena_shrinkage`, passed by `docling_onnx::run`
+  on every session run); the weights and the initial chunk stay. On by
+  default under CUDA / TensorRT; `DOCLING_RS_CUDA_ARENA_SHRINK=0` keeps the
+  arenas (a few ms of `cudaMalloc` per run saved, for a one-shot batch).
+- **One worker, one OCR lane by default** — the page-worker pool and the
+  OCR lanes multiply the sessions, and on one GPU that is device memory,
+  not speed (the serial path's render-ahead already overlaps rasterization
+  with inference). `DOCLING_RS_PDF_WORKERS` / `DOCLING_RS_OCR_SESSIONS`
+  still set any count. Decided by a probe session at the first model load,
+  so an `auto` build on a host without a device keeps the CPU defaults.
+- **Knobs** on the CUDA provider itself, all unset by default (ONNX
+  Runtime's values): `DOCLING_RS_CUDA_MEM_LIMIT_MB` caps each session's
+  arena (a run that needs more fails for that document, the server stays
+  up); `DOCLING_RS_CUDA_ARENA_EXTEND=same_as_requested` extends the arena
+  by exactly the request instead of the next power of two;
+  `DOCLING_RS_CUDA_CONV_ALGO_SEARCH=heuristic|default` and
+  `DOCLING_RS_CUDA_CONV_MAX_WORKSPACE=0` trim cuDNN's per-shape workspace
+  search (`exhaustive` with the maximal workspace is the default — fastest
+  kernels, largest transient allocations); `DOCLING_RS_CUDA_DEVICE` picks
+  the device (0).
+- **Idle unload** — `docling-serve --idle-unload-secs N`
+  (`DOCLING_RS_IDLE_UNLOAD_SECS`) drops the warm pipeline, GPU memory
+  included (a T4 measured 7.5 GB → 170 MB), after N seconds without a
+  PDF/image conversion; the next one reloads it in about a second.
+
+A deployment that must never exceed a budget combines them:
+`DOCLING_RS_CUDA_MEM_LIMIT_MB=3072 DOCLING_RS_CUDA_ARENA_EXTEND=same_as_requested
+docling-serve --idle-unload-secs 600`. Not done (yet): one arena shared by
+every session through ONNX Runtime's environment allocators
+(`CreateAndRegisterAllocatorV2` + `session.use_env_allocators`), which
+`ort` 2.0.0-rc.14 has no safe binding for.
+
 CoreML defaults (#324, #602), measured on an M4 Max:
 
 - **Model format `NeuralNetwork`** (`DOCLING_RS_COREML_FORMAT`:

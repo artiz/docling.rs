@@ -519,6 +519,162 @@ fn xnnpack_ep() -> ort::ep::XNNPACK {
     ep
 }
 
+/// How the CUDA provider's BFC arena grows (#842): ONNX Runtime's default
+/// doubles the extension each time (`kNextPowerOfTwo`), so a server that has
+/// seen one large page keeps a power-of-two-sized chunk around for every
+/// session; `same_as_requested` extends by exactly the request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArenaExtend {
+    NextPowerOfTwo,
+    SameAsRequested,
+}
+
+/// cuDNN's convolution algorithm search (#842). `exhaustive` (ONNX Runtime's
+/// default) benchmarks every algorithm with its maximal workspace on the
+/// first run of each conv shape — fast kernels, but a workspace-sized
+/// allocation per new page shape; `heuristic` asks cuDNN for its pick,
+/// `default` takes cuDNN's default algorithm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConvAlgo {
+    Exhaustive,
+    Heuristic,
+    Default,
+}
+
+/// The CUDA provider's configuration (#842), read from the environment once
+/// — see [`cuda_options`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CudaOptions {
+    /// `DOCLING_RS_CUDA_DEVICE` (0): the device every session runs on, also
+    /// the device whose arena [`run_options`] shrinks.
+    device: i32,
+    /// `DOCLING_RS_CUDA_MEM_LIMIT_MB`: the arena's ceiling per session, in
+    /// MiB; unset = unbounded (ONNX Runtime's default).
+    mem_limit_mb: Option<usize>,
+    /// `DOCLING_RS_CUDA_ARENA_EXTEND`: `next_power_of_two` (default) |
+    /// `same_as_requested`.
+    arena_extend: ArenaExtend,
+    /// `DOCLING_RS_CUDA_CONV_ALGO_SEARCH`: `exhaustive` (default) |
+    /// `heuristic` | `default`.
+    conv_algo: ConvAlgo,
+    /// `DOCLING_RS_CUDA_CONV_MAX_WORKSPACE` (on): let cuDNN use its maximal
+    /// workspace for convolutions.
+    conv_max_workspace: bool,
+}
+
+impl Default for CudaOptions {
+    fn default() -> Self {
+        Self {
+            device: 0,
+            mem_limit_mb: None,
+            arena_extend: ArenaExtend::NextPowerOfTwo,
+            conv_algo: ConvAlgo::Exhaustive,
+            conv_max_workspace: true,
+        }
+    }
+}
+
+/// Parse the CUDA knobs from `get` (an environment lookup), reporting each
+/// unusable value through `warn` and keeping that knob's default. Pure, so
+/// the defaults and the vocabulary are testable on every host.
+fn cuda_options_from(
+    get: impl Fn(&str) -> Option<String>,
+    mut warn: impl FnMut(String),
+) -> CudaOptions {
+    let mut o = CudaOptions::default();
+    let lower = |v: String| v.trim().to_ascii_lowercase();
+    if let Some(v) = get("DOCLING_RS_CUDA_DEVICE") {
+        match v.trim().parse::<i32>() {
+            Ok(n) if n >= 0 => o.device = n,
+            _ => warn(format!(
+                "DOCLING_RS_CUDA_DEVICE={v:?} is not a device index; using 0"
+            )),
+        }
+    }
+    if let Some(v) = get("DOCLING_RS_CUDA_MEM_LIMIT_MB") {
+        match v.trim().parse::<usize>() {
+            Ok(0) => {}
+            Ok(mb) => o.mem_limit_mb = Some(mb),
+            Err(_) => warn(format!(
+                "DOCLING_RS_CUDA_MEM_LIMIT_MB={v:?} is not a number of MiB; leaving the arena unbounded"
+            )),
+        }
+    }
+    if let Some(v) = get("DOCLING_RS_CUDA_ARENA_EXTEND") {
+        match lower(v.clone()).as_str() {
+            "next_power_of_two" | "power_of_two" | "pow2" => {
+                o.arena_extend = ArenaExtend::NextPowerOfTwo
+            }
+            "same_as_requested" | "requested" | "exact" => {
+                o.arena_extend = ArenaExtend::SameAsRequested
+            }
+            _ => warn(format!(
+                "DOCLING_RS_CUDA_ARENA_EXTEND={v:?} is not next_power_of_two|same_as_requested; \
+                 using next_power_of_two"
+            )),
+        }
+    }
+    if let Some(v) = get("DOCLING_RS_CUDA_CONV_ALGO_SEARCH") {
+        match lower(v.clone()).as_str() {
+            "exhaustive" => o.conv_algo = ConvAlgo::Exhaustive,
+            "heuristic" => o.conv_algo = ConvAlgo::Heuristic,
+            "default" => o.conv_algo = ConvAlgo::Default,
+            _ => warn(format!(
+                "DOCLING_RS_CUDA_CONV_ALGO_SEARCH={v:?} is not exhaustive|heuristic|default; \
+                 using exhaustive"
+            )),
+        }
+    }
+    if let Some(v) = get("DOCLING_RS_CUDA_CONV_MAX_WORKSPACE") {
+        o.conv_max_workspace = !matches!(lower(v).as_str(), "0" | "false" | "no" | "off");
+    }
+    o
+}
+
+/// The CUDA knobs (#842), resolved once per process.
+#[cfg_attr(not(any(feature = "cuda", feature = "tensorrt")), allow(dead_code))]
+fn cuda_options() -> CudaOptions {
+    static OPTS: OnceLock<CudaOptions> = OnceLock::new();
+    *OPTS.get_or_init(|| {
+        cuda_options_from(docling_core::env::nonempty, |msg| {
+            eprintln!("docling-rs: {msg}")
+        })
+    })
+}
+
+/// The CUDA provider, configured from the environment (#842). ONNX Runtime's
+/// defaults — an unbounded arena per session that grows by powers of two,
+/// an exhaustive cuDNN search with the maximal workspace — are tuned for one
+/// session on one GPU; a docling pipeline holds ~10 sessions per process
+/// (layout, three TableFormer graphs, the OCR lanes, the enrichment models)
+/// and a long-running server saw their arenas ratchet up to the device's
+/// capacity (16 GB) until every conversion failed with
+/// `BFCArena::AllocateRawInternal … Failed to allocate memory`.
+/// `DOCLING_RS_CUDA_MEM_LIMIT_MB` bounds each arena,
+/// `DOCLING_RS_CUDA_ARENA_EXTEND=same_as_requested` stops the power-of-two
+/// over-allocation, `DOCLING_RS_CUDA_CONV_ALGO_SEARCH` /
+/// `DOCLING_RS_CUDA_CONV_MAX_WORKSPACE` trim cuDNN's workspace; the arena
+/// shrinkage after each run ([`run_options`]) returns what a run used.
+#[cfg(feature = "cuda")]
+fn cuda_ep() -> ort::ep::CUDA {
+    use ort::ep::{cuda::ConvAlgorithmSearch, ArenaExtendStrategy};
+    let o = cuda_options();
+    let mut ep = ort::ep::CUDA::default().with_device_id(o.device);
+    if let Some(mb) = o.mem_limit_mb {
+        ep = ep.with_memory_limit(mb << 20);
+    }
+    ep.with_arena_extend_strategy(match o.arena_extend {
+        ArenaExtend::NextPowerOfTwo => ArenaExtendStrategy::NextPowerOfTwo,
+        ArenaExtend::SameAsRequested => ArenaExtendStrategy::SameAsRequested,
+    })
+    .with_conv_algorithm_search(match o.conv_algo {
+        ConvAlgo::Exhaustive => ConvAlgorithmSearch::Exhaustive,
+        ConvAlgo::Heuristic => ConvAlgorithmSearch::Heuristic,
+        ConvAlgo::Default => ConvAlgorithmSearch::Default,
+    })
+    .with_conv_max_workspace(o.conv_max_workspace)
+}
+
 /// The dispatch list for the current choice. `None` means "register nothing"
 /// (CPU — leave the builder untouched, the pre-#74 code path).
 // The cfg-gated pushes read as sequential to clippy in single-feature builds.
@@ -533,7 +689,7 @@ fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
     let d = match choice() {
         Ep::Cpu => return None,
         #[cfg(feature = "cuda")]
-        Ep::Cuda => vec![ort::ep::CUDA::default().build().error_on_failure()],
+        Ep::Cuda => vec![cuda_ep().build().error_on_failure()],
         #[cfg(feature = "tensorrt")]
         Ep::TensorRt => vec![ort::ep::TensorRT::default().build().error_on_failure()],
         #[cfg(feature = "directml")]
@@ -548,7 +704,7 @@ fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
             #[cfg(feature = "tensorrt")]
             v.push(ort::ep::TensorRT::default().build());
             #[cfg(feature = "cuda")]
-            v.push(ort::ep::CUDA::default().build());
+            v.push(cuda_ep().build());
             // Only when `auto` was set by name (#602 — CoreML is opt-in).
             #[cfg(feature = "coreml")]
             if in_auto(Ep::CoreMl) {
@@ -692,6 +848,155 @@ fn memory_opts(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     cpu.register(&mut builder)
         .map_err(|e| format!("cpu ep: {e}"))?;
     Ok(builder)
+}
+
+/// A one-node `Identity` ONNX graph (ir 8, opset 13; `x: float[1] -> y`),
+/// hand-encoded: the smallest model a session can be created from, used to
+/// find out whether the CUDA provider initializes on this machine
+/// ([`cuda_usable`]).
+#[cfg_attr(not(any(feature = "cuda", feature = "tensorrt")), allow(dead_code))]
+const PROBE_MODEL: &[u8] = &[
+    0x08, 0x08, 0x12, 0x0c, 0x64, 0x6f, 0x63, 0x6c, 0x69, 0x6e, 0x67, 0x2d, 0x6f, 0x6e, 0x6e, 0x78,
+    0x3a, 0x52, 0x0a, 0x1a, 0x0a, 0x01, 0x78, 0x12, 0x01, 0x79, 0x1a, 0x08, 0x69, 0x64, 0x65, 0x6e,
+    0x74, 0x69, 0x74, 0x79, 0x22, 0x08, 0x49, 0x64, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x12, 0x12,
+    0x64, 0x6f, 0x63, 0x6c, 0x69, 0x6e, 0x67, 0x2d, 0x6f, 0x6e, 0x6e, 0x78, 0x2d, 0x70, 0x72, 0x6f,
+    0x62, 0x65, 0x5a, 0x0f, 0x0a, 0x01, 0x78, 0x12, 0x0a, 0x0a, 0x08, 0x08, 0x01, 0x12, 0x04, 0x0a,
+    0x02, 0x08, 0x01, 0x62, 0x0f, 0x0a, 0x01, 0x79, 0x12, 0x0a, 0x0a, 0x08, 0x08, 0x01, 0x12, 0x04,
+    0x0a, 0x02, 0x08, 0x01, 0x42, 0x04, 0x0a, 0x00, 0x10, 0x0d,
+];
+
+/// Whether a CUDA-class provider (CUDA, TensorRT) is the one the sessions
+/// run on, as far as the *choice* goes: named outright, or in `auto` with
+/// one compiled in. Under `auto` the device may still be absent — that is
+/// [`cuda_usable`]'s question.
+fn cuda_class_chosen() -> bool {
+    match choice() {
+        Ep::Cuda | Ep::TensorRt => true,
+        Ep::Auto => in_auto(Ep::Cuda) || in_auto(Ep::TensorRt),
+        Ep::Cpu | Ep::DirectMl | Ep::CoreMl | Ep::Xnnpack => false,
+    }
+}
+
+/// Whether the CUDA provider actually initializes on this machine (#842):
+/// `auto` registers it without `error_on_failure`, so a CUDA build on a host
+/// without a device (or its driver) silently converts on CPU — and a run
+/// option that names the GPU arena then fails every run ("Did not find an
+/// arena based allocator registered for device-id combination"). Decided
+/// once, by creating a session from [`PROBE_MODEL`] with the provider set to
+/// fail loudly; the CUDA context it initializes is the one the real
+/// sessions reuse, so the probe's cost is paid once per process either way.
+/// A provider named outright is already loud, so no probe is needed there.
+fn cuda_usable() -> bool {
+    static USABLE: OnceLock<bool> = OnceLock::new();
+    *USABLE.get_or_init(|| {
+        if !cuda_class_chosen() {
+            return false;
+        }
+        if choice() != Ep::Auto {
+            return true;
+        }
+        #[cfg(any(feature = "cuda", feature = "tensorrt"))]
+        {
+            let probe = || -> Result<(), String> {
+                let builder = session_builder()?;
+                #[cfg(feature = "cuda")]
+                let ep = cuda_ep().build().error_on_failure();
+                #[cfg(not(feature = "cuda"))]
+                let ep = ort::ep::TensorRT::default().build().error_on_failure();
+                let mut builder = builder
+                    .with_execution_providers([ep])
+                    .map_err(|e| e.to_string())?;
+                let _guard = CREATION.lock().unwrap_or_else(|p| p.into_inner());
+                builder
+                    .commit_from_memory(PROBE_MODEL)
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            };
+            match probe() {
+                Ok(()) => true,
+                Err(e) => {
+                    docling_core::debug_log!(
+                        "docling-onnx: the CUDA provider did not initialize ({e}); sessions run \
+                         on CPU, the GPU arena options stay off"
+                    );
+                    false
+                }
+            }
+        }
+        #[cfg(not(any(feature = "cuda", feature = "tensorrt")))]
+        false
+    })
+}
+
+/// Whether the sessions' CUDA arena is shrunk after every run (#842): on
+/// whenever a CUDA-class provider runs the sessions, `DOCLING_RS_CUDA_ARENA_SHRINK=0`
+/// opts out.
+fn arena_shrink_wanted() -> bool {
+    docling_core::env::nonempty("DOCLING_RS_CUDA_ARENA_SHRINK").is_none_or(|v| {
+        !matches!(
+            v.to_ascii_lowercase().as_str(),
+            "0" | "false" | "no" | "off"
+        )
+    })
+}
+
+/// The run options every session run in the workspace passes ([`run`]):
+/// `None` on CPU and the non-CUDA providers; under a CUDA-class provider,
+/// ONNX Runtime's `memory.enable_memory_arena_shrinkage` for the device, so
+/// the arena hands the chunks a run grew by back to the driver when the run
+/// ends instead of keeping them for the life of the session (#842: with
+/// page-shaped tensors every document is a new high-water mark, and a
+/// server's ~10 sessions each kept theirs — 15.9 GB of a 16 GB T4 after a
+/// day). The initial chunk and the weights stay; what a run needs again it
+/// reallocates, a few ms of `cudaMalloc` against a conversion of seconds.
+/// Built once; `RunOptions` is shareable across sessions and threads.
+pub fn run_options() -> Option<&'static ort::session::RunOptions> {
+    static OPTS: OnceLock<Option<ort::session::RunOptions>> = OnceLock::new();
+    OPTS.get_or_init(|| {
+        if !arena_shrink_wanted() || !cuda_usable() {
+            return None;
+        }
+        let mut opts = match ort::session::RunOptions::new() {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("docling-rs: run options unavailable ({e}); the CUDA arena is not shrunk between runs");
+                return None;
+            }
+        };
+        let device = format!("gpu:{}", cuda_options().device);
+        if let Err(e) = opts.set("memory.enable_memory_arena_shrinkage", &device) {
+            eprintln!("docling-rs: arena shrinkage for {device} not accepted ({e}); the CUDA arena is not shrunk between runs");
+            return None;
+        }
+        docling_core::debug_log!("docling-onnx: CUDA arena shrinkage after each run ({device})");
+        Some(opts)
+    })
+    .as_ref()
+}
+
+/// Run a session with the workspace's run options ([`run_options`]) — what
+/// every `Session::run` in docling-pdf, docling-asr and docling-rag goes
+/// through, so the GPU arena policy is one place.
+pub fn run<'s, 'i, 'v: 'i, const N: usize>(
+    session: &'s mut Session,
+    inputs: impl Into<ort::session::SessionInputs<'i, 'v, N>>,
+) -> ort::Result<ort::session::SessionOutputs<'s>> {
+    match run_options() {
+        Some(opts) => session.run_with_options(inputs, opts),
+        None => session.run(inputs),
+    }
+}
+
+/// Whether the sessions share one GPU, so every extra session is device
+/// memory rather than throughput (#842): under a CUDA-class provider the
+/// page-worker pool and the OCR lanes default to one — each worker holds
+/// its own layout/OCR sessions, and ~0.4 GB of host RAM per worker is
+/// several GB of VRAM per worker on a GPU, where inference is already
+/// parallel inside the device. `DOCLING_RS_PDF_WORKERS` /
+/// `DOCLING_RS_OCR_SESSIONS` still set any count. CPU, CoreML and DirectML
+/// keep their defaults.
+pub fn prefers_single_worker() -> bool {
+    cuda_class_chosen() && cuda_usable()
 }
 
 /// The process-wide session-creation lock GPU builds take (#452).
@@ -1349,5 +1654,88 @@ mod cache_guard_tests {
             .err()
             .expect("builder goes through the loader");
         assert_eq!(err, err2);
+    }
+}
+
+#[cfg(test)]
+mod cuda_option_tests {
+    use super::{cuda_options_from, ArenaExtend, ConvAlgo, CudaOptions, PROBE_MODEL};
+    use std::collections::HashMap;
+
+    fn parse(vars: &[(&str, &str)]) -> (CudaOptions, Vec<String>) {
+        let env: HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let mut warnings = Vec::new();
+        let o = cuda_options_from(|name| env.get(name).cloned(), |m| warnings.push(m));
+        (o, warnings)
+    }
+
+    #[test]
+    fn defaults_are_onnx_runtimes() {
+        let (o, warnings) = parse(&[]);
+        assert_eq!(o, CudaOptions::default());
+        assert_eq!(o.device, 0);
+        assert_eq!(o.mem_limit_mb, None);
+        assert_eq!(o.arena_extend, ArenaExtend::NextPowerOfTwo);
+        assert_eq!(o.conv_algo, ConvAlgo::Exhaustive);
+        assert!(o.conv_max_workspace);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn every_knob_parses() {
+        let (o, warnings) = parse(&[
+            ("DOCLING_RS_CUDA_DEVICE", "1"),
+            ("DOCLING_RS_CUDA_MEM_LIMIT_MB", "4096"),
+            ("DOCLING_RS_CUDA_ARENA_EXTEND", "Same_As_Requested"),
+            ("DOCLING_RS_CUDA_CONV_ALGO_SEARCH", "heuristic"),
+            ("DOCLING_RS_CUDA_CONV_MAX_WORKSPACE", "0"),
+        ]);
+        assert_eq!(o.device, 1);
+        assert_eq!(o.mem_limit_mb, Some(4096));
+        assert_eq!(o.arena_extend, ArenaExtend::SameAsRequested);
+        assert_eq!(o.conv_algo, ConvAlgo::Heuristic);
+        assert!(!o.conv_max_workspace);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn a_zero_limit_means_unbounded() {
+        let (o, warnings) = parse(&[("DOCLING_RS_CUDA_MEM_LIMIT_MB", "0")]);
+        assert_eq!(o.mem_limit_mb, None);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn bad_values_warn_and_keep_the_default() {
+        let (o, warnings) = parse(&[
+            ("DOCLING_RS_CUDA_DEVICE", "-1"),
+            ("DOCLING_RS_CUDA_MEM_LIMIT_MB", "lots"),
+            ("DOCLING_RS_CUDA_ARENA_EXTEND", "sometimes"),
+            ("DOCLING_RS_CUDA_CONV_ALGO_SEARCH", "fastest"),
+        ]);
+        assert_eq!(o, CudaOptions::default());
+        assert_eq!(warnings.len(), 4, "{warnings:?}");
+        // Each names the variable and the value it rejected.
+        assert!(warnings.iter().all(|w| w.contains("=\"")), "{warnings:?}");
+    }
+
+    /// The hand-encoded probe graph is a model ONNX Runtime accepts (on the
+    /// CPU provider here) and runs as the identity it claims to be.
+    #[test]
+    fn probe_model_is_a_valid_identity_graph() {
+        let Ok(builder) = super::session_builder() else {
+            return; // no runtime library on this host (load-dynamic)
+        };
+        let mut builder = builder;
+        let mut session = builder
+            .commit_from_memory(PROBE_MODEL)
+            .expect("the probe model loads");
+        let x = ort::value::Tensor::from_array(([1usize], vec![42.0f32])).unwrap();
+        let out = session.run(ort::inputs!["x" => x]).expect("identity runs");
+        let (_, y) = out["y"].try_extract_tensor::<f32>().unwrap();
+        assert_eq!(y, &[42.0]);
     }
 }

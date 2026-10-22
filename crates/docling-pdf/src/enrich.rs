@@ -134,9 +134,7 @@ impl PictureClassifier {
             data,
         ))
         .map_err(|e| format!("picture classifier: input: {e}"))?;
-        let outputs = self
-            .session
-            .run(ort::inputs!["input" => input])
+        let outputs = docling_onnx::run(&mut self.session, ort::inputs!["input" => input])
             .map_err(|e| format!("picture classifier: inference: {e}"))?;
         let (_, logits) = outputs[0]
             .try_extract_tensor::<f32>()
@@ -260,10 +258,9 @@ impl CodeFormula {
         let feats: Vec<f32> = {
             let input = Tensor::from_array(([n_tiles, 3, TILE as usize, TILE as usize], tiles))
                 .map_err(|e| format!("code-formula: vision input: {e}"))?;
-            let outputs = self
-                .vision
-                .run(ort::inputs!["pixel_values" => input])
-                .map_err(|e| format!("code-formula: vision: {e}"))?;
+            let outputs =
+                docling_onnx::run(&mut self.vision, ort::inputs!["pixel_values" => input])
+                    .map_err(|e| format!("code-formula: vision: {e}"))?;
             let (_, feats) = outputs["image_features"]
                 .try_extract_tensor::<f32>()
                 .map_err(|e| format!("code-formula: vision output: {e}"))?;
@@ -339,12 +336,18 @@ impl CodeFormula {
                 .map_err(|e| format!("code-formula: positions: {e}"))?;
             let next = {
                 let mut out = match cache.as_ref() {
-                    Some((k, v)) => self.decoder.run(ort::inputs![
+                    Some((k, v)) => docling_onnx::run(
+                        &mut self.decoder,
+                        ort::inputs![
                         "inputs_embeds" => embeds_t, "position_ids" => pos_t,
-                        "past_k" => k, "past_v" => v]),
-                    None => self.decoder.run(ort::inputs![
+                        "past_k" => k, "past_v" => v],
+                    ),
+                    None => docling_onnx::run(
+                        &mut self.decoder,
+                        ort::inputs![
                         "inputs_embeds" => embeds_t, "position_ids" => pos_t,
-                        "past_k" => &empty.0, "past_v" => &empty.1]),
+                        "past_k" => &empty.0, "past_v" => &empty.1],
+                    ),
                 }
                 .map_err(|e| format!("code-formula: decoder: {e}"))?;
                 let (_, logits) = out["logits"]
@@ -384,9 +387,7 @@ impl CodeFormula {
     fn embed_ids(&mut self, ids: &[i64]) -> Result<Vec<f32>, String> {
         let input = Tensor::from_array(([1usize, ids.len()], ids.to_vec()))
             .map_err(|e| format!("code-formula: ids: {e}"))?;
-        let out = self
-            .embed
-            .run(ort::inputs!["input_ids" => input])
+        let out = docling_onnx::run(&mut self.embed, ort::inputs!["input_ids" => input])
             .map_err(|e| format!("code-formula: embed: {e}"))?;
         let (_, embeds) = out["inputs_embeds"]
             .try_extract_tensor::<f32>()

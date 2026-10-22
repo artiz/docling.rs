@@ -145,7 +145,8 @@ impl NerDetector {
                     .map_err(|e| format!("ner: input {name}: {e}"))?;
                 inputs.push((name.clone(), t.into()));
             }
-            let outputs = session.run(inputs).map_err(|e| format!("ner: run: {e}"))?;
+            let outputs =
+                docling_onnx::run(&mut session, inputs).map_err(|e| format!("ner: run: {e}"))?;
             let (_, data) = outputs[0]
                 .try_extract_tensor::<f32>()
                 .map_err(|e| format!("ner: output: {e}"))?;

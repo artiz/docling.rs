@@ -168,7 +168,14 @@
 //! requests behind a mutex — PDF/image conversions serialize on it instead of
 //! reloading models. Declarative formats convert on blocking threads and run
 //! concurrently. A semaphore bounds total in-flight conversions
-//! (`--concurrency`); excess requests queue.
+//! (`--concurrency`); excess requests queue. `--idle-unload-secs N`
+//! (`DOCLING_RS_IDLE_UNLOAD_SECS`; #842) drops that warm pipeline after `N`
+//! seconds without a PDF/image conversion — its ONNX sessions and, on a GPU,
+//! their device arenas go with it (a T4 measured 7.5 GB → 170 MB) — and the
+//! next such request reloads it lazily (~1 s on a GPU); `/ready` reports
+//! `models: lazy` meanwhile. On a GPU the sessions also shrink their arenas
+//! after every run and the page-worker pool and OCR lanes default to one
+//! ([`docling_onnx::run_options`], [`docling_onnx::prefers_single_worker`]).
 //!
 //! Resource controls (#262/#263): thread pools size to the **cgroup-aware**
 //! CPU budget (a container's CPU quota clamps them; `DOCLING_RS_TF_INTRA`
@@ -196,7 +203,8 @@
 //! proxy before exposing it.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, FromRequest, Multipart, Query, State};
@@ -262,6 +270,12 @@ pub struct ServeConfig {
     /// `DOCLING_SERVE_API_KEY`, upstream's variable — the way to configure it
     /// without putting the key on a command line.
     pub api_key: Option<String>,
+    /// Drop the warm PDF/image pipeline — its ONNX sessions and, on a GPU,
+    /// their device memory — after this many seconds without a PDF/image
+    /// conversion (#842); the next one reloads it. `None` falls back to
+    /// `DOCLING_RS_IDLE_UNLOAD_SECS`; `0` (or neither) keeps it for the life
+    /// of the process.
+    pub idle_unload_secs: Option<u64>,
 }
 
 impl Default for ServeConfig {
@@ -278,6 +292,7 @@ impl Default for ServeConfig {
             result_ttl_secs: 600,
             max_memory_mb: None,
             api_key: None,
+            idle_unload_secs: None,
         }
     }
 }
@@ -286,6 +301,11 @@ struct AppState {
     /// Warm ML pipeline (mutable ONNX sessions) — one PDF/image conversion at
     /// a time, but the models stay loaded across requests.
     pipeline: Mutex<Option<(PipelineFlags, Pipeline)>>,
+    /// When the warm pipeline was last handed back by a request (or loaded):
+    /// what the idle unloader (#842) measures against. Every holder of the
+    /// pipeline lock goes through [`AppState::pipeline_slot`], whose guard
+    /// stamps this on release.
+    last_pipeline_use: Mutex<Instant>,
     /// Bounds total in-flight conversions (`Arc` so a permit can move into
     /// a streaming response's worker and outlive the handler).
     permits: Arc<Semaphore>,
@@ -311,7 +331,86 @@ enum Readiness {
     Failed(String),
 }
 
+/// The warm pipeline slot, locked (#842): [`Deref`](std::ops::Deref)s to the
+/// `Option` and stamps [`AppState::last_pipeline_use`] when dropped, so the
+/// idle clock starts when a request *finishes* with the pipeline, not when
+/// it took it — a conversion that outlasts the idle window is not unloaded
+/// behind its own back.
+struct PipelineSlot<'a> {
+    guard: MutexGuard<'a, Option<(PipelineFlags, Pipeline)>>,
+    last_use: &'a Mutex<Instant>,
+}
+
+impl std::ops::Deref for PipelineSlot<'_> {
+    type Target = Option<(PipelineFlags, Pipeline)>;
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl std::ops::DerefMut for PipelineSlot<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
+impl Drop for PipelineSlot<'_> {
+    fn drop(&mut self) {
+        *self.last_use.lock().unwrap_or_else(|p| p.into_inner()) = Instant::now();
+    }
+}
+
 impl AppState {
+    /// Lock the warm pipeline slot. Recovers a poisoned lock: one crafted
+    /// document that panics inside a conversion must not turn into a
+    /// permanent outage of the endpoint — `warm_pipeline` rebuilds or
+    /// validates whatever the slot holds.
+    fn pipeline_slot(&self) -> PipelineSlot<'_> {
+        PipelineSlot {
+            guard: self
+                .pipeline
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            last_use: &self.last_pipeline_use,
+        }
+    }
+
+    /// The idle unloader's step (#842): drop the warm pipeline when it has
+    /// sat unused for `idle` — skipped while a request holds it (that is
+    /// not idle) and when the slot is already empty. Returns whether a
+    /// pipeline was dropped. The sessions are released under the lock, so a
+    /// request arriving meanwhile waits the sub-second drop and then
+    /// reloads, rather than briefly doubling the models.
+    fn unload_idle_pipeline(&self, idle: Duration) -> bool {
+        let mut slot = match self.pipeline.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return false,
+        };
+        let last = *self
+            .last_pipeline_use
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if slot.is_none() || last.elapsed() < idle {
+            return false;
+        }
+        let started = Instant::now();
+        drop(slot.take());
+        drop(slot);
+        trim_heap();
+        let mut readiness = self.readiness.lock().unwrap_or_else(|p| p.into_inner());
+        if *readiness == Readiness::Warm {
+            *readiness = Readiness::Lazy;
+        }
+        eprintln!(
+            "docling-serve: warm pipeline unloaded after {}s idle ({:.2}s); the next PDF/image \
+             request reloads it",
+            idle.as_secs(),
+            started.elapsed().as_secs_f64()
+        );
+        true
+    }
+
     /// Admission control (#263): `Some(refusal)` when the process RSS sits
     /// above the watermark of the memory ceiling — the request should get a
     /// 503 *now* rather than push the whole server into the kernel's OOM
@@ -353,6 +452,7 @@ pub fn router(cfg: ServeConfig) -> Router {
         .map(Arc::from);
     let state = Arc::new(AppState {
         pipeline: Mutex::new(None),
+        last_pipeline_use: Mutex::new(Instant::now()),
         permits: Arc::new(Semaphore::new(cfg.concurrency.max(1))),
         jobs: Mutex::new(HashMap::new()),
         readiness: Mutex::new(if cfg.warmup {
@@ -371,10 +471,7 @@ pub fn router(cfg: ServeConfig) -> Router {
             // Hold the slot while loading: a request that arrives before
             // `/ready` (a client not behind the probe) waits for these models
             // instead of loading a second copy of its own.
-            let mut slot = st
-                .pipeline
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut slot = st.pipeline_slot();
             // `Pipeline::new` only configures — the models load lazily — so
             // warm up explicitly, the serial worker *and* the page-worker
             // pool a multi-page PDF fans out to (#548). A panic in a model
@@ -401,6 +498,31 @@ pub fn router(cfg: ServeConfig) -> Router {
                 eprintln!("docling-serve: warmup failed, /ready stays 503: {e}");
             }
             *st.readiness.lock().unwrap_or_else(|p| p.into_inner()) = next;
+        });
+    }
+    // The idle unloader (#842): flag > DOCLING_RS_IDLE_UNLOAD_SECS > never.
+    // Polls at a fraction of the window off the runtime; the drop itself —
+    // ~10 ONNX sessions, on a GPU their arenas — runs on a blocking thread.
+    let idle_unload = cfg
+        .idle_unload_secs
+        .or_else(|| docling_core::env::parse::<u64>("DOCLING_RS_IDLE_UNLOAD_SECS"))
+        .filter(|&s| s > 0)
+        .map(Duration::from_secs);
+    if let Some(idle) = idle_unload {
+        eprintln!(
+            "docling-serve: the warm pipeline unloads after {}s without a PDF/image conversion (#842)",
+            idle.as_secs()
+        );
+        let st = state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(idle_unload_period(idle));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tick.tick().await;
+                let st = st.clone();
+                // A failed join (a panic in the drop) must not stop the clock.
+                let _ = tokio::task::spawn_blocking(move || st.unload_idle_pipeline(idle)).await;
+            }
         });
     }
     Router::new()
@@ -1902,6 +2024,80 @@ fn trim_heap() {
     docling::memory::release_free_memory();
 }
 
+/// How often the idle unloader (#842) looks: a quarter of the window, at
+/// least a second and at most half a minute — an unload lands within that
+/// of the window's end, and the check itself is a `try_lock` and a clock
+/// read.
+fn idle_unload_period(idle: Duration) -> Duration {
+    (idle / 4).clamp(Duration::from_secs(1), Duration::from_secs(30))
+}
+
+#[cfg(test)]
+mod idle_unload_tests {
+    use super::*;
+
+    #[test]
+    fn period_is_a_bounded_fraction_of_the_window() {
+        assert_eq!(
+            idle_unload_period(Duration::from_secs(2)),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            idle_unload_period(Duration::from_secs(60)),
+            Duration::from_secs(15)
+        );
+        assert_eq!(
+            idle_unload_period(Duration::from_secs(3600)),
+            Duration::from_secs(30)
+        );
+    }
+
+    fn state(idle_unload_secs: Option<u64>) -> Arc<AppState> {
+        Arc::new(AppState {
+            pipeline: Mutex::new(None),
+            last_pipeline_use: Mutex::new(Instant::now()),
+            permits: Arc::new(Semaphore::new(1)),
+            jobs: Mutex::new(HashMap::new()),
+            readiness: Mutex::new(Readiness::Warm),
+            memory_ceiling_mb: None,
+            cfg: ServeConfig {
+                idle_unload_secs,
+                ..ServeConfig::default()
+            },
+        })
+    }
+
+    /// `Pipeline::new()` loads no models (they are lazy), so the slot's life
+    /// cycle runs in plain CI: an unused pipeline is dropped once the window
+    /// passed, never before, never while a request holds it, and the stamp
+    /// moves when a request hands the slot back.
+    #[test]
+    fn unloads_only_an_idle_pipeline() {
+        let st = state(Some(1));
+        *st.pipeline_slot() = Some((PipelineFlags::default(), Pipeline::new().unwrap()));
+        let idle = Duration::from_millis(50);
+        assert!(
+            !st.unload_idle_pipeline(idle),
+            "just released: not idle yet"
+        );
+        std::thread::sleep(Duration::from_millis(80));
+        {
+            let held = st.pipeline_slot();
+            assert!(!st.unload_idle_pipeline(idle), "a request holds it");
+            assert!(held.is_some());
+        }
+        assert!(
+            !st.unload_idle_pipeline(idle),
+            "handing it back restarted the clock"
+        );
+        std::thread::sleep(Duration::from_millis(80));
+        assert!(st.unload_idle_pipeline(idle));
+        assert!(st.pipeline_slot().is_none());
+        assert_eq!(*st.readiness.lock().unwrap(), Readiness::Lazy);
+        assert!(!st.unload_idle_pipeline(idle), "nothing left to unload");
+    }
+}
+
 /// Server-side cap on pages rasterized per `to=images` request (#243). A small
 /// upload can be a 1000-page PDF, and every rendered page is hundreds of KB of
 /// PNG held in the response (or an async job's stored result) — without a cap
@@ -1954,10 +2150,7 @@ fn rasterize_pages(
     // when the `pdfium` feature renders with it, is not thread-safe) — hold
     // it for the render even though no models run here, so a rasterization
     // can't race a concurrent PDF/image conversion.
-    let _pdf_owner = state
-        .pipeline
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _pdf_owner = state.pipeline_slot();
     let password = options.convert.password.as_deref();
     let pages = docling::render_pdf_pages(&source.bytes, password, range, scale)
         .map_err(|e| ApiError::Internal(e.to_string()))?;
@@ -2604,10 +2797,7 @@ fn convert_document_inner(
             // one bad document into a permanent outage of this endpoint. The
             // pipeline state is rebuilt/validated by `warm_pipeline`, so reusing
             // it after a panic is safe.
-            let mut guard = state
-                .pipeline
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut guard = state.pipeline_slot();
             let pipeline = warm_pipeline(&mut guard, options)?;
             // Every per-request setting of the shared warm pipeline, read as
             // typed values off the validated option set (#577) — set
@@ -3168,6 +3358,7 @@ mod vlm_tests {
     fn state(allow_url_fetch: bool) -> AppState {
         AppState {
             pipeline: Mutex::new(None),
+            last_pipeline_use: Mutex::new(std::time::Instant::now()),
             permits: Arc::new(Semaphore::new(1)),
             jobs: Mutex::new(Default::default()),
             readiness: Mutex::new(super::Readiness::Lazy),

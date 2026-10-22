@@ -3497,6 +3497,14 @@ fn run_serve(args: Vec<String>) -> ExitCode {
                 None => return serve_usage("--max-memory-mb needs a number (0 disables)"),
             },
             "--warmup" => cfg.warmup = true,
+            // #842: drop the warm pipeline (and its GPU memory) after N idle
+            // seconds; 0 = never. Unset = DOCLING_RS_IDLE_UNLOAD_SECS.
+            "--idle-unload-secs" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(v) => cfg.idle_unload_secs = Some(v),
+                None => {
+                    return serve_usage("--idle-unload-secs needs a number of seconds (0 = never)")
+                }
+            },
             "--allow-url-fetch" => cfg.allow_url_fetch = true,
             "--no-url-fetch" => cfg.allow_url_fetch = false,
             "--strict" => cfg.strict = true,
@@ -3527,7 +3535,7 @@ fn run_serve(args: Vec<String>) -> ExitCode {
 #[cfg(feature = "serve")]
 fn serve_usage(err: &str) -> ExitCode {
     eprintln!("error: {err}");
-    eprintln!("usage: docling-rs serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--allow-url-fetch] [--strict] [--api-key KEY]");
+    eprintln!("usage: docling-rs serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--idle-unload-secs N] [--allow-url-fetch] [--strict] [--api-key KEY]");
     ExitCode::from(2)
 }
 

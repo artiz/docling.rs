@@ -271,8 +271,7 @@ impl TableFormer {
     fn encode(&mut self, img: &RgbImage) -> Result<EncodeOut, String> {
         let input = crate::timing::timed("tf.preprocess", || preprocess(img))?;
         let mut enc_out = crate::timing::timed("tf.encoder", || {
-            self.encoder
-                .run(ort::inputs!["image" => input])
+            docling_onnx::run(&mut self.encoder, ort::inputs!["image" => input])
                 .map_err(|e| format!("tableformer: encode: {e}"))
         })?;
         let mut per_layer = Vec::new();
@@ -360,25 +359,37 @@ impl TableFormer {
                 let tag_t = Tensor::from_array(([1usize, 1usize], vec![last]))
                     .map_err(|e| format!("tableformer: tag: {e}"))?;
                 match (cache.a.as_ref(), cache.b.as_ref()) {
-                    (Some(k), Some(v)) => self.decoder.run(ort::inputs![
+                    (Some(k), Some(v)) => docling_onnx::run(
+                        &mut self.decoder,
+                        ort::inputs![
                         "tag" => tag_t, "cross_k" => ck, "cross_v" => cv,
-                        "cache_k" => k, "cache_v" => v]),
-                    _ => self.decoder.run(ort::inputs![
+                        "cache_k" => k, "cache_v" => v],
+                    ),
+                    _ => docling_onnx::run(
+                        &mut self.decoder,
+                        ort::inputs![
                         "tag" => tag_t, "cross_k" => ck, "cross_v" => cv,
                         "cache_k" => &empty.0,
-                        "cache_v" => empty.1.as_ref().expect("kv empty cache has both halves")]),
+                        "cache_v" => empty.1.as_ref().expect("kv empty cache has both halves")],
+                    ),
                 }
             }
             DecoderStyle::Legacy => {
                 let tags_t = Tensor::from_array(([tags.len(), 1usize], tags.to_vec()))
                     .map_err(|e| format!("tableformer: tags: {e}"))?;
                 match cache.a.as_ref() {
-                    None => self.decoder.run(ort::inputs![
+                    None => docling_onnx::run(
+                        &mut self.decoder,
+                        ort::inputs![
                         "tags" => tags_t, "cross_k" => ck, "cross_v" => cv,
-                        "cache" => &empty.0]),
-                    Some(c) => self.decoder.run(ort::inputs![
+                        "cache" => &empty.0],
+                    ),
+                    Some(c) => docling_onnx::run(
+                        &mut self.decoder,
+                        ort::inputs![
                         "tags" => tags_t, "cross_k" => ck, "cross_v" => cv,
-                        "cache" => c]),
+                        "cache" => c],
+                    ),
                 }
             }
         }
@@ -450,9 +461,7 @@ impl TableFormer {
         for (name, v) in per_layer {
             inputs.push((name.as_str().into(), v.into()));
         }
-        let mut dout = self
-            .decoder
-            .run(inputs)
+        let mut dout = docling_onnx::run(&mut self.decoder, inputs)
             .map_err(|e| format!("tableformer: decode: {e}"))?;
         let (_, logits) = dout["logits"]
             .try_extract_tensor::<f32>()
@@ -644,9 +653,11 @@ impl TableFormer {
         let tag_h = Tensor::from_array(([book.n, EMBED_DIM], std::mem::take(&mut book.hiddens)))
             .map_err(|e| format!("tableformer: tag_h: {e}"))?;
         let bout = crate::timing::timed("tf.bbox", || {
-            self.bbox
-                .run(ort::inputs!["enc_out" => eo, "tag_h" => tag_h])
-                .map_err(|e| format!("tableformer: bbox: {e}"))
+            docling_onnx::run(
+                &mut self.bbox,
+                ort::inputs!["enc_out" => eo, "tag_h" => tag_h],
+            )
+            .map_err(|e| format!("tableformer: bbox: {e}"))
         })?;
         let (_, raw) = bout["boxes"]
             .try_extract_tensor::<f32>()
