@@ -163,7 +163,7 @@ paths:
                 images: { $ref: "#/components/schemas/Images" }
                 no_ocr: { type: boolean }
                 skip_ocr: { type: boolean, deprecated: true }
-                text_layer_only: { type: boolean }
+                text_layer_only: { oneOf: [{ type: boolean }, { type: string, enum: ["auto"] }] }
                 password: { type: string, format: password }
                 pdf_password: { type: string, format: password, description: "Alias of password." }
                 force_full_page_ocr: { type: boolean }
@@ -820,12 +820,19 @@ components:
           deprecated: true
           description: "`no_ocr` under its pre-2.0 name, still read."
         text_layer_only:
-          type: boolean
+          oneOf:
+            - type: boolean
+            - type: string
+              enum: ["auto"]
           default: false
           description: >
             PDF/image — skip layout/OCR/TableFormer; emit the embedded text
             layer only (what `no_ocr` meant before 2.0, #611). Wins over
-            `no_ocr` when both are set.
+            `no_ocr` when both are set. `auto` decides per document: the
+            text layer alone when it carries the document (no model
+            touched), the full pipeline — OCR included — when it does not
+            (a scanned / image-only file, or a vestigial layer of a few
+            typed-in form fields over scans).
         password:
           type: string
           format: password
@@ -1548,7 +1555,7 @@ components:
     skip_ocr:
       { name: skip_ocr, in: query, deprecated: true, schema: { type: boolean } }
     text_layer_only:
-      { name: text_layer_only, in: query, schema: { type: boolean } }
+      { name: text_layer_only, in: query, schema: { oneOf: [{ type: boolean }, { type: string, enum: ["auto"] }] } }
     password:
       { name: password, in: query, schema: { type: string, format: password } }
     pdf_password:

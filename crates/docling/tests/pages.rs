@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use docling::{parse_page_range, DocumentConverter, ImageMode, SourceDocument};
+use docling::{parse_page_range, DocumentConverter, ImageMode, SourceDocument, TextLayerOnly};
 
 /// Workspace root (this crate lives at `crates/docling`).
 fn repo_root() -> PathBuf {
@@ -473,5 +473,64 @@ fn heading_hierarchy_differentiates_levels_when_enabled() {
     assert!(
         leveled.lines().any(|l| l == "## 1 INTRODUCTION"),
         "bookmark-matched heading takes outline level 1"
+    );
+}
+
+/// `text_layer_only=auto` on a digital PDF: the text layer carries the
+/// document, so the conversion is `text_layer_only=true`'s byte for byte —
+/// and needs no model (the OCR model is not pointed at here, and the layout
+/// model is never asked for).
+#[test]
+fn text_layer_auto_converts_a_digital_pdf_from_its_text_layer() {
+    let on = DocumentConverter::new()
+        .text_layer_only(true)
+        .convert(pdf_source())
+        .expect("text layer only")
+        .document;
+    let auto = DocumentConverter::new()
+        .text_layer_only(TextLayerOnly::Auto)
+        .convert(pdf_source())
+        .expect("auto on a digital PDF")
+        .document;
+    assert!(!on.export_to_markdown().trim().is_empty());
+    assert_eq!(on.export_to_markdown(), auto.export_to_markdown());
+    assert_eq!(on.confidence, auto.confidence);
+}
+
+/// `text_layer_only=auto` on a scan: no usable text layer, so the full
+/// pipeline runs and OCR reads the page — the default conversion's output,
+/// where `text_layer_only=true` returns nothing. Needs the layout and OCR
+/// models.
+#[test]
+fn text_layer_auto_runs_ocr_on_a_scan() {
+    if !ocr_models_ready() {
+        eprintln!("skipping: the OCR models are not present");
+        return;
+    }
+    let src = || {
+        SourceDocument::from_file(
+            repo_root().join("tests/data/scanned/sources/ocr_test_raster.pdf"),
+        )
+        .expect("scanned fixture")
+    };
+    let md = |mode: TextLayerOnly| {
+        DocumentConverter::new()
+            .text_layer_only(mode)
+            .convert(src())
+            .expect("convert")
+            .document
+            .export_to_markdown()
+    };
+    let on = md(TextLayerOnly::On);
+    assert!(
+        on.trim().is_empty(),
+        "the text path reads nothing off a scan"
+    );
+    let auto = md(TextLayerOnly::Auto);
+    assert!(!auto.trim().is_empty(), "auto falls through to OCR");
+    assert_eq!(
+        auto,
+        md(TextLayerOnly::Off),
+        "auto on a scan is the default pipeline"
     );
 }

@@ -552,7 +552,8 @@ struct ConvertArgs {
     #[schemars(transform = drop_null)]
     images: Option<String>,
     /// Conversion options, docling.rs's shared set (docs/OPTIONS.md), e.g.
-    /// {"pages": "1-5"}, {"text_layer_only": true} (digital PDFs, fastest),
+    /// {"pages": "1-5"}, {"text_layer_only": true} (digital PDFs, fastest;
+    /// "auto" = the text layer when it has text, OCR when it has none),
     /// {"ocr_lang": "ch"}, {"force_full_page_ocr": true},
     /// {"do_picture_ocr": true} (OCR pictures inside Office files),
     /// {"password": "…"}, {"compact_tables": false}. A value may also be
@@ -1309,7 +1310,7 @@ mod tests {
             to: "json".into(),
             images: ImageMode::Placeholder,
             options: ConvertOptions {
-                text_layer_only: Some(true),
+                text_layer_only: Some(docling::TextLayerOnly::On),
                 pages: pages.map(str::to_string),
                 ..Default::default()
             },

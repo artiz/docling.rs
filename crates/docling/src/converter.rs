@@ -232,6 +232,7 @@ fn sniff_xml(bytes: &[u8]) -> InputFormat {
 }
 use crate::error::ConversionError;
 use crate::format::InputFormat;
+use crate::options::TextLayerOnly;
 use crate::progress::{
     Callbacks, EnrichmentStep, ProgressCallback, ProgressPrinter, ProgressReporter,
 };
@@ -281,8 +282,8 @@ pub struct DocumentConverter {
     no_table_former: bool,
     no_text_panels: bool,
     /// The text layer only, no models (#611: `--text-layer-only`, the
-    /// pre-2.0 `--no-ocr`).
-    text_layer_only: bool,
+    /// pre-2.0 `--no-ocr`) — or `auto`, per document.
+    text_layer_only: TextLayerOnly,
     /// Skip OCR, keep layout and tables — docling's `do_ocr=False` (#611:
     /// `--no-ocr`, `--skip-ocr`).
     no_ocr: bool,
@@ -522,7 +523,10 @@ struct PipelineSwitches {
 impl PipelineSwitches {
     fn of(c: &DocumentConverter) -> Self {
         Self {
-            text_layer_only: c.text_layer_only,
+            // `Auto` is the full model set with a per-conversion switch
+            // (`configure_pipeline`), so the warm pipeline serves digital and
+            // scanned documents in turn without a rebuild.
+            text_layer_only: c.text_layer_only == TextLayerOnly::On,
             no_ocr: c.no_ocr,
             no_table_former: c.no_table_former,
             no_text_panels: c.no_text_panels,
@@ -588,7 +592,7 @@ impl Default for DocumentConverter {
             ebcdic_layout: None,
             no_table_former: false,
             no_text_panels: false,
-            text_layer_only: false,
+            text_layer_only: TextLayerOnly::Off,
             no_ocr: false,
             password: None,
             force_full_page_ocr: false,
@@ -779,6 +783,7 @@ impl DocumentConverter {
         progress: Option<docling_pdf::PageProgressHook>,
     ) {
         p.set_progress(progress);
+        p.set_text_layer_auto(self.text_layer_only == TextLayerOnly::Auto);
         p.set_ocr_textline_orientation(self.ocr_textline_orientation);
         p.set_ocr_lang(self.ocr_lang_choice());
         p.set_ocr_engine(self.ocr_engine_choice());
@@ -818,7 +823,7 @@ impl DocumentConverter {
         }
         // No text layer anywhere in the selection.
         #[cfg(feature = "pdf")]
-        if !self.text_layer_only && !self.no_ocr {
+        if self.text_layer_only != TextLayerOnly::On && !self.no_ocr {
             let pngs = djvu::rasterize_pages(&source.bytes, self.page_range)?;
             let mut pipeline = self
                 .ml_pipeline(reporter.page_hook())
@@ -1929,7 +1934,7 @@ impl DocumentConverter {
     #[cfg(feature = "pdf")]
     fn picture_reader(&self) -> Option<PictureReader> {
         static WARNED: std::sync::Once = std::sync::Once::new();
-        if self.no_ocr || self.text_layer_only {
+        if self.no_ocr || self.text_layer_only == TextLayerOnly::On {
             WARNED.call_once(|| {
                 eprintln!(
                     "warning: picture OCR requested, but OCR is disabled (no_ocr / \
@@ -2121,8 +2126,20 @@ impl DocumentConverter {
     /// layout model. The fastest possible PDF path, but pages with no embedded
     /// text layer (scanned/image-only PDFs) yield no text at all — convert those
     /// without this flag. Implies [`no_table_former`](Self::no_table_former).
-    pub fn text_layer_only(mut self, enable: bool) -> Self {
-        self.text_layer_only = enable;
+    ///
+    /// Takes a `bool`, or [`TextLayerOnly::Auto`]: per document, the text
+    /// layer alone when it carries the document (no model loaded), the full
+    /// pipeline — OCR included — when it does not (a scanned / image-only
+    /// file, or a vestigial layer of a few typed-in form fields over scans;
+    /// `docling_pdf::text_layer_has_text`). The verdict is the whole
+    /// document's, decided before any model is touched: a digital file with
+    /// a few scanned pages inserted keeps the text path, and those pages
+    /// come back empty as under `true`. For an SVG, `auto` is the native
+    /// `<text>` extraction when the file has text and the ML image route
+    /// when it has none; a DjVu already falls back to OCR by itself, which
+    /// `true` alone disables.
+    pub fn text_layer_only(mut self, mode: impl Into<TextLayerOnly>) -> Self {
+        self.text_layer_only = mode.into();
         self
     }
 
@@ -2433,7 +2450,7 @@ impl DocumentConverter {
             let mut ocr = None;
             if opts.images == docling_core::ImageRedaction::BoxOut
                 && !self.no_ocr
-                && !self.text_layer_only
+                && self.text_layer_only != TextLayerOnly::On
             {
                 // The OCR models only — no layout, no TableFormer.
                 match docling_pdf::Pipeline::new() {
@@ -3024,11 +3041,27 @@ impl DocumentConverter {
                 // instead — the SVG carries its text natively, so skipping OCR
                 // must not mean losing it.
                 #[cfg(feature = "pdf")]
-                InputFormat::Svg if !self.text_layer_only && !self.no_ocr => {
+                InputFormat::Svg if self.text_layer_only == TextLayerOnly::Off && !self.no_ocr => {
                     let png = crate::backend::svg::rasterize_png(&source.bytes)?;
                     self.ml_pipeline(reporter.page_hook())
                         .and_then(|mut p| p.convert_image(&png, &source.name))
                         .map_err(|e| ConversionError::with_source("svg", e))?
+                }
+                // `text_layer_only=auto` on an SVG: its own `<text>` when it
+                // has any (the SVG carries its text natively), the ML image
+                // route only for a file of pure graphics — the text-first
+                // rule a PDF follows, applied here.
+                #[cfg(feature = "pdf")]
+                InputFormat::Svg if self.text_layer_only == TextLayerOnly::Auto && !self.no_ocr => {
+                    match crate::backend::SvgBackend.convert(source) {
+                        Ok(doc) => doc,
+                        Err(_) => {
+                            let png = crate::backend::svg::rasterize_png(&source.bytes)?;
+                            self.ml_pipeline(reporter.page_hook())
+                                .and_then(|mut p| p.convert_image(&png, &source.name))
+                                .map_err(|e| ConversionError::with_source("svg", e))?
+                        }
+                    }
                 }
                 // SVG without the ML pipeline (pdf-text / wasm builds) or with
                 // --no-ocr / --text-layer-only: pure-Rust <text> extraction, flat
@@ -3183,6 +3216,12 @@ mod tests {
         let full = PipelineSwitches::of(&DocumentConverter::new());
         let text = PipelineSwitches::of(&DocumentConverter::new().text_layer_only(true));
         assert_ne!(full, text);
+        // `auto` keeps the full model set: the switch is per conversion, so
+        // the warm pipeline is never rebuilt between a digital and a scanned
+        // document.
+        let auto =
+            PipelineSwitches::of(&DocumentConverter::new().text_layer_only(TextLayerOnly::Auto));
+        assert_eq!(full, auto);
         let built = |w: &WarmPipeline| w.slot.lock().unwrap().as_ref().map(|(s, _)| *s);
         assert_eq!(built(&warm), None, "nothing loads before the first lease");
         drop(warm.lease(full).unwrap());

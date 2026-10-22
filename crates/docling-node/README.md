@@ -302,7 +302,8 @@ The constructor takes the same PDF/image options as the one-shot calls —
 (RapidOCR's text-line orientation handling, #666), `noOcr` (docling's `--no-ocr`:
 never OCR, keep layout and tables; `skipOcr` is its pre-2.0 name),
 `textLayerOnly` (the text layer only, no models — what `noOcr` meant before
-2.0, #611), `password` (an encrypted PDF's or Office document's password,
+2.0, #611; `"auto"` = that path when the text layer carries the document,
+the full pipeline with OCR when it does not), `password` (an encrypted PDF's or Office document's password,
 #611/#625; `pdfPassword`, its earlier name, still works), `forceFullPageOcr`, `noTextPanels`, `headingHierarchy`, `pages`,
 `imagesScale` / `pageImages`
 (picture-crop resolution in px per point and the JSON page images, docling's

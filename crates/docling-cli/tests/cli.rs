@@ -1695,3 +1695,21 @@ fn progress_flag_prints_the_pages_to_stderr() {
     let (_, _, err) = run(&["--progress", "--no-progress", "--text-layer-only", pdf]);
     assert_eq!(err, "");
 }
+
+/// `--text-layer-only=auto`: on a digital PDF the text-layer output of
+/// `--text-layer-only`, byte for byte (no model needed); the `=` form takes
+/// the bools too, and any other value is a usage error.
+#[test]
+fn text_layer_only_auto_flag() {
+    let pdf = format!("{PDF_FIXTURES}/multi_page.pdf");
+    let on = run(&[&pdf, "--text-layer-only"]);
+    assert_eq!(on.0, 0, "stderr: {}", on.2);
+    let auto = run(&[&pdf, "--text-layer-only=auto"]);
+    assert_eq!(auto.0, 0, "stderr: {}", auto.2);
+    assert_eq!(on.1, auto.1);
+    let on_eq = run(&[&pdf, "--text-layer-only=true"]);
+    assert_eq!(on_eq.1, on.1);
+    let (code, _, err) = run(&[&pdf, "--text-layer-only=sometimes"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("true, false, auto"), "stderr: {err}");
+}

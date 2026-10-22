@@ -150,8 +150,11 @@ pub struct ConverterOptions {
     pub skip_ocr: Option<bool>,
     /// Skip the whole PDF ML stack and read the embedded text layer only —
     /// the CLI's `--text-layer-only` (what `noOcr` meant before 2.0, #611).
-    /// Default `false`.
-    pub text_layer_only: Option<bool>,
+    /// Default `false`. `"auto"` decides per document: the text layer alone
+    /// when it carries the document (no model touched), the full pipeline —
+    /// OCR included — when it does not.
+    #[serde(serialize_with = "ser_text_layer_only")]
+    pub text_layer_only: Option<Either<bool, String>>,
     /// The password of an encrypted PDF or Office document — .docx/.xlsx/
     /// .pptx/.doc/.xls/.ppt (#611, #625).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -484,8 +487,11 @@ pub struct ConvertOptions {
     pub skip_ocr: Option<bool>,
     /// Skip the whole PDF ML stack and read the embedded text layer only —
     /// the CLI's `--text-layer-only` (what `noOcr` meant before 2.0, #611).
-    /// Default `false`.
-    pub text_layer_only: Option<bool>,
+    /// Default `false`. `"auto"` decides per document: the text layer alone
+    /// when it carries the document (no model touched), the full pipeline —
+    /// OCR included — when it does not.
+    #[serde(serialize_with = "ser_text_layer_only")]
+    pub text_layer_only: Option<Either<bool, String>>,
     /// The password of an encrypted PDF or Office document — .docx/.xlsx/
     /// .pptx/.doc/.xls/.ppt (#611, #625).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -785,6 +791,19 @@ impl RawResult {
 /// `docling::ConvertOptions` lacks (`to`, `imageMode`, `allowedFormats`, …)
 /// are this surface's own and left behind. One mapping for the one-shot
 /// options, the `DocumentConverter` class and the warm `Pipeline`.
+/// `textLayerOnly` on the wire: the bool, or the string (`"auto"`), as the
+/// engine's option reads it.
+fn ser_text_layer_only<S: serde::Serializer>(
+    v: &Option<Either<bool, String>>,
+    s: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    match v {
+        None => s.serialize_none(),
+        Some(Either::A(flag)) => s.serialize_bool(*flag),
+        Some(Either::B(text)) => s.serialize_str(text),
+    }
+}
+
 fn shared_options<T: Serialize>(o: &T) -> Result<docling::ConvertOptions> {
     serde_json::to_value(o)
         .and_then(serde_json::from_value)
@@ -1568,8 +1587,9 @@ pub struct Pipeline {
 struct WarmPipelineConfig {
     /// docling's `do_ocr=False` (`noOcr`).
     no_ocr: bool,
-    /// The text-layer fast path (`textLayerOnly`).
-    text_layer_only: bool,
+    /// The text-layer fast path (`textLayerOnly`), or its per-document
+    /// `auto`.
+    text_layer_only: docling::TextLayerOnly,
     /// The password of an encrypted PDF or Office document (#611, #625).
     password: Option<String>,
     no_table_former: bool,
@@ -1609,7 +1629,7 @@ fn warm_pipeline_config(o: &ConverterOptions) -> Result<WarmPipelineConfig> {
     s.validate().map_err(option_err)?;
     Ok(WarmPipelineConfig {
         no_ocr: s.ocr_disabled(),
-        text_layer_only: s.text_layer_only.unwrap_or(false),
+        text_layer_only: s.text_layer_only.unwrap_or_default(),
         password: s.password.clone(),
         no_table_former: s.no_table_former.unwrap_or(false),
         force_full_page_ocr: s.force_full_page_ocr.unwrap_or(false),
@@ -1677,7 +1697,8 @@ impl Pipeline {
             // docling-pdf's pre-2.0 names: its `skip_ocr` is do_ocr=False,
             // its `no_ocr` the text-layer fast path (#611).
             .skip_ocr(warm.no_ocr)
-            .no_ocr(warm.text_layer_only)
+            .no_ocr(warm.text_layer_only == docling::TextLayerOnly::On)
+            .text_layer_auto(warm.text_layer_only == docling::TextLayerOnly::Auto)
             .no_table_former(warm.no_table_former)
             .force_full_page_ocr(warm.force_full_page_ocr)
             .no_text_panels(warm.no_text_panels)
@@ -2912,6 +2933,43 @@ mod tests {
     /// option the one-shot path honours (#471) — the same shared option set
     /// as `DocumentConverter`, resolved into the engine's typed values, with
     /// `ocrLang` read against the engine it drives (#460): Tesseract's `-l`
+    /// `textLayerOnly` is the bool it always was or the string `"auto"`,
+    /// which the warm pipeline keeps as its per-document switch; another
+    /// string is an `InvalidArg` naming the option.
+    #[test]
+    fn warm_pipeline_reads_text_layer_only_auto() {
+        let with = |v: Either<bool, String>| {
+            warm_pipeline_config(&ConverterOptions {
+                text_layer_only: Some(v),
+                ..Default::default()
+            })
+        };
+        assert_eq!(
+            with(Either::A(true)).unwrap().text_layer_only,
+            docling::TextLayerOnly::On
+        );
+        assert_eq!(
+            with(Either::A(false)).unwrap().text_layer_only,
+            docling::TextLayerOnly::Off
+        );
+        assert_eq!(
+            with(Either::B("auto".into())).unwrap().text_layer_only,
+            docling::TextLayerOnly::Auto
+        );
+        let err = with(Either::B("sometimes".into())).unwrap_err();
+        assert!(
+            err.reason.contains("text_layer_only"),
+            "reason: {}",
+            err.reason
+        );
+        let one_shot = shared_options(&ConvertOptions {
+            text_layer_only: Some(Either::B("auto".into())),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(one_shot.text_layer_only, Some(docling::TextLayerOnly::Auto));
+    }
+
     /// list under Tesseract, the en/ch recognizer under PP-OCR.
     #[test]
     fn warm_pipeline_reads_the_pdf_options() {
@@ -2945,7 +3003,7 @@ mod tests {
         );
         // `skipOcr` is read as `noOcr` (its pre-2.0 name, #611).
         assert!(got.no_ocr);
-        assert!(!got.text_layer_only);
+        assert_eq!(got.text_layer_only, docling::TextLayerOnly::Off);
         assert!(got.force_full_page_ocr);
         assert!(got.no_text_panels);
         assert!(got.heading_hierarchy);
@@ -2973,7 +3031,7 @@ mod tests {
             got,
             WarmPipelineConfig {
                 no_ocr: false,
-                text_layer_only: false,
+                text_layer_only: docling::TextLayerOnly::Off,
                 password: None,
                 no_table_former: false,
                 force_full_page_ocr: false,

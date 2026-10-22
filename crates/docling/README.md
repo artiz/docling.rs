@@ -64,7 +64,7 @@ everywhere. The ones most conversions reach for:
 | Wire name | CLI | Meaning |
 |---|---|---|
 | `pages` | `--pages A-B` | PDF page window (#80) |
-| `no_ocr` · `text_layer_only` · `force_full_page_ocr` | `--no-ocr` · `--text-layer-only` · `--force-full-page-ocr` | never OCR, layout and tables kept · the text layer alone, no ML · OCR every page even with a text layer |
+| `no_ocr` · `text_layer_only` · `force_full_page_ocr` | `--no-ocr` · `--text-layer-only[=auto]` · `--force-full-page-ocr` | never OCR, layout and tables kept · the text layer alone, no ML (`auto`: per document — the text layer when it carries the document, the pipeline with OCR when it does not) · OCR every page even with a text layer |
 | `no_table_former` | `--no-table-former` | geometric tables instead of TableFormer |
 | `ocr_lang` · `ocr_engine` | `--ocr-lang` · `--ocr-engine` | `en` / `ch` / BCP-47; `ppocr` or `tesseract` (#460) |
 | `heading_hierarchy` | `--heading-hierarchy` | infer PDF heading levels (#302) |
@@ -275,7 +275,10 @@ and defaults in [`docs/OPTIONS.md`](../../docs/OPTIONS.md):
   a stream ends with a `Timeout` error item.
 - `--text-layer-only`: no ML at all — the embedded text cells as flat
   paragraphs, the fastest path; a scanned PDF comes back empty rather than
-  erroring. `--no-ocr` (docling's `--no-ocr` since 2.0, #611) keeps layout
+  erroring. `--text-layer-only=auto` decides per document: that fast path
+  when the text layer carries the document (no model loaded), the full
+  pipeline — OCR included — when it does not (a scan, or a vestigial layer
+  of a few typed-in form fields); `TextLayerOnly::Auto` in the API. `--no-ocr` (docling's `--no-ocr` since 2.0, #611) keeps layout
   and TableFormer but never runs OCR; `--no-table-former` keeps OCR but
   reconstructs tables geometrically. `--force-full-page-ocr` is the
   opposite: OCR every page from its render even when a text layer exists

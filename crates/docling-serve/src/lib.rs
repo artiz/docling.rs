@@ -2835,6 +2835,7 @@ fn convert_document_inner(
             // images (#519/#520), the heading pass (#302), the budget (#497).
             let o = &options.convert;
             pipeline.set_pages(o.page_range().map_err(bad)?);
+            pipeline.set_text_layer_auto(o.text_layer_only == Some(docling::TextLayerOnly::Auto));
             pipeline.set_ocr_engine(o.ocr_engine().map_err(bad)?);
             pipeline.set_ocr_lang(o.ocr_lang().map_err(bad)?);
             pipeline.set_tesseract_lang(o.tesseract_lang().map_err(bad)?);
@@ -2939,7 +2940,9 @@ impl PipelineFlags {
     fn of(options: &ConvertOptions) -> Self {
         let o = &options.convert;
         Self {
-            text_layer_only: o.text_layer_only.unwrap_or(false),
+            // `auto` is a per-request switch on the full model set (set with
+            // the other per-request settings below), never a rebuild.
+            text_layer_only: o.text_layer_only == Some(docling::TextLayerOnly::On),
             no_ocr: o.ocr_disabled(),
             no_table_former: o.no_table_former.unwrap_or(false),
             no_text_panels: o.no_text_panels.unwrap_or(false),
@@ -3248,7 +3251,7 @@ mod pipeline_flag_tests {
         let default_opts = ConvertOptions::default();
         let text_layer_opts = ConvertOptions {
             convert: docling::ConvertOptions {
-                text_layer_only: Some(true),
+                text_layer_only: Some(docling::TextLayerOnly::On),
                 ..Default::default()
             },
             ..ConvertOptions::default()

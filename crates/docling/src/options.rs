@@ -155,7 +155,11 @@ pub struct ConvertOptions {
     /// Per-document budget in seconds for the PDF pipeline (#497).
     pub document_timeout: Option<f64>,
     /// Skip the whole ML stack: text layer only (#611; `no_ocr` before 2.0).
-    pub text_layer_only: Option<bool>,
+    /// `true` / `false`, or `auto` — the text layer alone when it carries the
+    /// document, the full pipeline (OCR) when it does not
+    /// ([`TextLayerOnly`]).
+    #[serde(deserialize_with = "de_text_layer_only")]
+    pub text_layer_only: Option<TextLayerOnly>,
     /// Keep layout + TableFormer, never run OCR — docling's `do_ocr=False`,
     /// its CLI's `--no-ocr` (#611).
     pub no_ocr: Option<bool>,
@@ -278,6 +282,130 @@ pub struct ConvertOptions {
     pub vlm_prompt: Option<String>,
     /// `max_tokens` per completion (default 8192); 0 is rejected.
     pub vlm_max_tokens: Option<usize>,
+}
+
+/// How far a PDF goes before the ML stack: [`DocumentConverter::text_layer_only`].
+///
+/// On the wire the option is the bool it always was — `true` / `false` — or
+/// the string `auto`; a text surface (query parameter, multipart field,
+/// CLI `--text-layer-only=…`) also takes `1`/`0`, `yes`/`no`, `on`/`off`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextLayerOnly {
+    /// The full pipeline: layout, TableFormer, OCR on the pages without a
+    /// text layer (the default).
+    #[default]
+    Off,
+    /// The embedded text layer alone, no model loaded: flat paragraphs in
+    /// reading order; a scanned page yields nothing (`true`).
+    On,
+    /// Per document: as `On` when the text layer carries the document, as
+    /// `Off` — the pipeline, OCR included — when it does not (a scanned /
+    /// image-only file, or a vestigial layer of a few typed-in form fields
+    /// over scans). Decided from the text layer alone before any model is
+    /// touched, so a digital PDF pays no model load and a scanned one loses
+    /// no text. The verdict is the whole document's: a digital file with a
+    /// few scanned pages inserted keeps the text path, and those pages come
+    /// back empty as under `On`.
+    Auto,
+}
+
+impl TextLayerOnly {
+    /// The option's accepted spellings, for error messages.
+    pub const ACCEPTED: &'static str = "true, false, auto";
+
+    /// Parse the wire spelling (case-insensitive); `None` for any other.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "auto" => Some(Self::Auto),
+            "1" | "true" | "yes" | "on" => Some(Self::On),
+            "0" | "false" | "no" | "off" => Some(Self::Off),
+            _ => None,
+        }
+    }
+
+    /// The wire spelling: `true`, `false`, `auto`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "false",
+            Self::On => "true",
+            Self::Auto => "auto",
+        }
+    }
+}
+
+impl From<bool> for TextLayerOnly {
+    fn from(on: bool) -> Self {
+        if on {
+            Self::On
+        } else {
+            Self::Off
+        }
+    }
+}
+
+impl std::fmt::Display for TextLayerOnly {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for TextLayerOnly {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or_else(|| {
+            format!(
+                "text_layer_only: expected one of {}, got {s:?}",
+                Self::ACCEPTED
+            )
+        })
+    }
+}
+
+/// On the wire the two bool values stay bools — a JSON body that sent
+/// `"text_layer_only": true` before the `auto` value reads back unchanged —
+/// and `auto` is the string.
+impl Serialize for TextLayerOnly {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Off => s.serialize_bool(false),
+            Self::On => s.serialize_bool(true),
+            Self::Auto => s.serialize_str("auto"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TextLayerOnly {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Flag(bool),
+            Count(u64),
+            Text(String),
+        }
+        let parsed = match Raw::deserialize(d)? {
+            Raw::Flag(b) => Some(Self::from(b)),
+            Raw::Count(0) => Some(Self::Off),
+            Raw::Count(1) => Some(Self::On),
+            Raw::Count(_) => None,
+            Raw::Text(s) => Self::parse(&s),
+        };
+        parsed.ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "text_layer_only: expected one of {}",
+                Self::ACCEPTED
+            ))
+        })
+    }
+}
+
+/// `text_layer_only` on the wire: absent, a bool, or the string `auto`
+/// ([`TextLayerOnly`]).
+fn de_text_layer_only<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<TextLayerOnly>, D::Error> {
+    Option::<TextLayerOnly>::deserialize(d)
 }
 
 /// What a picture is asked for (#670): a caption, or the text it carries.
@@ -1548,7 +1676,7 @@ mod tests {
         assert_eq!(o.ocr_scale, Some(2.0));
         assert_eq!(o.pages.as_deref(), Some("3"));
         assert_eq!(o.strict, Some(true));
-        assert_eq!(o.text_layer_only, Some(false));
+        assert_eq!(o.text_layer_only, Some(TextLayerOnly::Off));
         assert_eq!(o.ocr_lang, None);
         assert_eq!(o.redact_kinds.as_deref(), Some("email, phone"));
         let bad = |v: serde_json::Value| {
@@ -1840,7 +1968,7 @@ mod tests {
         )
         .expect("both spellings parse");
         assert!(both.ocr_disabled());
-        assert_eq!(both.text_layer_only, Some(true));
+        assert_eq!(both.text_layer_only, Some(TextLayerOnly::On));
         assert_eq!(both.password.as_deref(), Some("1234"));
         let neutral: ConvertOptions = serde_json::from_str(r#"{"password": "x"}"#).unwrap();
         assert_eq!(neutral.password.as_deref(), Some("x"));
@@ -1851,5 +1979,78 @@ mod tests {
         let merged = new.merge_over(both);
         assert!(merged.ocr_disabled());
         assert_eq!(merged.password.as_deref(), Some("1234"));
+    }
+
+    /// `text_layer_only` on the wire: the bool it always was, the string
+    /// `auto`, and the text surfaces' spellings — through the typed JSON
+    /// body, the loose (query / multipart) reading and a merge round trip.
+    #[test]
+    fn text_layer_only_reads_bools_and_auto() {
+        let typed = |v: serde_json::Value| -> Option<TextLayerOnly> {
+            serde_json::from_value::<ConvertOptions>(serde_json::json!({ "text_layer_only": v }))
+                .unwrap()
+                .text_layer_only
+        };
+        assert_eq!(typed(serde_json::json!(true)), Some(TextLayerOnly::On));
+        assert_eq!(typed(serde_json::json!(false)), Some(TextLayerOnly::Off));
+        assert_eq!(typed(serde_json::json!("auto")), Some(TextLayerOnly::Auto));
+        assert_eq!(typed(serde_json::json!("AUTO")), Some(TextLayerOnly::Auto));
+        assert_eq!(typed(serde_json::json!(null)), None);
+        let err = serde_json::from_value::<ConvertOptions>(
+            serde_json::json!({ "text_layer_only": "sometimes" }),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("true, false, auto"), "{err}");
+
+        let loose = |v: serde_json::Value| {
+            ConvertOptions::from_loose_json(
+                serde_json::json!({ "text_layer_only": v })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        };
+        assert_eq!(
+            loose(serde_json::json!("auto")).unwrap().text_layer_only,
+            Some(TextLayerOnly::Auto)
+        );
+        assert_eq!(
+            loose(serde_json::json!("yes")).unwrap().text_layer_only,
+            Some(TextLayerOnly::On)
+        );
+        assert_eq!(
+            loose(serde_json::json!(1)).unwrap().text_layer_only,
+            Some(TextLayerOnly::On)
+        );
+        assert_eq!(
+            loose(serde_json::json!("off")).unwrap().text_layer_only,
+            Some(TextLayerOnly::Off)
+        );
+        assert!(loose(serde_json::json!("maybe")).is_err());
+
+        // The merge serializes and reads back: `auto` survives it, and the
+        // bools stay bools on the wire.
+        let auto = ConvertOptions {
+            text_layer_only: Some(TextLayerOnly::Auto),
+            ..Default::default()
+        };
+        let merged = merge_options(auto.clone(), ConvertOptions::default());
+        assert_eq!(merged.text_layer_only, Some(TextLayerOnly::Auto));
+        assert_eq!(
+            serde_json::to_value(&auto).unwrap()["text_layer_only"],
+            serde_json::json!("auto")
+        );
+        let on = ConvertOptions {
+            text_layer_only: Some(TextLayerOnly::On),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&on).unwrap()["text_layer_only"],
+            serde_json::json!(true)
+        );
+        assert_eq!("auto".parse::<TextLayerOnly>(), Ok(TextLayerOnly::Auto));
+        assert_eq!(TextLayerOnly::from(true), TextLayerOnly::On);
+        assert_eq!(TextLayerOnly::Auto.to_string(), "auto");
     }
 }

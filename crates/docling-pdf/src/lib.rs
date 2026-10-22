@@ -390,6 +390,32 @@ pub fn convert_text_layer_pages(
     Ok(doc)
 }
 
+/// Whether a PDF's embedded text layer is the document's text — the verdict
+/// behind [`Pipeline::text_layer_auto`]: `true` when the pages carry real
+/// text, `false` for a scanned / image-only file or a vestigial layer (a few
+/// typed-in form fields over scans; [`textparse::TextLayerTally`]'s rule,
+/// the one [`convert_text_layer`] answers with an empty document). Pure
+/// Rust, no render, no model: the pages are parsed only until the verdict
+/// is settled — on a digital document, by the first page or two; a scanned
+/// one is walked to the end, which is cheap (its content streams hold no
+/// text). Every page counts, not just a page window: the window is the
+/// caller's output selection, the document's nature is the whole file's.
+/// An unreadable file is an error, as on every other path.
+pub fn text_layer_has_text(bytes: &[u8], password: Option<&str>) -> Result<bool, PdfError> {
+    let Some(mut parser) = textparse::PageTextParser::open_with_password(bytes, password) else {
+        return Err(PdfError::Document(UNREADABLE.into()));
+    };
+    let total = parser.page_count();
+    let mut tally = textparse::TextLayerTally::default();
+    for i in 0..total {
+        if tally.proves_text(total) {
+            return Ok(true);
+        }
+        tally.add(&parser.text_page(i));
+    }
+    Ok(!tally.is_vestigial())
+}
+
 /// Threads ONNX inference may use, capped by `DOCLING_RS_PDF_THREADS` if set.
 /// Defaults to the available parallelism (ort otherwise picks a low number).
 #[cfg(feature = "ml")]
@@ -652,6 +678,55 @@ type PageOut = (
     // The page image, when page images are requested (#520).
     Option<docling_core::PictureImage>,
 );
+
+/// One page from its text layer alone — the fastest path: no layout, OCR
+/// or TableFormer inference at all. The embedded text cells (if any) become
+/// flat, line-grouped paragraphs in reading order via the same
+/// orphan-region machinery that normally rescues text the detector missed —
+/// here it rescues *all* of it. A page with no text layer (scanned /
+/// image-only) yields nothing. Shared by the `no_ocr` worker branch
+/// (images, METS) and the worker-less PDF loop of
+/// [`Pipeline::convert_text_only`], so `text_layer_only=true` and an
+/// `auto` document with text come out byte-identical.
+#[cfg(feature = "ml")]
+fn text_only_page(
+    page: &PdfPage,
+    images_scale: Option<f32>,
+) -> (
+    Vec<Node>,
+    Vec<(String, String)>,
+    docling_core::confidence::PageConfidence,
+) {
+    let parse = quality::parse_score(&page.cells);
+    let mut regions = Vec::new();
+    assemble::add_orphan_regions(&mut regions, &page.cells);
+    let table_rows = vec![None; regions.len()];
+    let enrich_out = vec![None; regions.len()];
+    let conf = quality::page_confidence(parse, &regions, &[]);
+    let (nodes, links) = timing::timed("assemble_page", || {
+        assemble::assemble_page(page, regions, &table_rows, &enrich_out, images_scale)
+    });
+    (nodes, links, conf)
+}
+
+/// The page's image for the document's page images (#520) under `images`:
+/// `None` unless page images were requested, or when the page has no bitmap
+/// (the text-layer-only paths never render one).
+#[cfg(feature = "ml")]
+fn page_image_under(
+    images: ImageOutput,
+    n: usize,
+    page: &PdfPage,
+) -> Option<docling_core::PictureImage> {
+    if !images.page_images {
+        return None;
+    }
+    let image = assemble::page_image(page, images.scale);
+    if image.is_none() {
+        docling_core::debug_log!("page {}: no page bitmap for the page image", n + 1);
+    }
+    image
+}
 
 #[cfg(feature = "ml")]
 /// A page between region resolution and TableFormer: what `prepare_page`
@@ -1090,21 +1165,10 @@ impl Worker {
     /// lazily-loaded OCR model), so it is safe to run concurrently across pages.
     fn process(&mut self, n: usize, page: &mut PdfPage) -> Result<PageOut, PdfError> {
         if self.no_ocr {
-            // Fastest path: no layout/OCR/TableFormer inference at all. The PDF's
-            // embedded text cells (if any) become flat, line-grouped paragraphs in
-            // reading order via the same orphan-region machinery that normally
-            // rescues text the detector missed — here it rescues *all* of it.
-            // Pages with no embedded text layer (scanned/image-only) yield nothing;
+            // Fastest path (`text_only_page`): the text layer alone, nothing
+            // inferred. Pages with no embedded text layer yield nothing;
             // convert those without `no_ocr`.
-            let parse = quality::parse_score(&page.cells);
-            let mut regions = Vec::new();
-            assemble::add_orphan_regions(&mut regions, &page.cells);
-            let table_rows = vec![None; regions.len()];
-            let enrich_out = vec![None; regions.len()];
-            let conf = quality::page_confidence(parse, &regions, &[]);
-            let (nodes, links) = timing::timed("assemble_page", || {
-                assemble::assemble_page(page, regions, &table_rows, &enrich_out, self.images.scale)
-            });
+            let (nodes, links, conf) = text_only_page(page, self.images.scale);
             return Ok((nodes, links, conf, self.page_image(n, page)));
         }
         self.normalize_orientation(n, page)?;
@@ -1137,14 +1201,7 @@ impl Worker {
     /// when the page has no bitmap (the text-layer-only `no_ocr` path never
     /// renders one).
     fn page_image(&self, n: usize, page: &PdfPage) -> Option<docling_core::PictureImage> {
-        if !self.images.page_images {
-            return None;
-        }
-        let image = assemble::page_image(page, self.images.scale);
-        if image.is_none() {
-            docling_core::debug_log!("page {}: no page bitmap for the page image", n + 1);
-        }
-        image
+        page_image_under(self.images, n, page)
     }
 
     /// The pages of a batch the text detector should sweep (#429): bitmap
@@ -2241,6 +2298,9 @@ pub struct Pipeline {
     no_table_former: bool,
     /// Skip layout, OCR, and TableFormer entirely. See [`Pipeline::no_ocr`].
     no_ocr: bool,
+    /// Per document: the text layer alone when it carries the text, the
+    /// full pipeline otherwise. See [`Pipeline::text_layer_auto`].
+    text_layer_auto: bool,
     /// Keep layout + TableFormer, never OCR (#244). See [`Pipeline::skip_ocr`].
     skip_ocr: bool,
     /// OCR every page even when it carries a text layer. See
@@ -2298,6 +2358,7 @@ impl Pipeline {
             parallel_min: pdf_parallel_min(),
             no_table_former: false,
             no_ocr: false,
+            text_layer_auto: false,
             skip_ocr: false,
             force_full_page_ocr: false,
             no_text_panels: false,
@@ -2569,11 +2630,36 @@ impl Pipeline {
     /// tables, code blocks, or pictures, since that structure comes from the
     /// layout model. The fastest possible PDF path, but pages with no embedded
     /// text layer (scanned/image-only PDFs) yield no text at all — convert those
-    /// without this flag. Implies `no_table_former`. No effect if a worker is
-    /// already loaded; set this before the first conversion.
+    /// without this flag. Implies `no_table_former`. A PDF conversion reads
+    /// the flag per call (its pages never touch a worker); image and METS
+    /// pages read the flag the workers were loaded with, so set it before
+    /// the first conversion for those.
     pub fn no_ocr(mut self, disable: bool) -> Self {
         self.no_ocr = disable;
         self
+    }
+
+    /// Decide per document between the two: a PDF whose embedded text layer
+    /// carries its text converts as under [`no_ocr`](Self::no_ocr) — the
+    /// text layer alone, flat paragraphs, no model loaded, no inference —
+    /// and one without a usable layer (scanned / image-only, or a vestigial
+    /// layer of a few typed-in form fields; [`text_layer_has_text`]) runs the
+    /// full pipeline, which OCRs its pages. The verdict is the document's,
+    /// not a page's: a digital file with a few scanned pages inserted keeps
+    /// the text path, and those pages come back empty as under `no_ocr`.
+    /// `no_ocr` wins when both are set; forcing (`force_full_page_ocr`,
+    /// `ocr_mode`) is read only on the pipeline side of the verdict, as
+    /// under `no_ocr`. A per-conversion setting: the workers and their
+    /// models are untouched, so a warm pipeline serving digital and scanned
+    /// documents in turn reloads nothing.
+    pub fn text_layer_auto(mut self, enable: bool) -> Self {
+        self.text_layer_auto = enable;
+        self
+    }
+
+    /// Set [`text_layer_auto`](Self::text_layer_auto) on a built pipeline.
+    pub fn set_text_layer_auto(&mut self, enable: bool) {
+        self.text_layer_auto = enable;
     }
 
     /// Never run OCR, but keep layout detection and TableFormer — docling's
@@ -2890,17 +2976,87 @@ impl Pipeline {
         // Serial vs parallel is decided by the pages actually converted: a
         // 3-page window over a 500-page PDF should not pay the pool load.
         let selected = range.map_or(pages, |(a, b)| b - a + 1);
-        let (document, done, timed_out) =
-            if self.target_workers >= 2 && selected >= self.parallel_min {
-                self.convert_parallel(bytes, password, name, range, selected, deadline)?
-            } else {
-                self.convert_serial(bytes, password, name, range, selected, deadline)?
-            };
+        let (document, done, timed_out) = if self.text_only_for(bytes, password)? {
+            self.convert_text_only(bytes, password, name, range, selected, deadline)?
+        } else if self.target_workers >= 2 && selected >= self.parallel_min {
+            self.convert_parallel(bytes, password, name, range, selected, deadline)?
+        } else {
+            self.convert_serial(bytes, password, name, range, selected, deadline)?
+        };
         timing::report();
         Ok(Converted {
             document,
             completion: self.completion(timed_out, done, selected),
         })
+    }
+
+    /// Whether this document converts from its text layer alone: always
+    /// under [`no_ocr`](Self::no_ocr); under
+    /// [`text_layer_auto`](Self::text_layer_auto), when the layer carries
+    /// the text ([`text_layer_has_text`]). Decided before any worker — and
+    /// so any model — is touched.
+    fn text_only_for(&self, bytes: &[u8], password: Option<&str>) -> Result<bool, PdfError> {
+        if self.no_ocr {
+            return Ok(true);
+        }
+        if !self.text_layer_auto {
+            return Ok(false);
+        }
+        let has_text = text_layer_has_text(bytes, password)?;
+        docling_core::debug_log!(
+            "text_layer_only=auto: {}",
+            if has_text {
+                "the text layer carries the document, converting it alone"
+            } else {
+                "no usable text layer, running the full pipeline"
+            }
+        );
+        Ok(has_text)
+    }
+
+    /// The text layer alone, page by page — no worker, no model, no page
+    /// bitmap: [`text_only_page`] on each extracted page, in order. The path
+    /// of [`no_ocr`](Self::no_ocr) and of an [`auto`](Self::text_layer_auto)
+    /// document with text; byte-identical to the serial walk, since the
+    /// worker's `no_ocr` branch is the same function.
+    fn convert_text_only(
+        &mut self,
+        bytes: &[u8],
+        password: Option<&str>,
+        name: &str,
+        range: Option<(usize, usize)>,
+        selected: usize,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(DoclingDocument, usize, bool), PdfError> {
+        let mut doc = DoclingDocument::new(name);
+        let mut confs = std::collections::BTreeMap::new();
+        let images = self.images;
+        let progress = self.progress.clone();
+        let mut done = 0usize;
+        let timed_out =
+            Self::render_ahead(bytes, password, false, true, range, deadline, |n, page| {
+                let (mut nodes, links, conf) = text_only_page(&page, images.scale);
+                assemble::stamp_page_no(&mut nodes, n + 1);
+                if let Some(img) = page_image_under(images, n, &page) {
+                    doc.page_images.insert(n + 1, img);
+                }
+                doc.nodes.extend(nodes);
+                doc.links.extend(links);
+                confs.insert(n + 1, conf);
+                done += 1;
+                if let Some(cb) = &progress {
+                    cb(PageProgress {
+                        page_no: n + 1,
+                        pages_done: done,
+                        pages_selected: selected,
+                    });
+                }
+                Ok(())
+            })?;
+        assemble::merge_continuations(&mut doc.nodes);
+        self.apply_heading_hierarchy(&mut doc.nodes, Some(bytes));
+        doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
+        Ok((doc, done, timed_out))
     }
 
     /// Stream pages one at a time through the primary worker — render → process →
@@ -3204,7 +3360,9 @@ impl Pipeline {
         let pages = pdfium_backend::page_count(bytes, password)?;
         let range = self.resolve_range(pages)?;
         let selected = range.map_or(pages, |(a, b)| b - a + 1);
-        let r = if self.target_workers >= 2 && selected >= self.parallel_min {
+        let r = if self.text_only_for(bytes, password)? {
+            self.convert_streaming_text_only(bytes, password, range, deadline, selected, emit)
+        } else if self.target_workers >= 2 && selected >= self.parallel_min {
             self.convert_streaming_parallel(bytes, password, range, deadline, selected, emit)
         } else {
             self.convert_streaming_serial(bytes, password, range, deadline, selected, emit)
@@ -3212,6 +3370,43 @@ impl Pipeline {
         timing::report();
         let (done, timed_out) = r?;
         Ok(self.completion(timed_out, done, selected))
+    }
+
+    /// Streaming from the text layer alone ([`convert_text_only`](Self::convert_text_only)'s
+    /// emitting twin): extract → [`text_only_page`] → emit, one page at a
+    /// time, holding back only the tail that might still merge into the next
+    /// page. No worker, no model, no bitmap.
+    fn convert_streaming_text_only<F>(
+        &mut self,
+        bytes: &[u8],
+        password: Option<&str>,
+        range: Option<(usize, usize)>,
+        deadline: Option<std::time::Instant>,
+        selected: usize,
+        mut emit: F,
+    ) -> Result<(usize, bool), PdfError>
+    where
+        F: FnMut(Vec<Node>, Vec<(String, String)>) -> Result<(), PdfError>,
+    {
+        let mut asm = assemble::StreamAssembler::new();
+        let images = self.images;
+        let progress = self.progress.clone();
+        let mut done = 0usize;
+        let timed_out =
+            Self::render_ahead(bytes, password, false, true, range, deadline, |n, page| {
+                let (nodes, links, _conf) = text_only_page(&page, images.scale);
+                done += 1;
+                if let Some(cb) = &progress {
+                    cb(PageProgress {
+                        page_no: n + 1,
+                        pages_done: done,
+                        pages_selected: selected,
+                    });
+                }
+                emit(asm.push(nodes), links)
+            })?;
+        emit(asm.finish(), Vec::new())?;
+        Ok((done, timed_out))
     }
 
     /// Serial streaming: render → process → emit, one page at a time, holding back
@@ -3839,5 +4034,57 @@ mod ocr_input_tests {
         let mut down = None;
         let (v, s) = super::ocr_input(&mut down, &img, 2.0, Some(1.0));
         assert_eq!((v.width(), v.height(), s), (100, 50, 1.0));
+    }
+}
+
+#[cfg(all(test, feature = "ml"))]
+mod text_layer_auto_tests {
+    use std::path::Path;
+
+    fn fixture(rel: &str) -> Vec<u8> {
+        std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(rel),
+        )
+        .unwrap()
+    }
+
+    /// The verdict behind `text_layer_only=auto`: a digital PDF's layer
+    /// carries it, a scan's does not, and garbage is the file's error.
+    #[test]
+    fn text_layer_verdict_tells_digital_from_scanned() {
+        let digital = fixture("tests/data/pdf/sources/multi_page.pdf");
+        assert!(super::text_layer_has_text(&digital, None).unwrap());
+        let scanned = fixture("tests/data/scanned/sources/ocr_test_raster.pdf");
+        assert!(!super::text_layer_has_text(&scanned, None).unwrap());
+        let err = super::text_layer_has_text(b"garbage", None).unwrap_err();
+        assert!(err.to_string().contains("not a readable PDF"), "{err}");
+    }
+
+    /// On a digital PDF `auto` is the `no_ocr` path byte for byte — the
+    /// buffered and the streaming conversion alike — and touches no model:
+    /// the pipeline below has none to load (`Pipeline::new` loads lazily),
+    /// so a conversion that reached a worker would fail.
+    #[test]
+    fn auto_on_a_digital_pdf_is_the_text_layer_path() {
+        let bytes = fixture("tests/data/pdf/sources/multi_page.pdf");
+        let mut only = super::Pipeline::new().unwrap().no_ocr(true);
+        let mut auto = super::Pipeline::new().unwrap().text_layer_auto(true);
+        let a = only.convert(&bytes, None, "multi_page.pdf").unwrap();
+        let b = auto.convert(&bytes, None, "multi_page.pdf").unwrap();
+        assert!(!a.nodes.is_empty());
+        assert_eq!(a.export_to_markdown(), b.export_to_markdown());
+        assert_eq!(a.confidence, b.confidence);
+        let streamed = |p: &mut super::Pipeline| {
+            let mut nodes = Vec::new();
+            p.convert_streaming(&bytes, None, "multi_page.pdf", |page, _| {
+                nodes.extend(page);
+                Ok(())
+            })
+            .unwrap();
+            nodes
+        };
+        assert_eq!(streamed(&mut only), streamed(&mut auto));
     }
 }
