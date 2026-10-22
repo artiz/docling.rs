@@ -54,6 +54,7 @@ def export_to_pandoc(
     *,
     image_mode: Any = "embedded",
     api_version: Optional[str] = None,
+    heading_depth: str = "docling",
 ) -> str:
     """The document as Pandoc's JSON AST.
 
@@ -64,11 +65,18 @@ def export_to_pandoc(
     :func:`save_as_pandoc` for ``"referenced"`` images.
     ``api_version`` (e.g. ``"1.23"``) must name the version the serializer
     writes; any other raises ``ValueError``.
+    ``heading_depth`` is the ``Header`` depth a section heading gets (#848):
+    ``"docling"`` (default: the title is ``Header 1``, a level-*n* section
+    heading ``Header n+1`` — docling's Markdown / HTML depth) or ``"source"``
+    (``Header n``: a DOCX ``Heading 1`` is ``Header 1``, as ``pandoc -f docx``
+    reads it).
     """
     mode = _mode(image_mode)
     if mode == "referenced":
         raise ValueError("image_mode='referenced' writes files; use save_as_pandoc()")
-    ast, _ = _pandoc_from_json(_document_json(doc), mode, "artifacts", api_version)
+    ast, _ = _pandoc_from_json(
+        _document_json(doc), mode, "artifacts", api_version, heading_depth
+    )
     return ast
 
 
@@ -79,6 +87,7 @@ def save_as_pandoc(
     image_mode: Any = "embedded",
     artifacts_dir: Optional[Union[str, Path]] = None,
     api_version: Optional[str] = None,
+    heading_depth: str = "docling",
 ) -> None:
     """Write the Pandoc JSON AST to ``filename``. With
     ``image_mode="referenced"`` the pictures are written under
@@ -95,7 +104,7 @@ def save_as_pandoc(
     except ValueError:
         link_dir = artifacts_dir
     ast, images = _pandoc_from_json(
-        _document_json(doc), mode, link_dir.as_posix(), api_version
+        _document_json(doc), mode, link_dir.as_posix(), api_version, heading_depth
     )
     for rel, data in images:
         path = filename.parent / rel

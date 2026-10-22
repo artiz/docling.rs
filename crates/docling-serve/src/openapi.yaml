@@ -111,6 +111,7 @@ paths:
         - { $ref: "#/components/parameters/page_break_placeholder" }
         - { $ref: "#/components/parameters/md_page_break_placeholder" }
         - { $ref: "#/components/parameters/pandoc_api_version" }
+        - { $ref: "#/components/parameters/pandoc_heading_depth" }
         - { $ref: "#/components/parameters/list_attachments" }
         - { $ref: "#/components/parameters/ebcdic_layout" }
         - { $ref: "#/components/parameters/pages" }
@@ -207,6 +208,7 @@ paths:
                 page_break_placeholder: { type: string, examples: ["<!-- page break -->"] }
                 md_page_break_placeholder: { type: string, description: "Alias of page_break_placeholder." }
                 pandoc_api_version: { type: string, examples: ["1.23"] }
+                pandoc_heading_depth: { type: string, enum: [docling, source] }
                 pages: { type: string, examples: ["2-5"] }
                 ocr_lang: { $ref: "#/components/schemas/OcrLang" }
                 ocr_mode: { $ref: "#/components/schemas/OcrMode" }
@@ -1102,6 +1104,15 @@ components:
             reads. Only 1.23 (pandoc-types 1.23.1.1, Pandoc 3.x) is written;
             any other version is a 400 rather than a document Pandoc would
             reject.
+        pandoc_heading_depth:
+          type: string
+          enum: [docling, source]
+          description: >
+            `to=pandoc` (#848): the `Header` depth of a section heading —
+            `docling` (default; the title is `Header 1`, a level-n section
+            heading `Header n+1`, docling's Markdown / HTML depth) or `source`
+            (`Header n`: a DOCX `Heading 1` is `Header 1`, as `pandoc -f docx`
+            reads it).
         page_break_placeholder:
           type: string
           examples: ["<!-- page break -->"]

@@ -357,6 +357,12 @@ pub struct OutputOptions {
     pub image_mode: Option<String>,
     /// Directory name used in `referenced` image links. Default `"artifacts"`.
     pub artifacts_dir: Option<String>,
+    /// `to: "pandoc"` (#848): the `Header` depth a section heading gets —
+    /// `"docling"` (default: the title is `Header 1`, a level-n section
+    /// heading `Header n+1`, docling's Markdown / HTML depth) or `"source"`
+    /// (`Header n`: a DOCX `Heading 1` is `Header 1`, as `pandoc -f docx`
+    /// reads it).
+    pub pandoc_heading_depth: Option<String>,
     /// Text inserted between pages in Markdown output — docling's
     /// `export_to_markdown(page_break_placeholder=…)`, e.g.
     /// `"<!-- page break -->"`. A break lands only between two rendered
@@ -562,6 +568,8 @@ pub struct ConvertOptions {
     pub to: Option<String>,
     pub image_mode: Option<String>,
     pub artifacts_dir: Option<String>,
+    /// See [`OutputOptions::pandoc_heading_depth`] (#848).
+    pub pandoc_heading_depth: Option<String>,
     /// See [`OutputOptions::page_break_placeholder`].
     pub page_break_placeholder: Option<String>,
 }
@@ -694,6 +702,8 @@ struct ConvertConfig {
     to: OutputKind,
     image_mode: ImageMode,
     artifacts_dir: String,
+    /// `--pandoc-heading-depth` (#848).
+    pandoc_heading_depth: docling::pandoc::HeadingDepth,
     /// docling's `page_break_placeholder` for the Markdown export (an
     /// *output* option on this surface — `OutputOptions` — so it overrides
     /// whatever the converter options carry).
@@ -823,6 +833,7 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         to,
         image_mode: parse_image_mode(o.image_mode.as_deref(), to)?,
         artifacts_dir: o.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
+        pandoc_heading_depth: parse_heading_depth(o.pandoc_heading_depth.as_deref())?,
         page_break_placeholder: o.page_break_placeholder,
         show_progress: o.show_progress.unwrap_or(false),
         progress: None,
@@ -898,6 +909,7 @@ fn render_doc(
             .export_to_pandoc_json_with(&docling::pandoc::PandocExportOptions {
                 image_mode: cfg.image_mode,
                 artifacts_dir: cfg.artifacts_dir.clone(),
+                heading_depth: cfg.pandoc_heading_depth,
                 ..Default::default()
             })
             // Only an explicit `api_version` can fail, and none is set.
@@ -1282,6 +1294,7 @@ impl DocumentConverter {
             to,
             image_mode: parse_image_mode(out.image_mode.as_deref(), to)?,
             artifacts_dir: out.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
+            pandoc_heading_depth: parse_heading_depth(out.pandoc_heading_depth.as_deref())?,
             page_break_placeholder: out.page_break_placeholder,
             show_progress: self.show_progress,
             progress: None,
@@ -2017,6 +2030,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
             parse_output_kind(out.to.as_deref())?,
         )?,
         artifacts_dir: out.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
+        pandoc_heading_depth: parse_heading_depth(out.pandoc_heading_depth.as_deref())?,
         page_break_placeholder: out.page_break_placeholder,
         show_progress: false,
         progress: None,
@@ -2643,6 +2657,13 @@ fn parse_output_kind(to: Option<&str>) -> Result<OutputKind> {
             ),
         )),
     }
+}
+
+/// `pandocHeadingDepth` (#848): `"docling"` (default) or `"source"`.
+fn parse_heading_depth(s: Option<&str>) -> Result<docling::pandoc::HeadingDepth> {
+    s.unwrap_or_default()
+        .parse()
+        .map_err(|e: String| Error::from_reason(format!("pandocHeadingDepth: {e}")))
 }
 
 /// `imageMode` for output `to`: unset is placeholder, except embedded for

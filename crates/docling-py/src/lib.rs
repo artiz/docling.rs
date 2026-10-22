@@ -1439,12 +1439,14 @@ type PyArtifacts<'py> = Vec<(String, Bound<'py, PyBytes>)>;
 /// `referenced` returns the image files as `(path under artifacts_dir,
 /// bytes)` pairs for the caller to write. `api_version`, when given, must be
 /// one the serializer writes (1.23) — anything else raises `ValueError`.
+/// `heading_depth` is `"docling"` (default) or `"source"` (#848).
 #[pyfunction]
 #[pyo3(signature = (
     document_json,
     image_mode = "embedded".to_string(),
     artifacts_dir = "artifacts".to_string(),
     api_version = None,
+    heading_depth = None,
 ))]
 fn pandoc_from_json<'py>(
     py: Python<'py>,
@@ -1452,7 +1454,13 @@ fn pandoc_from_json<'py>(
     image_mode: String,
     artifacts_dir: String,
     api_version: Option<String>,
+    heading_depth: Option<String>,
 ) -> PyResult<(String, PyArtifacts<'py>)> {
+    let heading_depth = heading_depth
+        .as_deref()
+        .unwrap_or_default()
+        .parse()
+        .map_err(|e: String| PyValueError::new_err(format!("heading_depth: {e}")))?;
     let image_mode = match image_mode.as_str() {
         "placeholder" => docling::ImageMode::Placeholder,
         "embedded" => docling::ImageMode::Embedded,
@@ -1467,6 +1475,7 @@ fn pandoc_from_json<'py>(
         image_mode,
         artifacts_dir,
         api_version,
+        heading_depth,
         ..Default::default()
     };
     let (json, images) = py

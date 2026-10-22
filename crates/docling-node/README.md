@@ -485,6 +485,11 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   `imageMode`).
 - `imageMode`: `"placeholder"` (default), `"embedded"`, or `"referenced"`.
 - `artifactsDir`: directory name used in `referenced` links (default `"artifacts"`).
+- `pandocHeadingDepth`: the `Header` depth a section heading gets in the
+  `"pandoc"` AST (#848) — `"docling"` (default: the title is `Header 1`, a
+  level-*n* section heading `Header n+1`, docling's Markdown / HTML depth) or
+  `"source"` (`Header n`: a DOCX `Heading 1` is `Header 1`, as `pandoc -f docx`
+  reads it).
 - `pageBreakPlaceholder`: text inserted between pages in Markdown output —
   docling's `export_to_markdown(page_break_placeholder=…)`, e.g.
   `"<!-- page break -->"`. Pages come from the PDF/image pipeline, slides,

@@ -21,7 +21,7 @@
 //! | docling | Pandoc |
 //! |---|---|
 //! | `title` | `Header 1` |
-//! | `section_header` (level *n*) | `Header (n+1)`, capped at 6 |
+//! | `section_header` (level *n*) | `Header (n+1)`, capped at 6 — docling's title-reserving depth; under [`HeadingDepth::Source`] (#848) `Header n`, the depth the DOCX / ODT author wrote |
 //! | `text`, `paragraph` | `Para` (`Plain` inside lists and table cells) |
 //! | `inline` group | the runs' inlines joined by `Space` |
 //! | formatting / hyperlink | `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`, then `Link` around it all |
@@ -75,6 +75,55 @@ pub const PANDOC_API_VERSION: [u32; 4] = [1, 23, 1, 1];
 /// image files it links to, as `(path under artifacts_dir, bytes)`.
 pub type PandocOutput = (String, Vec<(String, Vec<u8>)>);
 
+/// How a `section_header`'s `level` becomes a Pandoc `Header` depth (#848).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum HeadingDepth {
+    /// docling's convention, the default: `Header 1` is the document title
+    /// and a `section_header` of level *n* is `Header (n+1)` (capped at 6),
+    /// the depth docling's Markdown and HTML serializers give it (`##` for
+    /// level 1). The flat `Node::Heading` round trip relies on it — a
+    /// level-2 heading is stored as a level-1 `section_header` and comes
+    /// back as `Header 2` — as do consumers of docling's JSON, so it is not
+    /// changed under them.
+    #[default]
+    Docling,
+    /// The source's own depth: a `section_header` of level *n* is `Header n`
+    /// (clamped to 1–6; a missing or zero level is 1) and the `title` stays
+    /// `Header 1` — what Pandoc's own docx / odt readers give (a DOCX
+    /// `Heading 1` is `Header 1`), so `--number-sections`, TOC depths and
+    /// `--shift-heading-level-by` behave as on `pandoc -f docx`. A document
+    /// whose backend reserves level 1 for the title (HTML, Markdown: an
+    /// `<h2>` is a level-1 `section_header`) comes out one depth shallower
+    /// under it.
+    Source,
+}
+
+impl HeadingDepth {
+    /// The spellings every surface accepts (`docling` = the default).
+    pub const NAMES: [&'static str; 2] = ["docling", "source"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HeadingDepth::Docling => "docling",
+            HeadingDepth::Source => "source",
+        }
+    }
+}
+
+impl std::str::FromStr for HeadingDepth {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "docling" | "" => Ok(HeadingDepth::Docling),
+            "source" => Ok(HeadingDepth::Source),
+            other => Err(format!(
+                "unknown heading depth {other:?} (expected docling or source)"
+            )),
+        }
+    }
+}
+
 /// Options for [`to_pandoc`].
 #[derive(Debug, Clone)]
 pub struct PandocExportOptions {
@@ -89,6 +138,9 @@ pub struct PandocExportOptions {
     /// The Pandoc API version the caller needs (`"1.23"`, `"1.23.1.1"`, …);
     /// `None` = [`PANDOC_API_VERSION`]. Only that API is supported.
     pub api_version: Option<String>,
+    /// The `Header` depth of a `section_header` (#848): docling's
+    /// title-reserving `n + 1` by default, or the source's own `n`.
+    pub heading_depth: HeadingDepth,
 }
 
 impl Default for PandocExportOptions {
@@ -98,6 +150,7 @@ impl Default for PandocExportOptions {
             artifacts_dir: "artifacts".to_string(),
             layers: ContentLayers::BODY,
             api_version: None,
+            heading_depth: HeadingDepth::Docling,
         }
     }
 }
@@ -683,6 +736,7 @@ struct Serializer<'a> {
     image_mode: ImageMode,
     artifacts_dir: String,
     layers: ContentLayers,
+    heading_depth: HeadingDepth,
     artifacts: Vec<(String, Vec<u8>)>,
     pic_index: usize,
     visited: HashSet<String>,
@@ -721,6 +775,7 @@ impl<'a> Serializer<'a> {
             image_mode: options.image_mode,
             artifacts_dir: options.artifacts_dir.clone(),
             layers: options.layers,
+            heading_depth: options.heading_depth,
             artifacts: Vec::new(),
             pic_index: 0,
             visited: HashSet::new(),
@@ -1203,8 +1258,16 @@ impl<'a> Serializer<'a> {
                         let level = if label == "title" {
                             1
                         } else {
-                            (item.get("level").and_then(Value::as_u64).unwrap_or(1) as usize + 1)
-                                .min(6)
+                            let n = item.get("level").and_then(Value::as_u64).unwrap_or(1) as usize;
+                            match self.heading_depth {
+                                // docling's depth: level 1 is `##`, under
+                                // the title's `#`.
+                                HeadingDepth::Docling => (n + 1).min(6),
+                                // The source's depth (#848): a DOCX
+                                // `Heading 1` is `Header 1`, as Pandoc's
+                                // docx reader writes it.
+                                HeadingDepth::Source => n.clamp(1, 6),
+                            }
                         };
                         if !inlines.is_empty() {
                             out.push(ast::header(level, inlines));
@@ -2193,6 +2256,56 @@ mod tests {
                 [ast::plain(vec![ast::str_("insects")])]
             ])
         );
+    }
+
+    /// #848: the two heading projections at their bounds — docling's
+    /// title-reserving `n + 1` (missing → 2, 0 → 1, capped at 6) and the
+    /// source's own `n` (missing / 0 → 1, 7 → 6); the title is `Header 1`
+    /// under both.
+    #[test]
+    fn heading_depths_under_both_projections() {
+        let j = doc(
+            &[
+                "#/texts/0",
+                "#/texts/1",
+                "#/texts/2",
+                "#/texts/3",
+                "#/texts/4",
+                "#/texts/5",
+                "#/texts/6",
+                "#/texts/7",
+            ],
+            json!([
+                text(0, "title", "T", json!({})),
+                text(1, "section_header", "d1", json!({"level": 1})),
+                text(2, "section_header", "d2", json!({"level": 2})),
+                text(3, "section_header", "d5", json!({"level": 5})),
+                text(4, "section_header", "d6", json!({"level": 6})),
+                text(5, "section_header", "none", json!({})),
+                text(6, "section_header", "zero", json!({"level": 0})),
+                text(7, "section_header", "seven", json!({"level": 7})),
+            ]),
+            json!([]),
+            json!([]),
+        );
+        let depths = |heading_depth: HeadingDepth| -> Vec<u64> {
+            let options = PandocExportOptions {
+                heading_depth,
+                ..Default::default()
+            };
+            let (s, _) = from_docling_json(&j, &options).unwrap();
+            let v: Value = serde_json::from_str(&s).unwrap();
+            v["blocks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|b| b["c"][0].as_u64().unwrap())
+                .collect()
+        };
+        assert_eq!(depths(HeadingDepth::Docling), [1, 2, 3, 6, 6, 2, 1, 6]);
+        assert_eq!(depths(HeadingDepth::Source), [1, 1, 2, 5, 6, 1, 1, 6]);
+        assert_eq!("Source".parse::<HeadingDepth>(), Ok(HeadingDepth::Source));
+        assert!("deep".parse::<HeadingDepth>().is_err());
     }
 
     #[test]

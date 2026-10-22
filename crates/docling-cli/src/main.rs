@@ -511,6 +511,8 @@ OUTPUT
   --images MODE           picture handling: placeholder (default; embedded for --to pandoc)
                           | embedded | referenced (docling's --image-export-mode)
   --pandoc-api-version V  fail unless the Pandoc AST is this API (`--to pandoc`; only 1.23)
+  --pandoc-heading-depth docling|source  Pandoc `Header` depth of a section heading (#848):
+                          docling's title-reserving n+1 (default) or the source's own n
   --compact-tables        render Markdown tables without width padding
   --picture-alt-text      render pictures' alt text (DOCX/PPTX/XLSX, #676) in
                           Markdown and HTML; --strict implies it, JSON has it always
@@ -1218,6 +1220,14 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             }
+            // #848: the `Header` depth a section heading gets in the AST.
+            "--pandoc-heading-depth" => match args.next().unwrap_or_default().parse() {
+                Ok(d) => export.pandoc_heading_depth = d,
+                Err(e) => {
+                    eprintln!("error: --pandoc-heading-depth: {e}");
+                    return ExitCode::from(2);
+                }
+            },
             // `--to images` render scale, pixels per PDF point (#243).
             "--scale" => match args.next().and_then(|v| v.parse::<f32>().ok()) {
                 Some(v) if (0.1..=4.0).contains(&v) => scale = v,
@@ -1895,6 +1905,9 @@ fn pdf_text_layer_fallback(
 struct ExportLayers {
     layers: ContentLayers,
     traverse_pictures: bool,
+    /// `--pandoc-heading-depth` (#848): the `Header` depth a section
+    /// heading gets in the Pandoc AST.
+    pandoc_heading_depth: docling::pandoc::HeadingDepth,
 }
 
 type Rendered = (String, Vec<(String, Vec<u8>)>);
@@ -2933,6 +2946,7 @@ fn write_batch_outputs(
                     document,
                     cfg.pandoc_image_mode,
                     &format!("{stem}_artifacts"),
+                    cfg.export.pandoc_heading_depth,
                 );
                 let parent = out.parent().unwrap_or(Path::new(""));
                 for (rel, bytes) in &artifacts {
@@ -3299,17 +3313,20 @@ fn run_batch(
     }
 }
 
-/// The Pandoc AST per `--images` (#515). The API version was checked when
-/// `--pandoc-api-version` was parsed, so the default options apply.
+/// The Pandoc AST per `--images` (#515) and `--pandoc-heading-depth`
+/// (#848). The API version was checked when `--pandoc-api-version` was
+/// parsed, so the default options apply.
 fn pandoc_json(
     document: &docling::DoclingDocument,
     image_mode: ImageMode,
     artifacts_dir: &str,
+    heading_depth: docling::pandoc::HeadingDepth,
 ) -> (String, Vec<(String, Vec<u8>)>) {
     document
         .export_to_pandoc_json_with(&docling::pandoc::PandocExportOptions {
             image_mode,
             artifacts_dir: artifacts_dir.to_string(),
+            heading_depth,
             ..Default::default()
         })
         .expect("the default Pandoc API version is always supported")
@@ -3363,7 +3380,12 @@ fn output_document(
     // #515: the Pandoc AST as JSON on stdout, for `| pandoc -f json -t …`;
     // `--images referenced` writes the pictures under ./artifacts/.
     if to == "pandoc" {
-        let (json, artifacts) = pandoc_json(&document, image_mode, "artifacts");
+        let (json, artifacts) = pandoc_json(
+            &document,
+            image_mode,
+            "artifacts",
+            export.pandoc_heading_depth,
+        );
         for (rel, bytes) in &artifacts {
             let target = Path::new(rel);
             if let Some(dir) = target.parent() {
