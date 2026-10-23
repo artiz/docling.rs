@@ -372,6 +372,8 @@ pub struct DocumentConverter {
     /// How Office tracked changes are read (#851). See
     /// [`Self::track_changes`].
     track_changes: Option<crate::TrackChanges>,
+    /// [`Self::extract_diagrams`].
+    extract_diagrams: crate::DiagramFormat,
     /// Directory referenced-mode streaming writes images into (#80).
     /// See [`Self::artifacts_dir`].
     artifacts_dir: String,
@@ -625,6 +627,7 @@ impl Default for DocumentConverter {
             encoding: None,
             ipynb_outputs: crate::IpynbOutputs::None,
             track_changes: None,
+            extract_diagrams: crate::DiagramFormat::default(),
             artifacts_dir: "artifacts".to_string(),
             document_timeout: None,
             archive_limits: crate::archive::ArchiveLimits::default(),
@@ -1007,6 +1010,19 @@ impl DocumentConverter {
     /// The CLI's `--track-changes accept|reject|all`.
     pub fn track_changes(mut self, policy: Option<crate::TrackChanges>) -> Self {
         self.track_changes = policy;
+        self
+    }
+
+    /// Structured diagrams from DOCX DrawingML drawings (#858):
+    /// [`DiagramFormat::Mermaid`](crate::DiagramFormat::Mermaid), the
+    /// default, adds a `mermaid` code item after a drawing's picture with
+    /// the flowchart its labelled shapes and connectors describe — only
+    /// from connectors that name their two end shapes; a drawing whose
+    /// lines are laid by eye gets no graph, never an invented one.
+    /// [`DiagramFormat::None`](crate::DiagramFormat::None) turns the
+    /// extraction off. The CLI's `--extract-diagrams mermaid|none`.
+    pub fn extract_diagrams(mut self, format: crate::DiagramFormat) -> Self {
+        self.extract_diagrams = format;
         self
     }
 
@@ -2908,6 +2924,7 @@ impl DocumentConverter {
                 InputFormat::QuattroPro => QuattroBackend.convert(source)?,
                 InputFormat::Docx => DocxBackend {
                     track_changes: self.track_changes,
+                    extract_diagrams: self.extract_diagrams,
                 }
                 .convert(source)?,
                 // Legacy binary Office (issue #127): parsed natively — docling

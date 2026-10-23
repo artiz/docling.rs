@@ -583,6 +583,11 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   as written; markdown cells, code cells as code items in the kernel's
   language, raw cells as code blocks) or `"text"` (stream and `text/plain`
   results as code blocks after their cell, image outputs as pictures).
+- `extractDiagrams`: DOCX DrawingML drawings (#858) — `"mermaid"` (the
+  default) adds a `mermaid` code item after a drawing's picture with the
+  flowchart its labelled shapes and connectors describe, only when every
+  connector names its two end shapes (a drawing laid by eye gets no graph,
+  never an invented one); `"none"` turns the extraction off.
 - `videoFrames`: max frames sampled from a video input as timestamped pictures
   (`0` = transcript only; default 8, needs ffmpeg at runtime; `4294967295` =
   every distinct cut, #647).

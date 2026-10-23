@@ -57,8 +57,9 @@ fn drop_alt_text(doc: &mut Value) {
 /// output. `textbox_cell_word_mc` anchors its textbox in a DrawingML
 /// drawing: docling renders such a drawing through LibreOffice (a blank one
 /// lands on the invisible layer) or drops it when LibreOffice is missing;
-/// docling.rs keeps it as a picture without image data — a standing
-/// difference of the DrawingML path, not of the textbox handling.
+/// docling.rs draws it in-process into an SVG payload (#858), so the
+/// picture's bytes never match — a standing difference of the DrawingML
+/// path, not of the textbox handling.
 const OWN_ASSERTIONS: &[&str] = &["textbox_cell_word_mc"];
 
 fn convert(name: &str) -> docling_core::DoclingDocument {

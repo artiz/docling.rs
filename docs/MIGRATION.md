@@ -543,6 +543,7 @@ converted once more as that format with a warning.
 **Status:** **36/36 exact** vs docling 2.129 modulo the committed corpus's compact-table format (§4; 26/33 byte-identical to upstream's stored `.md`, the other 7 differ only in `| - |` vs padded separators)
 
 - docling#4243: a fragment-only relationship target (`Target="#anchor"`) is dropped as upstream strips it before python-docx opens the package — the hyperlink keeps its text, no target
+- #858: a blip-less DrawingML drawing — a group (`wpg:wgp`) of shapes (`wps:wsp`), connectors and text boxes, or one lone shape — is drawn in-process into an **SVG picture payload** (`docx_drawingml.rs`; docling renders it through LibreOffice into a PNG, or leaves it payload-less without one). Covered: the common preset geometries (rectangles, rounded, ellipse, diamond, triangles, parallelogram, trapezoid, hexagon, octagon, the flowchart presets, `can`, `foldedCorner`, `bevel`, block arrows, callouts), `custGeom` paths, straight and bent connectors, solid and theme fills (`theme1.xml` colours with Word's `lumMod`/`lumOff`/`shade`/`tint`), outlines with width, dash and the `triangle`/`stealth`/`arrow`/`oval`/`diamond` ends, `rot`/`flipH`/`flipV`, nested groups, the labels as `<text>` (size, bold, italic, colour, alignment, wrapped at the shape's insets, bullets for list paragraphs). A gradient draws as its first stop, an unknown preset as its bounding box, each with a `DOCLING_RS_DEBUG` diagnostic. Several anchored drawings in one paragraph are one picture placed by their `wp:posOffset`s, as upstream renders them. The payload is `image/svg+xml` (vector, byte-deterministic — the regression suite pins the bytes; Markdown's referenced mode writes `image_NNNNNN.svg`), at 96 px/in with the drawing's extent as its display size. The labels stay as text items too, as docling keeps them.
 - JSON 36/36 — a JPEG picture is written as the PNG PIL re-encodes it to, from the same libjpeg pixels, #527
 - #385: a list item's `first_in_list` is Word's list identity — a `numId` the previous list item did not carry, or body text since it, opens a new list; the same `numId` continues one across nesting and across an empty spacer paragraph (docling's `_manage_list_structure` and its ListGroup cache)
   - the serializers draw every list boundary from that flag, no longer guessing it from a kind flip or a number gap (`docx_lists`/`docx_list_blank_spacer` unchanged, `unit_test_headers_numbered` now nests its list groups as upstream does)
@@ -568,7 +569,7 @@ converted once more as that format with a warning.
   - resumed ordered-list numbering per `numId`, body text after a blank spacer stays inside the list group
 - #270 / docling#3961: headings detected by the style's `w:outlineLvl` — localized/custom heading styles ("Nadpis1", "Rubrik 1") promote by OOXML's own language-independent marker, outlineLvl 9 stays body text, Title/Subtitle-ish styles keep their own branch
   - the name check also covers the style *id* and one-hop `basedOn` id/name, so a custom style based on "Heading 2" or an English "Heading1" id under a localized display name promotes without any outline level — direct formatting with no style at all stays body text, as in docling
-- **JSON: structurally identical to docling's on 36/36** (every key and value but `origin`/`version`, and the `image` payload of the pictures upstream renders through LibreOffice — blip-less DrawingML shapes and the textbox shapes of `textbox`, which carry no payload here, and the EMF of `test_emf_docx`, rendered here by `metafile.rs` instead (#536: EMF/WMF records → SVG → resvg PNG, so the pixels differ from LibreOffice's); a raster picture's bytes are the embedded file's where PIL re-encodes to PNG)
+- **JSON: structurally identical to docling's on 36/36** (every key and value but `origin`/`version`, and the `image` payload of the pictures upstream renders through LibreOffice — blip-less DrawingML shapes and the textbox shapes of `textbox`, drawn here into SVG payloads instead (#858), and the EMF of `test_emf_docx`, rendered here by `metafile.rs` instead (#536: EMF/WMF records → SVG → resvg PNG, so the pixels differ from LibreOffice's); a raster picture's bytes are the embedded file's where PIL re-encodes to PNG)
 - The flat node stream is not the shape upstream's JSON has, so `docx_tree.rs` ports `MsWordDocumentBackend`'s construction call-for-call into the docling-core `ItemTree` the JSON export serializes (the same XML readers as the Markdown walk — styles, numbering, run text, code detection, list markers, chart parts):
   - everything after a `Title`/heading nests under it, a skipped heading level is a `header-N` section group
   - a paragraph is python-docx's run/hyperlink/content-control sequence grouped by `Formatting` (`_get_paragraph_elements`; bold also from the paragraph mark's run properties and the style's `basedOn` chain), two or more groups an `inline` group of `text` items each with `formatting` and `hyperlink` (`AnyUrl`-normalized, `Path` otherwise), one group a lone item
@@ -2260,6 +2261,16 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
 
 ## 6. Extensions
 
+- **`extract_diagrams=mermaid`** (#858) — a DOCX DrawingML flowchart as a
+  `mermaid` code item after its picture: the labelled shapes are the nodes,
+  the connectors that name their two end shapes (`a:stCxn` / `a:endCxn`)
+  the edges, the arrow ends the direction. On by default, `none` turns it
+  off on every surface (`--extract-diagrams mermaid|none`, serve
+  `extract_diagrams`, Python `extract_diagrams=`, Node `extractDiagrams`);
+  a drawing laid by eye gets no graph, never an invented one. In
+  Markdown's placeholder mode the block takes the drawing's
+  `<!-- image -->`'s place (the picture itself stays in the document and
+  in the embedded / referenced modes). docling has no counterpart.
 - **`docling-rag`** — documents → chunking → embeddings → vector search,
   with swappable embedders (Ollama/Gemini/local ONNX), stores
   (SQLite+sqlite-vec / PostgreSQL+pgvector), LLM, sources and queues, plus an

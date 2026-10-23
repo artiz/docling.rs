@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>drawingml_group_transform</title>
+<meta name="generator" content="Docling HTML Serializer"/>
+<style>
+    html {
+        background-color: #f5f5f5;
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+    }
+    body {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
+        background-color: white;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #333;
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+    }
+    h1 {
+        font-size: 2em;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 0.3em;
+    }
+    table {
+        border-collapse: collapse;
+        margin: 1em 0;
+        width: 100%;
+    }
+    th, td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+    }
+    figure {
+        margin: 1.5em 0;
+        text-align: center;
+    }
+    figcaption {
+        color: #666;
+        font-style: italic;
+        margin-top: 0.5em;
+    }
+    img {
+        max-width: 100%;
+        height: auto;
+    }
+    pre {
+        background-color: #f6f8fa;
+        border-radius: 3px;
+        padding: 1em;
+        overflow: auto;
+    }
+    code {
+        font-family: monospace;
+        background-color: #f6f8fa;
+        padding: 0.2em 0.4em;
+        border-radius: 3px;
+    }
+    pre code {
+        background-color: transparent;
+        padding: 0;
+    }
+    .formula {
+        text-align: center;
+        padding: 0.5em;
+        margin: 1em 0;
+        background-color: #f9f9f9;
+    }
+    .formula-not-decoded {
+        text-align: center;
+        padding: 0.5em;
+        margin: 1em 0;
+        background: repeating-linear-gradient(
+            45deg,
+            #f0f0f0,
+            #f0f0f0 10px,
+            #f9f9f9 10px,
+            #f9f9f9 20px
+        );
+    }
+    .page-break {
+        page-break-after: always;
+        border-top: 1px dashed #ccc;
+        margin: 2em 0;
+    }
+    .key-value-region {
+        background-color: #f9f9f9;
+        padding: 1em;
+        border-radius: 4px;
+        margin: 1em 0;
+    }
+    .key-value-region dt {
+        font-weight: bold;
+    }
+    .key-value-region dd {
+        margin-left: 1em;
+        margin-bottom: 0.5em;
+    }
+    .form-container {
+        border: 1px solid #ddd;
+        padding: 1em;
+        border-radius: 4px;
+        margin: 1em 0;
+    }
+    .form-item {
+        margin-bottom: 0.5em;
+    }
+    .image-classification {
+        font-size: 0.9em;
+        color: #666;
+        margin-top: 0.5em;
+    }
+    details.docling-meta {
+        margin: 0.5em 0;
+        font-size: 0.9em;
+        text-align: left;
+    }
+    figure details.docling-meta {
+        text-align: left;
+    }
+    details.docling-meta > summary {
+        cursor: pointer;
+        color: #555;
+        font-style: italic;
+        padding: 2px 6px;
+    }
+    .docling-meta-field {
+        background-color: #f0f0f0;
+        border-left: 3px solid #ccc;
+        padding: 6px 10px;
+        margin: 4px 0 4px 1em;
+        border-radius: 3px;
+        text-align: left;
+    }
+    .docling-meta-field-label {
+        font-weight: bold;
+        color: #444;
+    }
+    pre.docling-meta-code {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        border-radius: 4px;
+        padding: 10px 12px;
+        margin: 6px 0;
+        overflow-x: auto;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.85em;
+        line-height: 1.45;
+        white-space: pre;
+        tab-size: 4;
+    }
+    pre.docling-meta-code code {
+        background: transparent;
+        border: none;
+        padding: 0;
+        color: inherit;
+        font-family: inherit;
+        font-size: inherit;
+        display: block;
+        white-space: pre;
+    }
+</style>
+</head>
+<body>
+<div class='page'>
+<h2>Supported Geometries Flowchart Benchmark</h2>
+<p>This diagram contains 100% supported shapes (rect, roundRect, line) with explicit connector references.</p>
+<p>Start Task</p>
+<p>Decision Process</p>
+<p>End Task</p>
+<figure><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MjQuOTMiIGhlaWdodD0iMjA5Ljk3IiB2aWV3Qm94PSIwIDAgNTI0LjkzIDIwOS45NyI+CiAgPGcgZGF0YS1uYW1lPSJTdGFydFRhc2siPgogICAgPHBhdGggZD0iTTAgNjIuOTkgTDI1MS45NyA2Mi45OSBMMjUxLjk3IDE4OC45OCBMMCAxODguOTggWiIgZmlsbD0iI0U4RjFGOCIgc3Ryb2tlPSIjMEY0NzYxIiBzdHJva2Utd2lkdGg9IjEuMzMiLz4KICAgIDx0ZXh0IHg9IjkuNiIgeT0iODAuNDYiIGZvbnQtZmFtaWx5PSJDYWxpYnJpLCBBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzLjMzIiB0ZXh0LWFuY2hvcj0ic3RhcnQiIGZpbGw9IiMwMDAwMDAiPlN0YXJ0IFRhc2s8L3RleHQ+CiAgPC9nPgogIDxnIGRhdGEtbmFtZT0iRGVjaXNpb25Qcm9jZXNzIj4KICAgIDxwYXRoIGQ9Ik0zOTguOTUgNjIuOTkgTDYwOC45MiA2Mi45OSBBMjEgMjEgMCAwIDEgNjI5LjkyIDgzLjk5IEw2MjkuOTIgMTY3Ljk4IEEyMSAyMSAwIDAgMSA2MDguOTIgMTg4Ljk4IEwzOTguOTUgMTg4Ljk4IEEyMSAyMSAwIDAgMSAzNzcuOTUgMTY3Ljk4IEwzNzcuOTUgODMuOTkgQTIxIDIxIDAgMCAxIDM5OC45NSA2Mi45OSBaIiBmaWxsPSIjRkZGM0NEIiBzdHJva2U9IiM4NTY0MDQiIHN0cm9rZS13aWR0aD0iMS4zMyIvPgogICAgPHRleHQgeD0iMzg3LjU1IiB5PSI4MC40NiIgZm9udC1mYW1pbHk9IkNhbGlicmksIEFyaWFsLCBIZWx2ZXRpY2EsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTMuMzMiIHRleHQtYW5jaG9yPSJzdGFydCIgZmlsbD0iIzAwMDAwMCI+RGVjaXNpb24gUHJvY2VzczwvdGV4dD4KICA8L2c+CiAgPGcgZGF0YS1uYW1lPSJFbmRUYXNrIj4KICAgIDxwYXRoIGQ9Ik03NTUuOTEgNjIuOTkgTDEwMDcuODcgNjIuOTkgTDEwMDcuODcgMTg4Ljk4IEw3NTUuOTEgMTg4Ljk4IFoiIGZpbGw9IiNENEVEREEiIHN0cm9rZT0iIzE1NTcyNCIgc3Ryb2tlLXdpZHRoPSIxLjMzIi8+CiAgICA8dGV4dCB4PSI3NjUuNTEiIHk9IjgwLjQ2IiBmb250LWZhbWlseT0iQ2FsaWJyaSwgQXJpYWwsIEhlbHZldGljYSwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMy4zMyIgdGV4dC1hbmNob3I9InN0YXJ0IiBmaWxsPSIjMDAwMDAwIj5FbmQgVGFzazwvdGV4dD4KICA8L2c+CiAgPGcgZGF0YS1uYW1lPSJDb25uZWN0b3IxIj4KICAgIDxwYXRoIGQ9Ik0yNTEuOTcgMTI1Ljk4IEwzNzcuOTUgMTI2LjE5IiBmaWxsPSJub25lIiBzdHJva2U9IiMwRjQ3NjEiIHN0cm9rZS13aWR0aD0iMS4zMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNMzc3Ljk1IDEyNi4xOSBMMzcxLjk1IDEyOC44OCBMMzcxLjk2IDEyMy40OCBaIiBmaWxsPSIjMEY0NzYxIiBzdHJva2U9Im5vbmUiLz4KICA8L2c+CiAgPGcgZGF0YS1uYW1lPSJDb25uZWN0b3IyIj4KICAgIDxwYXRoIGQ9Ik02MjkuOTIgMTI1Ljk4IEw3NTUuOTEgMTI2LjE5IiBmaWxsPSJub25lIiBzdHJva2U9IiMwRjQ3NjEiIHN0cm9rZS13aWR0aD0iMS4zMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNNzU1LjkxIDEyNi4xOSBMNzQ5LjkgMTI4Ljg4IEw3NDkuOTEgMTIzLjQ4IFoiIGZpbGw9IiMwRjQ3NjEiIHN0cm9rZT0ibm9uZSIvPgogIDwvZz4KPC9zdmc+Cg=="></figure>
+<pre><code>flowchart TD
+  StartTask["Start Task"] --> DecisionProcess["Decision Process"]
+  DecisionProcess["Decision Process"] --> EndTask["End Task"]</code></pre>
+</div>
+</body>
+</html>

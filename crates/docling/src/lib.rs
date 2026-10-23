@@ -63,8 +63,8 @@ pub use error::{ConversionError, EncryptionError};
 pub use fetch::FetchPolicy;
 pub use format::{InputFormat, OUTPUT_FORMATS};
 pub use options::{
-    cli_flag, merge_options, ConvertOptions, OptionInfo, OptionsError, PipelineKind, TextLayerOnly,
-    OPTIONS,
+    cli_flag, merge_options, ConvertOptions, DiagramFormat, OptionInfo, OptionsError, PipelineKind,
+    TextLayerOnly, OPTIONS,
 };
 pub use plugins::{BackendMatcher, RegisteredBackend};
 pub use progress::{

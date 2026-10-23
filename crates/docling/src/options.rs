@@ -37,6 +37,7 @@
 //! each surface keeps its own output options next to this struct.
 
 use std::fmt;
+use std::str::FromStr;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -122,6 +123,14 @@ pub struct ConvertOptions {
     /// reader's text before #851). A mode a reader has not implemented is
     /// refused (`ConversionError::UnsupportedOption`).
     pub track_changes: Option<String>,
+    /// Structured diagrams from DOCX DrawingML drawings (#858): `"mermaid"`
+    /// (the default) adds a `mermaid` code item after a drawing's picture
+    /// with the flowchart its shapes and connectors describe — only when
+    /// every connector names its two end shapes (`a:stCxn` / `a:endCxn`); a
+    /// drawing whose lines are laid by eye gets no graph (a
+    /// `DOCLING_RS_DEBUG` diagnostic says why), never an invented one. The
+    /// picture stays either way. `"none"` turns the extraction off.
+    pub extract_diagrams: Option<String>,
     /// Pre-render HTML with a headless browser (the `web-browser` feature).
     pub use_web_browser: Option<bool>,
     /// XBRL: the directory the instance's taxonomy is read from.
@@ -564,6 +573,7 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("ipynb_outputs"),
     row("metadata"),
     row("track_changes"),
+    row("extract_diagrams"),
     // The npm addon is not built with the `web-browser` feature, so the
     // option would only ever error there.
     OptionInfo {
@@ -802,6 +812,20 @@ impl ConvertOptions {
             .transpose()
     }
 
+    /// The diagram extraction (#858): `None` unless `extract_diagrams` is
+    /// set and non-blank (the converter's default, `mermaid`, applies); a
+    /// spelling other than `mermaid` or `none` is an error.
+    pub fn extract_diagrams(&self) -> Result<Option<DiagramFormat>, OptionsError> {
+        self.extract_diagrams
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| {
+                s.parse::<DiagramFormat>()
+                    .map_err(|e| OptionsError::new("extract_diagrams", e))
+            })
+            .transpose()
+    }
+
     /// The metadata output mode (#679): `None` unless `metadata` is set
     /// and non-blank; a spelling other than `none`, `json`, `frontmatter`
     /// is an error.
@@ -975,6 +999,7 @@ impl ConvertOptions {
         self.document_timeout()?;
         self.ipynb_outputs()?;
         self.track_changes()?;
+        self.extract_diagrams()?;
         self.metadata_output()?;
         if let Some(s) = self.ocr_scale {
             if !(s.is_finite() && s > 0.0) {
@@ -1290,6 +1315,9 @@ impl ConvertOptions {
         if let Some(policy) = self.track_changes()? {
             c = c.track_changes(Some(policy));
         }
+        if let Some(format) = self.extract_diagrams()? {
+            c = c.extract_diagrams(format);
+        }
         if let Some(v) = self.use_web_browser {
             c = c.use_web_browser(v);
         }
@@ -1600,6 +1628,51 @@ impl DocumentConverter {
     /// onto the defaults ([`ConvertOptions::apply`] on [`Self::new`]).
     pub fn from_options(options: &ConvertOptions) -> Result<Self, OptionsError> {
         options.apply(Self::new())
+    }
+}
+
+/// The structured form a drawing's diagram is extracted to (#858,
+/// `extract_diagrams`): Mermaid, the default, or none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiagramFormat {
+    /// A `flowchart TD` code item after the drawing's picture.
+    #[default]
+    Mermaid,
+    /// No extraction: the picture alone.
+    None,
+}
+
+impl DiagramFormat {
+    /// The spellings `extract_diagrams` accepts.
+    pub const ACCEPTED: &'static str = "mermaid, none";
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DiagramFormat::Mermaid => "mermaid",
+            DiagramFormat::None => "none",
+        }
+    }
+}
+
+impl FromStr for DiagramFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "mermaid" => Ok(DiagramFormat::Mermaid),
+            "none" | "off" => Ok(DiagramFormat::None),
+            other => Err(format!(
+                "extract_diagrams must be one of {}; got {other:?}",
+                DiagramFormat::ACCEPTED
+            )),
+        }
+    }
+}
+
+impl fmt::Display for DiagramFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

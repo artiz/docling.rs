@@ -395,6 +395,11 @@ class DocumentConverter:
       author and date in the Pandoc AST). ``None`` (default): each reader's
       own view. DOCX reads all three, DOC accept and reject, ODT accept; a
       mode a reader lacks raises.
+    * ``extract_diagrams`` — DOCX DrawingML drawings (#858): ``"mermaid"``
+      (the default) adds a ``mermaid`` code item after a drawing's picture
+      with the flowchart its labelled shapes and connectors describe — only
+      when every connector names its two end shapes; a drawing laid by eye
+      gets no graph. ``"none"`` turns the extraction off.
     * ``metadata`` — document metadata (#679): the file's own (an EPUB's
       Dublin Core, Office properties, ODF ``meta.xml``, a photo's EXIF,
       audio tags, a PDF's Info dictionary). ``"none"`` (default) reads
@@ -505,6 +510,7 @@ class DocumentConverter:
         ipynb_outputs: Optional[str] = None,
         metadata: Optional[str] = None,
         track_changes: Optional[str] = None,
+        extract_diagrams: Optional[str] = None,
         pipeline: Optional[str] = None,
         vlm_endpoint: Optional[str] = None,
         vlm_model: Optional[str] = None,
@@ -770,6 +776,7 @@ class DocumentConverter:
             ipynb_outputs=ipynb_outputs,
             metadata=metadata,
             track_changes=track_changes,
+            extract_diagrams=extract_diagrams,
             pipeline=pipeline,
             vlm_endpoint=vlm_endpoint,
             vlm_model=vlm_model,

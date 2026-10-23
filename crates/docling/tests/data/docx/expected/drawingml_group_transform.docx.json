@@ -1,0 +1,213 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "drawingml_group_transform",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 13136791251559539763,
+    "filename": "drawingml_group_transform"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/groups/0"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        }
+      ],
+      "content_layer": "body",
+      "name": "header-0",
+      "label": "section"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/texts/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        }
+      ],
+      "content_layer": "body",
+      "name": "textbox",
+      "label": "section"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/groups/1"
+        },
+        {
+          "$ref": "#/pictures/0"
+        },
+        {
+          "$ref": "#/texts/5"
+        }
+      ],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Supported Geometries Flowchart Benchmark",
+      "text": "Supported Geometries Flowchart Benchmark",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/texts/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This diagram contains 100% supported shapes (rect, roundRect, line) with explicit connector references.",
+      "text": "This diagram contains 100% supported shapes (rect, roundRect, line) with explicit connector references.",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Start Task",
+      "text": "Start Task",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Decision Process",
+      "text": "Decision Process",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "End Task",
+      "text": "End Task",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/texts/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "flowchart TD\n  StartTask[\"Start Task\"] --> DecisionProcess[\"Decision Process\"]\n  DecisionProcess[\"Decision Process\"] --> EndTask[\"End Task\"]",
+      "text": "flowchart TD\n  StartTask[\"Start Task\"] --> DecisionProcess[\"Decision Process\"]\n  DecisionProcess[\"Decision Process\"] --> EndTask[\"End Task\"]",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    }
+  ],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/texts/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "image": {
+        "mimetype": "image/svg+xml",
+        "dpi": 96,
+        "size": {
+          "width": 525.0,
+          "height": 210.0
+        },
+        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MjQuOTMiIGhlaWdodD0iMjA5Ljk3IiB2aWV3Qm94PSIwIDAgNTI0LjkzIDIwOS45NyI+CiAgPGcgZGF0YS1uYW1lPSJTdGFydFRhc2siPgogICAgPHBhdGggZD0iTTAgNjIuOTkgTDI1MS45NyA2Mi45OSBMMjUxLjk3IDE4OC45OCBMMCAxODguOTggWiIgZmlsbD0iI0U4RjFGOCIgc3Ryb2tlPSIjMEY0NzYxIiBzdHJva2Utd2lkdGg9IjEuMzMiLz4KICAgIDx0ZXh0IHg9IjkuNiIgeT0iODAuNDYiIGZvbnQtZmFtaWx5PSJDYWxpYnJpLCBBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzLjMzIiB0ZXh0LWFuY2hvcj0ic3RhcnQiIGZpbGw9IiMwMDAwMDAiPlN0YXJ0IFRhc2s8L3RleHQ+CiAgPC9nPgogIDxnIGRhdGEtbmFtZT0iRGVjaXNpb25Qcm9jZXNzIj4KICAgIDxwYXRoIGQ9Ik0zOTguOTUgNjIuOTkgTDYwOC45MiA2Mi45OSBBMjEgMjEgMCAwIDEgNjI5LjkyIDgzLjk5IEw2MjkuOTIgMTY3Ljk4IEEyMSAyMSAwIDAgMSA2MDguOTIgMTg4Ljk4IEwzOTguOTUgMTg4Ljk4IEEyMSAyMSAwIDAgMSAzNzcuOTUgMTY3Ljk4IEwzNzcuOTUgODMuOTkgQTIxIDIxIDAgMCAxIDM5OC45NSA2Mi45OSBaIiBmaWxsPSIjRkZGM0NEIiBzdHJva2U9IiM4NTY0MDQiIHN0cm9rZS13aWR0aD0iMS4zMyIvPgogICAgPHRleHQgeD0iMzg3LjU1IiB5PSI4MC40NiIgZm9udC1mYW1pbHk9IkNhbGlicmksIEFyaWFsLCBIZWx2ZXRpY2EsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTMuMzMiIHRleHQtYW5jaG9yPSJzdGFydCIgZmlsbD0iIzAwMDAwMCI+RGVjaXNpb24gUHJvY2VzczwvdGV4dD4KICA8L2c+CiAgPGcgZGF0YS1uYW1lPSJFbmRUYXNrIj4KICAgIDxwYXRoIGQ9Ik03NTUuOTEgNjIuOTkgTDEwMDcuODcgNjIuOTkgTDEwMDcuODcgMTg4Ljk4IEw3NTUuOTEgMTg4Ljk4IFoiIGZpbGw9IiNENEVEREEiIHN0cm9rZT0iIzE1NTcyNCIgc3Ryb2tlLXdpZHRoPSIxLjMzIi8+CiAgICA8dGV4dCB4PSI3NjUuNTEiIHk9IjgwLjQ2IiBmb250LWZhbWlseT0iQ2FsaWJyaSwgQXJpYWwsIEhlbHZldGljYSwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMy4zMyIgdGV4dC1hbmNob3I9InN0YXJ0IiBmaWxsPSIjMDAwMDAwIj5FbmQgVGFzazwvdGV4dD4KICA8L2c+CiAgPGcgZGF0YS1uYW1lPSJDb25uZWN0b3IxIj4KICAgIDxwYXRoIGQ9Ik0yNTEuOTcgMTI1Ljk4IEwzNzcuOTUgMTI2LjE5IiBmaWxsPSJub25lIiBzdHJva2U9IiMwRjQ3NjEiIHN0cm9rZS13aWR0aD0iMS4zMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNMzc3Ljk1IDEyNi4xOSBMMzcxLjk1IDEyOC44OCBMMzcxLjk2IDEyMy40OCBaIiBmaWxsPSIjMEY0NzYxIiBzdHJva2U9Im5vbmUiLz4KICA8L2c+CiAgPGcgZGF0YS1uYW1lPSJDb25uZWN0b3IyIj4KICAgIDxwYXRoIGQ9Ik02MjkuOTIgMTI1Ljk4IEw3NTUuOTEgMTI2LjE5IiBmaWxsPSJub25lIiBzdHJva2U9IiMwRjQ3NjEiIHN0cm9rZS13aWR0aD0iMS4zMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNNzU1LjkxIDEyNi4xOSBMNzQ5LjkgMTI4Ljg4IEw3NDkuOTEgMTIzLjQ4IFoiIGZpbGw9IiMwRjQ3NjEiIHN0cm9rZT0ibm9uZSIvPgogIDwvZz4KPC9zdmc+Cg=="
+      },
+      "annotations": []
+    }
+  ],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}
