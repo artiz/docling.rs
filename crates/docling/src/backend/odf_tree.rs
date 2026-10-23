@@ -72,6 +72,12 @@ struct CommentThread {
     attached: bool,
 }
 
+/// The shapes of a notes page that show the slide or a field rather than the
+/// speaker notes (docling's `_ODP_NOTES_PAGE_FIELD_CLASSES`): the slide
+/// thumbnail, and the slide number, date, header and footer fields.
+pub(super) const NOTES_PAGE_FIELD_CLASSES: &[&str] =
+    &["page", "page-number", "date-time", "header", "footer"];
+
 struct Walker<'s> {
     tree: ItemTree,
     styles: &'s Styles,
@@ -1465,7 +1471,11 @@ impl<'s> Walker<'s> {
         let mut seen_text = false;
         for el in page.children().filter(XmlNode::is_element) {
             let tag = el.tag_name().name();
-            if tag == "notes" || tag == "par" {
+            if tag == "notes" {
+                self.walk_slide_notes(el, slide);
+                continue;
+            }
+            if tag == "par" {
                 continue;
             }
             let has_text = element_has_text(el);
@@ -1480,6 +1490,40 @@ impl<'s> Walker<'s> {
                     el.children().filter(XmlNode::is_element),
                     slide,
                     is_title,
+                    None,
+                );
+            }
+        }
+    }
+
+    /// `_walk_slide_notes` (#862, docling#4869, 2.141): a slide's speaker
+    /// notes go to the notes layer under the slide's group, as in the
+    /// PowerPoint backend. A notes page also shows the slide's thumbnail and
+    /// can show its number, date, header and footer, which are not notes.
+    fn walk_slide_notes(&mut self, notes: XmlNode, slide: usize) {
+        for el in notes.children().filter(XmlNode::is_element) {
+            if attr(el, "class").is_some_and(|c| NOTES_PAGE_FIELD_CLASSES.contains(&c)) {
+                continue;
+            }
+            if el.has_tag_name("frame") {
+                let boxes: Vec<XmlNode> = el
+                    .descendants()
+                    .filter(|n| n.has_tag_name("text-box"))
+                    .collect();
+                for tb in boxes {
+                    self.walk_textbox_children(
+                        tb.children().filter(XmlNode::is_element),
+                        slide,
+                        false,
+                        Some(ContentLayer::Notes),
+                    );
+                }
+            } else {
+                self.walk_textbox_children(
+                    el.children().filter(XmlNode::is_element),
+                    slide,
+                    false,
+                    Some(ContentLayer::Notes),
                 );
             }
         }
@@ -1505,24 +1549,31 @@ impl<'s> Walker<'s> {
             .filter(|n| n.has_tag_name("text-box"))
             .collect();
         for tb in boxes {
-            self.walk_textbox_children(tb.children().filter(XmlNode::is_element), slide, is_title);
+            self.walk_textbox_children(
+                tb.children().filter(XmlNode::is_element),
+                slide,
+                is_title,
+                None,
+            );
         }
     }
 
     /// `_walk_textbox_children`: headings, paragraphs as `title` (a title
-    /// element) or `text`, lists continuing across siblings.
+    /// element) or `text`, lists continuing across siblings — on `layer`
+    /// (the speaker notes' notes layer, else the body).
     fn walk_textbox_children<'a, 'i: 'a>(
         &mut self,
         els: impl Iterator<Item = XmlNode<'a, 'i>>,
         slide: usize,
         is_title: bool,
+        layer: Option<ContentLayer>,
     ) {
         let mut prev: Option<ListState> = None;
         for el in els {
             match el.tag_name().name() {
                 "h" => {
                     prev = None;
-                    self.add_heading(el, Some(slide), None);
+                    self.add_heading(el, Some(slide), layer);
                 }
                 "p" => {
                     prev = None;
@@ -1531,11 +1582,11 @@ impl<'s> Walker<'s> {
                         &runs,
                         if is_title { "title" } else { "text" },
                         Some(slide),
-                        None,
+                        layer,
                     );
                 }
                 n if is_list_tag(n) => {
-                    prev = self.add_list(el, Some(slide), None, false, 1, prev);
+                    prev = self.add_list(el, Some(slide), layer, false, 1, prev);
                 }
                 _ => {}
             }

@@ -778,8 +778,9 @@ converted once more as that format with a warning.
 #### ODF (odt/ods/odp)
 
 **Backend:** `odf.rs`\
-**Status:** **7/7 exact**; **JSON: structurally identical to docling 2.129's on 7/7**
+**Status:** **7/7 exact**; **JSON: structurally identical to docling 2.129's on 7/7** (`odf_presentation_01` / `_02` against docling 2.142.1, #862)
 
+- #862 (docling#4869, 2.141): an ODP slide's speaker notes (`<presentation:notes>`) are items on the **notes** layer under the slide's group, after the slide's content — the notes page's text boxes walked like a slide's (headings, paragraphs, lists), its thumbnail and slide-number / date / header / footer placeholders skipped. Exports leave the layer out by default, so the Markdown is unchanged; `odf_presentation_01`'s three notes reach the JSON (docling 2.129 dropped them). Both presentations' groundtruth is refreshed from docling 2.142.1 — besides the notes, its Markdown now repeats a merged cell's text in every slot it spans (docling-core#857), as ours already did, and `_02`'s picture is PIL's newer PNG encoding.
 - #527: `odf_presentation_02`'s JPEG is written as the PNG PIL re-encodes it to — pixel-identical — and the flat nodes carry the package's pictures too, so DocLang names and packages them
 - `odf_tree.rs` ports `opendocument_backend`'s construction call for call over `odf.rs`'s style/run/list/cell readers:
   - a paragraph of several formatting or hyperlink runs (`_normalize_odf_text_runs`: same-format neighbours merged, whitespace at a hyperlink boundary stripped, blank edge runs dropped) is an `inline` group of `text` items
@@ -1182,7 +1183,7 @@ converted once more as that format with a warning.
   - `'T'` text nodes as paragraphs in document order — tables flatten to cell texts, inline redline fragments kept
 - StarDraw/StarImpress (`StarDrawDocument3` stream):
   - pages (`DrPg`) as sections with outliner (`xV4B`) texts, outline depth as list nesting
-  - master pages, the object-less handout and `~LT~Notizen` notes pages dropped (docling drops speaker notes too)
+  - master pages, the object-less handout and `~LT~Notizen` notes pages dropped (the binary format's notes pages are not read; ODP speaker notes are notes-layer items since #862)
 - `.vor` templates dispatch by the contained stream
 - Strings decode as cp1252
 - StarCalc (.sdc) has a different cell-record model and errors with a targeted save-as-.ods message — a follow-up
