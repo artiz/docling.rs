@@ -346,7 +346,7 @@ converted once more as that format with a warning.
 #### HTML
 
 **Backend:** `html.rs` (scraper/html5ever)\
-**Status:** **32/32 exact** vs docling 2.129 modulo the stored corpus's compact-table format (docling 2.126 groundtruth) and `wiki_duck`'s percent-escaped link destinations (`/wiki/Duck_%28film%29` — docling-core 2.104's `markdown_link_destination`, #860, which the stored groundtruth predates); **JSON: structurally identical to docling's on 32/32** (every key and value but `origin`/`version`; `wiki_duck` modulo one caption item — its stored JSON predates docling#4050, whose figure dispatch the refreshed Markdown groundtruth already shows)
+**Status:** **32/32 exact** vs docling 2.129 modulo the stored corpus's compact-table format (docling 2.126 groundtruth; `wiki_duck`'s triple refreshed from docling 2.142.1 / docling-core 2.104.0 with upstream's own test recipe, so it carries the percent-escaped link destinations of #860 — `/wiki/Duck_%28film%29` — and `compact_tables=True`); **JSON: structurally identical to docling's on 32/32** (every key and value but `origin`/`version`; `wiki_duck` modulo the two footer badges docling 2.142 reads as list items — `Wikimedia Foundation`, `Powered by MediaWiki`, each a list item with a picture and an empty caption, 1379 texts / 27 pictures to our 1375 / 25 — since its groundtruth triple is docling 2.142.1's; the HTML backend tracks 2.129 there)
 
 - docling#4287: a zero `colspan`/`rowspan` defaults to 1 like a missing one, so the cell no longer drops out of the grid; spans read python-style — the leading digits when the attribute starts with one, `"2px"` → 2
 - JSON 31/32 — `html_code_snippets`: 2.129 maps a `language-python` class to `code_language: Python`, we still write `unknown`
