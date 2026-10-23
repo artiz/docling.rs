@@ -2256,6 +2256,16 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
 
 ## 6. Extensions
 
+- **`extract_diagrams=mermaid`** (#858) — a DOCX DrawingML flowchart as a
+  `mermaid` code item after its picture: the labelled shapes are the nodes,
+  the connectors that name their two end shapes (`a:stCxn` / `a:endCxn`)
+  the edges, the arrow ends the direction. On by default, `none` turns it
+  off on every surface (`--extract-diagrams mermaid|none`, serve
+  `extract_diagrams`, Python `extract_diagrams=`, Node `extractDiagrams`);
+  a drawing laid by eye gets no graph, never an invented one. In
+  Markdown's placeholder mode the block takes the drawing's
+  `<!-- image -->`'s place (the picture itself stays in the document and
+  in the embedded / referenced modes). docling has no counterpart.
 - **`docling-rag`** — documents → chunking → embeddings → vector search,
   with swappable embedders (Ollama/Gemini/local ONNX), stores
   (SQLite+sqlite-vec / PostgreSQL+pgvector), LLM, sources and queues, plus an

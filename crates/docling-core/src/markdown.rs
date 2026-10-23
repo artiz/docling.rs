@@ -408,6 +408,11 @@ pub struct MarkdownStreamer {
     /// dropped (#605): a page break before the next item is still owed then,
     /// exactly as in the buffered export.
     items_emitted: bool,
+    /// A picture a push ended on, in the placeholder mode: whether its
+    /// marker prints depends on the item after it (#858, a `mermaid` code
+    /// item takes its place), which the next push brings — it joins that
+    /// push, or [`finish`](Self::finish) renders it.
+    held: Option<Node>,
     /// The export options beyond the image mode (#599): layers, picture
     /// traversal, escaping, the placeholder — [`with_export_options`](Self::with_export_options).
     layers: ContentLayers,
@@ -455,6 +460,7 @@ impl MarkdownStreamer {
             page_break: None,
             pending_page_break: false,
             items_emitted: false,
+            held: None,
             layers: ContentLayers::BODY,
             traverse_pictures: false,
             escape_html: true,
@@ -523,7 +529,31 @@ impl MarkdownStreamer {
     /// string when the batch produces no output (e.g. empty tables/pictures), in
     /// which case nothing should be written.
     pub fn push(&mut self, nodes: &[Node], links: &[(String, String)]) -> String {
+        self.push_holding(nodes, links, true)
+    }
+
+    /// [`push`](Self::push); with `hold`, a picture the batch ends on is
+    /// held back for the next push (`finish` renders without holding).
+    fn push_holding(&mut self, nodes: &[Node], links: &[(String, String)], hold: bool) -> String {
         self.links.extend(links.iter().cloned());
+        // A picture held back from the last push leads this one; a picture
+        // this push ends on is held back in turn (placeholder mode only —
+        // the one in which the next item can change what it prints).
+        let images = self.images;
+        let ends_on_picture = |nodes: &[Node]| {
+            matches!(images, ImageMode::Placeholder)
+                && matches!(nodes.last(), Some(Node::Picture { .. }))
+        };
+        let mut owned: Vec<Node> = Vec::new();
+        let mut nodes = nodes;
+        if self.held.is_some() || (hold && ends_on_picture(nodes)) {
+            owned.extend(self.held.take());
+            owned.extend(nodes.iter().cloned());
+            if hold && ends_on_picture(&owned) {
+                self.held = owned.pop();
+            }
+            nodes = &owned;
+        }
         let mut ctx = Ctx {
             strict: self.strict,
             alt_text: self.strict || self.picture_alt_text,
@@ -573,14 +603,17 @@ impl MarkdownStreamer {
 
     /// Emit the trailing newline that finishes the document (empty if no content
     /// was produced). Call exactly once, after the final [`push`](Self::push).
-    pub fn finish(self) -> String {
-        if let Some(front) = self.front_matter {
-            front
-        } else if self.emitted_any {
-            "\n".to_string()
-        } else {
-            String::new()
+    pub fn finish(mut self) -> String {
+        let mut out = String::new();
+        if self.held.is_some() {
+            out.push_str(&self.push_holding(&[], &[], false));
         }
+        if let Some(front) = self.front_matter {
+            out.push_str(&front);
+        } else if self.emitted_any {
+            out.push('\n');
+        }
+        out
     }
 }
 
@@ -881,7 +914,23 @@ fn render(nodes: &[Node], blocks: &mut Vec<String>, ctx: &mut Ctx) {
                 render_list_run(&nodes[start..i], blocks, ctx);
             }
             other => {
+                let before_item = blocks.len();
                 render_one(other, blocks, ctx);
+                // A picture that is the drawing a `mermaid` code item was
+                // extracted from (#858): in the placeholder mode the
+                // `<!-- image -->` says nothing the graph does not, so the
+                // marker — the last block a picture pushes — goes; an
+                // embedded or referenced image is content and stays.
+                if matches!(other, Node::Picture { .. })
+                    && matches!(ctx.images, ImageMode::Placeholder)
+                    && blocks.len() > before_item
+                    && matches!(
+                        nodes.get(i + 1),
+                        Some(Node::Code { language: Some(l), .. }) if l == "mermaid"
+                    )
+                {
+                    blocks.pop();
+                }
                 i += 1;
             }
         }
@@ -1117,9 +1166,12 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             pretty,
             ..
         } => {
-            // Legacy docling never emits a language on the fence; strict keeps it.
+            // Legacy docling never emits a language on the fence; strict keeps
+            // it. A `mermaid` block (#858, an extraction docling has no
+            // counterpart for) keeps its tag in either mode: without it the
+            // graph is a code block no renderer draws.
             let lang = match language {
-                Some(l) if ctx.strict => l.as_str(),
+                Some(l) if ctx.strict || l == "mermaid" => l.as_str(),
                 _ => "",
             };
             // Strict prefers the line-preserving rendering when the backend
@@ -2743,6 +2795,51 @@ mod tests {
         doc.add_paragraph("After.");
         assert_stream_matches(&doc, false, ImageMode::Placeholder, &[1, 2]);
         assert_stream_matches(&doc, true, ImageMode::Placeholder, &[1, 2]);
+    }
+
+    /// #858: a `mermaid` code item extracted from a drawing takes the
+    /// place of the drawing's `<!-- image -->` in the placeholder mode —
+    /// in the buffered export and in a stream cut anywhere around the pair;
+    /// a picture nothing follows keeps its marker.
+    #[test]
+    fn mermaid_code_item_replaces_its_picture_placeholder() {
+        let picture = || Node::Picture {
+            caption: None,
+            caption_href: None,
+            image: None,
+            classification: None,
+            description: None,
+            caption_parent: Default::default(),
+            caption_location: None,
+        };
+        let mut doc = DoclingDocument::new("d");
+        doc.add_paragraph("Before.");
+        doc.push(picture());
+        doc.push(Node::Code {
+            language: Some("mermaid".into()),
+            text: "flowchart TD\n  A --> B".into(),
+            orig: None,
+            pretty: None,
+        });
+        doc.add_paragraph("After.");
+        doc.push(picture());
+        let md = doc.export_to_markdown();
+        assert_eq!(
+            md,
+            "Before.\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\nAfter.\n\n<!-- image -->\n"
+        );
+        assert_eq!(doc.export_to_markdown_with(true), md);
+        for splits in [&[1][..], &[2], &[1, 2], &[2, 3], &[1, 2, 3, 4]] {
+            assert_stream_matches(&doc, false, ImageMode::Placeholder, splits);
+            assert_stream_matches(&doc, true, ImageMode::Placeholder, splits);
+        }
+        // A stream that ends on the picture still prints it.
+        let mut doc = DoclingDocument::new("d");
+        doc.add_paragraph("Only.");
+        doc.push(picture());
+        assert_eq!(doc.export_to_markdown(), "Only.\n\n<!-- image -->\n");
+        assert_stream_matches(&doc, false, ImageMode::Placeholder, &[1]);
+        assert_stream_matches(&doc, false, ImageMode::Placeholder, &[2]);
     }
 
     #[test]

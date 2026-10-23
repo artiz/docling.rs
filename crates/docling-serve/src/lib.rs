@@ -97,6 +97,10 @@
 //!   `embedded`; `local` needs `--allow-local-images` (400 otherwise).
 //!   `image_hosts`, `max_images`, `max_image_bytes`, `max_image_total_mb`,
 //!   `min_image_bytes` bound it.
+//! - `extract_diagrams` — DOCX DrawingML drawings (#858): `mermaid`
+//!   (default) adds a `mermaid` code item after a drawing's picture with the
+//!   flowchart its connectors describe, when every connector names its two
+//!   end shapes | `none` (the picture alone)
 //! - `ipynb_outputs` — Jupyter notebooks (#673): `none` (default, the
 //!   notebook as written) | `text` (stream and `text/plain` results as code
 //!   blocks after their cell, image outputs as pictures)

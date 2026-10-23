@@ -60,6 +60,12 @@ pub struct ConverterOptions {
     /// reads all three, DOC accept and reject, ODT accept; a mode a reader
     /// lacks is an error.
     pub track_changes: Option<String>,
+    /// DOCX DrawingML drawings (#858): `"mermaid"` (the default) adds a
+    /// `mermaid` code item after a drawing's picture with the flowchart its
+    /// labelled shapes and connectors describe — only when every connector
+    /// names its two end shapes; a drawing laid by eye gets no graph.
+    /// `"none"` turns the extraction off.
+    pub extract_diagrams: Option<String>,
     /// Max frames sampled from a video input as timestamped pictures (needs
     /// the ffmpeg binary at runtime; `0` = transcript only). Default 8.
     /// `4294967295` (`2**32 - 1`, the largest value this field takes) keeps
@@ -420,6 +426,9 @@ pub struct ConvertOptions {
     /// Tracked changes (#851): `"accept"` | `"reject"` | `"all"`; see
     /// [`ConverterOptions::track_changes`].
     pub track_changes: Option<String>,
+    /// Diagram extraction (#858): `"mermaid"` (default) | `"none"`; see
+    /// [`ConverterOptions::extract_diagrams`].
+    pub extract_diagrams: Option<String>,
     /// Max frames sampled from a video input (`0` = transcript only;
     /// `4294967295` = every distinct cut, #647).
     pub video_frames: Option<u32>,

@@ -1456,7 +1456,11 @@ impl Walker {
     fn handle_drawingml(&mut self, drawings: &[XmlNode], ctx: &Ctx) {
         let level = self.get_level();
         let parent = self.parent_at(level - 1);
-        let image = super::docx_drawingml::render(drawings, ctx.theme).map(|r| r.image);
+        let rendered = super::docx_drawingml::render(drawings, ctx.theme);
+        let diagram = rendered
+            .as_ref()
+            .and_then(|r| super::docx_drawingml::diagram(r, ctx.extract_diagrams));
+        let image = rendered.map(|r| r.image);
         self.add(
             parent,
             self.layer,
@@ -1471,6 +1475,22 @@ impl Walker {
                 dpi: None,
             },
         );
+        // The diagram extracted from the drawing (#858), a code item after
+        // its picture, as in the flat chain.
+        if let Some((language, text)) = diagram {
+            self.add(
+                parent,
+                self.layer,
+                TreeKind::Code {
+                    text,
+                    orig: None,
+                    language: Some(language),
+                    formatting: None,
+                    hyperlink: None,
+                    captions: Vec::new(),
+                },
+            );
+        }
     }
 
     /// `_is_chart_drawing`: the drawing embeds a `c:chart` part reference.

@@ -76,6 +76,9 @@
         },
         {
           "$ref": "#/pictures/0"
+        },
+        {
+          "$ref": "#/texts/5"
         }
       ],
       "content_layer": "body",
@@ -160,6 +163,22 @@
         "strikethrough": false,
         "script": "baseline"
       }
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/texts/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "flowchart TD\n  StartTask[\"Start Task\"] --> DecisionProcess[\"Decision Process\"]\n  DecisionProcess[\"Decision Process\"] --> EndTask[\"End Task\"]",
+      "text": "flowchart TD\n  StartTask[\"Start Task\"] --> DecisionProcess[\"Decision Process\"]\n  DecisionProcess[\"Decision Process\"] --> EndTask[\"End Task\"]",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
     }
   ],
   "pictures": [

@@ -8,4 +8,8 @@ Decision Process
 
 End Task
 
-<!-- image -->
+```mermaid
+flowchart TD
+  StartTask["Start Task"] --> DecisionProcess["Decision Process"]
+  DecisionProcess["Decision Process"] --> EndTask["End Task"]
+```

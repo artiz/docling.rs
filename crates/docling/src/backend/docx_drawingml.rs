@@ -204,8 +204,9 @@ pub(super) struct Shape {
 pub(super) struct Rendered {
     pub(super) image: PictureImage,
     pub(super) shapes: Vec<Shape>,
-    /// What was approximated, one line each (also logged under
-    /// `DOCLING_RS_DEBUG`).
+    /// What was approximated, one line each — logged under
+    /// `DOCLING_RS_DEBUG`, and what the acceptance tests pin.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) diagnostics: Vec<String>,
 }
 
@@ -938,6 +939,145 @@ fn fill_ref_color(fill_ref: &Option<(u32, Option<String>)>) -> Option<String> {
 
 fn line_ref_color(line_ref: &Option<(u32, Option<String>)>) -> Option<String> {
     line_ref.as_ref().and_then(|(_, c)| c.clone())
+}
+
+// ---------------------------------------------------------------------------
+// Mermaid (#858 phase 2).
+// ---------------------------------------------------------------------------
+
+/// The flowchart of a drawing's shapes as Mermaid, when its connectivity is
+/// unambiguous — `extract_diagrams=mermaid`, the default. The nodes are the
+/// labelled shapes, the edges come **only** from connectors whose
+/// `a:stCxn` / `a:endCxn` name two of them; a `tailEnd` arrow is `A --> B`,
+/// a `headEnd` arrow `B --> A`, both `A <--> B`, neither `A --- B` (an
+/// `oval` or `diamond` end implies no direction). Any connector or line
+/// without both sites — a line laid by eye — makes the graph ambiguous and
+/// the result `Err` with the reason: nothing is invented from positions.
+pub(super) fn mermaid(shapes: &[Shape]) -> Result<String, String> {
+    let is_line = |s: &Shape| {
+        s.connector
+            || matches!(s.geometry.as_str(), "line" | "straightConnector1")
+            || s.geometry.starts_with("bentConnector")
+            || s.geometry.starts_with("curvedConnector")
+    };
+    let nodes: Vec<&Shape> = shapes
+        .iter()
+        .filter(|s| !is_line(s) && !s.text.is_empty())
+        .collect();
+    let lines: Vec<&Shape> = shapes.iter().filter(|s| is_line(s)).collect();
+    if lines.is_empty() {
+        return Err("no connectors".into());
+    }
+    if nodes.is_empty() {
+        return Err("no labelled shapes".into());
+    }
+    // Node identifiers: the shape's name when it is one, else `S<id>`,
+    // made unique.
+    let mut ids: Vec<String> = Vec::with_capacity(nodes.len());
+    for n in &nodes {
+        let base: String = n
+            .name
+            .as_deref()
+            .unwrap_or("")
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        let mut id = if base.is_empty() || !base.starts_with(|c: char| c.is_ascii_alphabetic()) {
+            format!(
+                "S{}",
+                n.id.map_or_else(|| ids.len().to_string(), |i| i.to_string())
+            )
+        } else {
+            base
+        };
+        let mut k = 2;
+        while ids.contains(&id) {
+            id = format!("{id}_{k}");
+            k += 1;
+        }
+        ids.push(id);
+    }
+    let node_at = |shape_id: Option<u32>| -> Option<usize> {
+        let id = shape_id?;
+        nodes.iter().position(|n| n.id == Some(id))
+    };
+    let label = |i: usize| {
+        format!(
+            "{}[\"{}\"]",
+            ids[i],
+            mermaid_label(&nodes[i].text.join(" "))
+        )
+    };
+    let mut out = String::from("flowchart TD\n");
+    let mut linked = vec![false; nodes.len()];
+    for line in &lines {
+        let name = line
+            .name
+            .clone()
+            .or_else(|| line.id.map(|i| format!("#{i}")))
+            .unwrap_or_else(|| "a line".into());
+        let (Some(a), Some(b)) = (node_at(line.start), node_at(line.end)) else {
+            return Err(format!(
+                "connector `{name}` has no connection sites to labelled shapes"
+            ));
+        };
+        let arrow = match (line.head.is_arrow(), line.tail.is_arrow()) {
+            (false, true) => "-->",
+            (true, false) => "<--",
+            (true, true) => "<-->",
+            (false, false) => "---",
+        };
+        let (a, b) = if arrow == "<--" { (b, a) } else { (a, b) };
+        let arrow = if arrow == "<--" { "-->" } else { arrow };
+        let _ = writeln!(out, "  {} {arrow} {}", label(a), label(b));
+        linked[a] = true;
+        linked[b] = true;
+    }
+    for (i, l) in linked.iter().enumerate() {
+        if !l {
+            let _ = writeln!(out, "  {}", label(i));
+        }
+    }
+    // A code item's text carries no trailing newline: the fence closes
+    // right after the last line.
+    out.truncate(out.trim_end().len());
+    Ok(out)
+}
+
+/// The code item `extract_diagrams` adds after a drawing's picture:
+/// `(language, text)`, or `None` when the extraction is off or the graph
+/// is ambiguous (a `DOCLING_RS_DEBUG` diagnostic says why).
+pub(super) fn diagram(
+    rendered: &Rendered,
+    format: crate::DiagramFormat,
+) -> Option<(String, String)> {
+    match format {
+        crate::DiagramFormat::None => None,
+        crate::DiagramFormat::Mermaid => match mermaid(&rendered.shapes) {
+            Ok(text) => Some(("mermaid".to_string(), text)),
+            Err(reason) => {
+                docling_core::debug_log!(
+                    "docx drawingml: no mermaid graph extracted — {reason}; the picture stays"
+                );
+                None
+            }
+        },
+    }
+}
+
+/// A node label inside `["…"]`: Mermaid's entity codes for the quote and
+/// the hash (`#quot;`, `#35;`), a line break as a space.
+fn mermaid_label(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("#quot;"),
+            '#' => out.push_str("#35;"),
+            '\n' | '\r' => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -1864,7 +2004,7 @@ mod tests {
         // The labels stay text items, as docling keeps them.
         let md = doc.export_to_markdown();
         assert!(
-            md.contains("Start Task\n\nDecision Process\n\nEnd Task\n\n<!-- image -->"),
+            md.contains("Start Task\n\nDecision Process\n\nEnd Task\n\n```mermaid\n"),
             "{md}"
         );
         // The item tree's picture carries the same bytes.
@@ -1983,6 +2123,122 @@ mod tests {
             svg.contains("<path d=\"M0 62.99 L251.97 62.99 L251.97 188.98 L0 188.98 Z\""),
             "{svg}"
         );
+    }
+
+    /// #858 acceptance A2 / B / C2: the supported fixture's exact
+    /// two-edge graph; the directional pair; the complex fixture declines
+    /// (its twelve lines name no connection sites) rather than guessing.
+    #[test]
+    fn mermaid_from_explicit_connectors_only() {
+        let r = rendered("drawingml_flowchart_supported.docx");
+        assert_eq!(
+            mermaid(&r.shapes).unwrap(),
+            "flowchart TD\n  StartTask[\"Start Task\"] --> DecisionProcess[\"Decision Process\"]\n  DecisionProcess[\"Decision Process\"] --> EndTask[\"End Task\"]"
+        );
+        let tail = rendered("drawingml_arrow_tail.docx");
+        assert_eq!(
+            mermaid(&tail.shapes).unwrap(),
+            "flowchart TD\n  NodeA[\"Node A\"] --> NodeB[\"Node B\"]"
+        );
+        let head = rendered("drawingml_arrow_head.docx");
+        assert_eq!(
+            mermaid(&head.shapes).unwrap(),
+            "flowchart TD\n  NodeB[\"Node B\"] --> NodeA[\"Node A\"]"
+        );
+        let complex = rendered("drawingml_flowchart_complex.docx");
+        let err = mermaid(&complex.shapes).unwrap_err();
+        assert!(err.contains("no connection sites"), "{err}");
+        let transform = rendered("drawingml_group_transform.docx");
+        assert!(mermaid(&transform.shapes).is_ok());
+    }
+
+    /// Marker neutrality and escaping on a synthetic graph: `oval` and
+    /// `diamond` ends are undirected, both arrows bidirectional, a quote
+    /// and a hash in a label become entity codes, a nameless node gets a
+    /// stable id, an unlinked node is listed on its own.
+    #[test]
+    fn mermaid_edges_and_escaping() {
+        let node = |id: u32, name: Option<&str>, text: &str| Shape {
+            id: Some(id),
+            name: name.map(str::to_string),
+            geometry: "rect".into(),
+            text: vec![text.into()],
+            ..Shape::default()
+        };
+        let link = |start: u32, end: u32, head: LineEnd, tail: LineEnd| Shape {
+            id: None,
+            connector: true,
+            geometry: "line".into(),
+            start: Some(start),
+            end: Some(end),
+            head,
+            tail,
+            ..Shape::default()
+        };
+        let shapes = vec![
+            node(1, Some("A"), "Say \"hi\" #1"),
+            node(2, None, "B [x]"),
+            node(3, Some("C"), "C"),
+            node(4, Some("Lonely"), "Alone"),
+            link(1, 2, LineEnd::Oval, LineEnd::Diamond),
+            link(2, 3, LineEnd::Arrow, LineEnd::Arrow),
+        ];
+        assert_eq!(
+            mermaid(&shapes).unwrap(),
+            "flowchart TD\n  A[\"Say #quot;hi#quot; #35;1\"] --- S2[\"B [x]\"]\n  S2[\"B [x]\"] <--> C[\"C\"]\n  Lonely[\"Alone\"]"
+        );
+        // A line laid by eye (no sites) makes the graph ambiguous.
+        let mut by_eye = shapes.clone();
+        by_eye.push(Shape {
+            geometry: "line".into(),
+            ..Shape::default()
+        });
+        assert!(mermaid(&by_eye).is_err());
+        assert_eq!(mermaid(&shapes[..4]).unwrap_err(), "no connectors");
+    }
+
+    /// The whole way through: the default `extract_diagrams=mermaid` adds
+    /// the graph as a `mermaid` code item after the picture, in both
+    /// chains, and the Markdown fence carries the language even in the
+    /// legacy mode; `none` turns it off; the ambiguous fixture gets no
+    /// code item.
+    #[test]
+    fn extract_diagrams_adds_a_code_item() {
+        use crate::backend::DeclarativeBackend;
+        let convert = |name: &str, on: bool| {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/docx/sources")
+                .join(name);
+            let src = crate::SourceDocument::from_file(&path).unwrap();
+            let backend = if on {
+                super::super::docx::DocxBackend::default()
+            } else {
+                super::super::docx::DocxBackend {
+                    extract_diagrams: crate::DiagramFormat::None,
+                    ..Default::default()
+                }
+            };
+            backend.convert(&src).unwrap()
+        };
+        let doc = convert("drawingml_flowchart_supported.docx", true);
+        let md = doc.export_to_markdown();
+        // The graph takes the placeholder's place in Markdown; the JSON
+        // keeps the picture (its SVG payload) and the code item.
+        assert!(
+            md.contains("End Task\n\n```mermaid\nflowchart TD\n  StartTask[\"Start Task\"] --> DecisionProcess[\"Decision Process\"]\n  DecisionProcess[\"Decision Process\"] --> EndTask[\"End Task\"]\n```\n"),
+            "{md}"
+        );
+        assert!(!md.contains("<!-- image -->"), "{md}");
+        let json = doc.export_to_json();
+        assert!(json.contains("\"label\": \"code\""), "{json}");
+        assert!(json.contains("flowchart TD"), "{json}");
+        assert!(json.contains("data:image/svg+xml;base64,"), "{json}");
+        assert!(!convert("drawingml_flowchart_supported.docx", false)
+            .export_to_markdown()
+            .contains("mermaid"));
+        assert!(!convert("drawingml_flowchart_complex.docx", true)
+            .export_to_markdown()
+            .contains("mermaid"));
     }
 
     #[test]

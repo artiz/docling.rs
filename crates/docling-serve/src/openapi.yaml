@@ -131,6 +131,7 @@ paths:
         - { $ref: "#/components/parameters/ipynb_outputs" }
         - { $ref: "#/components/parameters/metadata" }
         - { $ref: "#/components/parameters/track_changes" }
+        - { $ref: "#/components/parameters/extract_diagrams" }
         - { $ref: "#/components/parameters/video_frames" }
         - { $ref: "#/components/parameters/video_scene_threshold" }
         - { $ref: "#/components/parameters/video_frame_max_side" }
@@ -226,7 +227,9 @@ paths:
                 ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }
                 metadata: { $ref: "#/components/schemas/MetadataOutput" }
         track_changes: { $ref: "#/components/schemas/TrackChanges" }
+        extract_diagrams: { $ref: "#/components/schemas/DiagramFormat" }
                 track_changes: { $ref: "#/components/schemas/TrackChanges" }
+                extract_diagrams: { $ref: "#/components/schemas/DiagramFormat" }
                 video_frames: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] }
                 video_scene_threshold: { type: number, minimum: 0, maximum: 1 }
                 video_frame_max_side: { type: integer, minimum: 0 }
@@ -724,6 +727,17 @@ components:
         "Write a detailed caption for this image.", `ocr` markitdown-ocr's
         "Extract all text from this image …" — LLM-vision OCR where the local
         models read poorly.
+    DiagramFormat:
+      type: string
+      enum: [mermaid, none]
+      default: mermaid
+      description: >-
+        Structured diagrams from DOCX DrawingML drawings (#858): `mermaid`
+        (the default) adds a `mermaid` code item after a drawing's picture
+        with the flowchart its labelled shapes and connectors describe —
+        only when every connector names its two end shapes (`a:stCxn` /
+        `a:endCxn`); a drawing whose lines are laid by eye gets no graph,
+        never an invented one. `none` turns the extraction off.
     TrackChanges:
       type: string
       enum: [accept, reject, all]
@@ -1215,6 +1229,7 @@ components:
         ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }
         metadata: { $ref: "#/components/schemas/MetadataOutput" }
         track_changes: { $ref: "#/components/schemas/TrackChanges" }
+        extract_diagrams: { $ref: "#/components/schemas/DiagramFormat" }
         video_frames:
           oneOf:
             - { type: integer, minimum: 0 }
@@ -1680,6 +1695,8 @@ components:
       { name: metadata, in: query, schema: { $ref: "#/components/schemas/MetadataOutput" } }
     track_changes:
       { name: track_changes, in: query, schema: { $ref: "#/components/schemas/TrackChanges" } }
+    extract_diagrams:
+      { name: extract_diagrams, in: query, schema: { $ref: "#/components/schemas/DiagramFormat" } }
     video_frames:
       { name: video_frames, in: query, schema: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] } }
     video_scene_threshold:

@@ -25,6 +25,9 @@
       },
       {
         "$ref": "#/pictures/0"
+      },
+      {
+        "$ref": "#/texts/3"
       }
     ],
     "content_layer": "body",
@@ -107,6 +110,22 @@
         "strikethrough": false,
         "script": "baseline"
       }
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "flowchart TD\n  NodeB[\"Node B\"] --> NodeA[\"Node A\"]",
+      "text": "flowchart TD\n  NodeB[\"Node B\"] --> NodeA[\"Node A\"]",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
     }
   ],
   "pictures": [

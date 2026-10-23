@@ -37,6 +37,10 @@ pub struct DocxBackend {
     /// How tracked changes are read (#851); `None` = docling's reading
     /// (insertions shown, deletions left out, every table row kept).
     pub track_changes: Option<TrackChanges>,
+    /// Structured diagrams from the DrawingML drawings (#858): a code item
+    /// in that format after a drawing's picture when its connectors name
+    /// their end shapes; Mermaid by default.
+    pub extract_diagrams: crate::DiagramFormat,
 }
 
 impl DeclarativeBackend for DocxBackend {
@@ -88,6 +92,7 @@ impl DeclarativeBackend for DocxBackend {
             orphan_inline_groups: std::cell::Cell::new(0),
             bookmarks: &HashMap::new(),
             track_changes: self.track_changes,
+            extract_diagrams: self.extract_diagrams,
         };
 
         let mut doc = DoclingDocument::new(&source.name);
@@ -527,6 +532,8 @@ pub(super) struct Ctx<'a> {
     pub(super) bookmarks: &'a HashMap<String, String>,
     /// The tracked-changes policy (#851); `None` = docling's reading.
     pub(super) track_changes: Option<TrackChanges>,
+    /// The diagram extraction (#858); `DiagramFormat::None` = pictures alone.
+    pub(super) extract_diagrams: crate::DiagramFormat,
 }
 
 impl<'a> Ctx<'a> {
@@ -555,6 +562,7 @@ impl<'a> Ctx<'a> {
             orphan_inline_groups: std::cell::Cell::new(0),
             bookmarks: self.bookmarks,
             track_changes: self.track_changes,
+            extract_diagrams: self.extract_diagrams,
         }
     }
 
@@ -899,16 +907,8 @@ fn handle_paragraph_inner(
                         text: String::new(),
                     });
                 }
-                for (image, alt) in drawing_images(tp, ctx, false) {
-                    doc.push(Node::Picture {
-                        caption: None,
-                        caption_href: None,
-                        image,
-                        classification: None,
-                        description: alt.map(PictureDescription::alt_text),
-                        caption_parent: Default::default(),
-                        caption_location: None,
-                    });
+                for drawn in drawing_images(tp, ctx, false) {
+                    push_drawn(doc, drawn);
                 }
             }
         }
@@ -922,16 +922,8 @@ fn handle_paragraph_inner(
     // extracted as textbox content above. Modern DrawingML (`<a:blip>`) wins
     // over legacy VML (`<v:imagedata>`), and blip-less shapes yield docling's
     // single rendered placeholder (see `drawing_images`).
-    for (image, alt) in drawing_images(p, ctx, true) {
-        doc.push(Node::Picture {
-            caption: None,
-            caption_href: None,
-            image,
-            classification: None,
-            description: alt.map(PictureDescription::alt_text),
-            caption_parent: Default::default(),
-            caption_location: None,
-        });
+    for drawn in drawing_images(p, ctx, true) {
+        push_drawn(doc, drawn);
     }
     // Native charts anchored in this paragraph (docling PR #3809): classified
     // kind + cached data grid instead of a rendered-placeholder picture.
@@ -1314,6 +1306,27 @@ fn handle_paragraph_inner(
     }
 }
 
+/// A drawing's picture, then the diagram code item it extracted (#858).
+fn push_drawn(doc: &mut DoclingDocument, drawn: Drawn) {
+    doc.push(Node::Picture {
+        caption: None,
+        caption_href: None,
+        image: drawn.image,
+        classification: None,
+        description: drawn.alt.map(PictureDescription::alt_text),
+        caption_parent: Default::default(),
+        caption_location: None,
+    });
+    if let Some((language, text)) = drawn.diagram {
+        doc.push(Node::Code {
+            language: Some(language),
+            text,
+            orig: None,
+            pretty: None,
+        });
+    }
+}
+
 /// Whether a paragraph carries any drawing (image/shape/textbox) — docling
 /// suppresses the blank-paragraph text item in that case.
 fn has_drawing(p: XmlNode) -> bool {
@@ -1337,11 +1350,7 @@ fn has_drawing(p: XmlNode) -> bool {
 /// [`drawing_alt`]) when the author wrote one. The blip-less drawings are
 /// rendered in-process into one SVG payload (#858, `docx_drawingml`), the
 /// picture staying payload-less only when nothing in them can be drawn.
-fn drawing_images(
-    node: XmlNode,
-    ctx: &Ctx,
-    skip_textbox: bool,
-) -> Vec<(Option<PictureImage>, Option<String>)> {
+fn drawing_images(node: XmlNode, ctx: &Ctx, skip_textbox: bool) -> Vec<Drawn> {
     let keep = |n: XmlNode| !skip_textbox || !in_textbox(n);
     let blips: Vec<XmlNode> = node
         .descendants()
@@ -1350,25 +1359,23 @@ fn drawing_images(
     if !blips.is_empty() {
         return blips
             .iter()
-            .map(|b| {
-                (
-                    with_extent(
-                        attr(*b, "embed").and_then(|id| ctx.images.get(id)).cloned(),
-                        *b,
-                    ),
-                    drawing_alt(*b),
-                )
+            .map(|b| Drawn {
+                image: with_extent(
+                    attr(*b, "embed").and_then(|id| ctx.images.get(id)).cloned(),
+                    *b,
+                ),
+                alt: drawing_alt(*b),
+                diagram: None,
             })
             .collect();
     }
-    let vml: Vec<(Option<PictureImage>, Option<String>)> = node
+    let vml: Vec<Drawn> = node
         .descendants()
         .filter(|n| n.has_tag_name("imagedata") && keep(*n))
-        .map(|d| {
-            (
-                attr(d, "id").and_then(|id| ctx.images.get(id)).cloned(),
-                drawing_alt(d),
-            )
+        .map(|d| Drawn {
+            image: attr(d, "id").and_then(|id| ctx.images.get(id)).cloned(),
+            alt: drawing_alt(d),
+            diagram: None,
         })
         .collect();
     if !vml.is_empty() {
@@ -1388,10 +1395,25 @@ fn drawing_images(
         })
         .collect();
     if !drawings.is_empty() {
-        let image = super::docx_drawingml::render(&drawings, ctx.theme).map(|r| r.image);
-        return vec![(image, None)];
+        let rendered = super::docx_drawingml::render(&drawings, ctx.theme);
+        let diagram = rendered
+            .as_ref()
+            .and_then(|r| super::docx_drawingml::diagram(r, ctx.extract_diagrams));
+        return vec![Drawn {
+            image: rendered.map(|r| r.image),
+            alt: None,
+            diagram,
+        }];
     }
     Vec::new()
+}
+
+/// One picture of a paragraph: its payload, its alt text, and the diagram
+/// code item that follows it under `extract_diagrams` (#858).
+pub(super) struct Drawn {
+    pub(super) image: Option<PictureImage>,
+    pub(super) alt: Option<String>,
+    pub(super) diagram: Option<(String, String)>,
 }
 
 /// The alt text of the picture an `<a:blip>` or `<v:imagedata>` belongs to

@@ -4,4 +4,7 @@ Node A
 
 Node B
 
-<!-- image -->
+```mermaid
+flowchart TD
+  NodeA["Node A"] --> NodeB["Node B"]
+```

@@ -407,6 +407,11 @@ impl PyDocumentConverter {
     ///   typed with author and date in the Pandoc AST). `None` (default):
     ///   each reader's own view. DOCX reads all three, DOC accept and
     ///   reject, ODT accept; a mode a reader lacks raises.
+    /// * `extract_diagrams` — DOCX DrawingML drawings (#858): `"mermaid"`
+    ///   (the default) adds a `mermaid` code item after a drawing's picture
+    ///   with the flowchart its labelled shapes and connectors describe —
+    ///   only when every connector names its two end shapes; a drawing laid
+    ///   by eye gets no graph. `"none"` turns the extraction off.
     /// * `pipeline` — `"standard"` (default) or `"vlm"` (#304): convert PDF /
     ///   image inputs by sending each page to a remote OpenAI-compatible
     ///   vision model instead of the local ML stack. The `vlm_*` kwargs
@@ -463,6 +468,7 @@ impl PyDocumentConverter {
         ipynb_outputs = None,
         metadata = None,
         track_changes = None,
+        extract_diagrams = None,
         video_frames = None,
         video_scene_threshold = None,
         video_frame_max_side = None,
@@ -540,6 +546,7 @@ impl PyDocumentConverter {
         ipynb_outputs: Option<String>,
         metadata: Option<String>,
         track_changes: Option<String>,
+        extract_diagrams: Option<String>,
         video_frames: Option<usize>,
         video_scene_threshold: Option<f32>,
         video_frame_max_side: Option<u32>,
@@ -604,6 +611,7 @@ impl PyDocumentConverter {
             ipynb_outputs,
             metadata,
             track_changes,
+            extract_diagrams,
             use_web_browser: Some(use_web_browser),
             xbrl_taxonomy: xbrl_taxonomy.map(|p| p.to_string_lossy().into_owned()),
             asr_model,
