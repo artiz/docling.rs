@@ -732,7 +732,7 @@ impl Node {
         match self {
             Node::LabeledText { text, href, .. } => std::borrow::Cow::Owned(Node::Paragraph {
                 text: match href {
-                    Some(uri) => format!("[{text}]({uri})"),
+                    Some(uri) => crate::hyperlink::markdown_link(text, uri),
                     None => text.clone(),
                 },
             }),

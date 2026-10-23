@@ -2044,7 +2044,7 @@ fn serialize_run(text: &str, fmt: Fmt, hyperlink: Option<&str>) -> String {
         res = format!("~~{res}~~");
     }
     if let Some(href) = hyperlink {
-        res = format!("[{res}]({href})");
+        res = docling_core::hyperlink::markdown_link(&res, href);
     }
     res
 }

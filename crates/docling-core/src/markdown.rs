@@ -314,7 +314,8 @@ fn apply_links(body: &str, links: &[(String, String)]) -> String {
         if let Some(rel) = out[cursor..].find(&anchor) {
             let at = cursor + rel;
             // Don't relink inside an already-emitted `](` Markdown link target.
-            let replacement = format!("[{anchor}]({href})");
+            // An unsafe destination (#860) leaves the anchor as prose.
+            let replacement = crate::hyperlink::markdown_link(&anchor, href);
             out.replace_range(at..at + anchor.len(), &replacement);
             cursor = at + replacement.len();
         }
@@ -346,7 +347,7 @@ fn apply_links_chunk(chunk: &str, queue: &mut Vec<(String, String)>) -> String {
         }
         if let Some(rel) = out[cursor..].find(&anchor) {
             let at = cursor + rel;
-            let replacement = format!("[{anchor}]({href})");
+            let replacement = crate::hyperlink::markdown_link(&anchor, &href);
             out.replace_range(at..at + anchor.len(), &replacement);
             cursor = at + replacement.len();
         } else {
@@ -1021,7 +1022,7 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         Node::Caption { text, href } => {
             let body = ctx.breaks(&ctx.text(text));
             blocks.push(match href {
-                Some(url) if !ctx.plain => format!("[{body}]({url})"),
+                Some(url) if !ctx.plain => crate::hyperlink::markdown_link(&body, url),
                 _ => body,
             });
         }

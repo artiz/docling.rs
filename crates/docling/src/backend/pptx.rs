@@ -502,7 +502,7 @@ fn shape_hyperlink(shape: XmlNode, ctx: &SlideCtx) -> Option<String> {
 /// as a Markdown link, as docling-core serializes an item's `hyperlink`.
 fn linked_text(text: &str, link: Option<&str>) -> String {
     match link {
-        Some(url) if !text.is_empty() => format!("[{text}]({url})"),
+        Some(url) if !text.is_empty() => docling_core::hyperlink::markdown_link(text, url),
         _ => text.to_string(),
     }
 }

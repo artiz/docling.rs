@@ -15,7 +15,10 @@
 //! 2.140 (its table of formatted cells), the `tables_*` documents probe where
 //! marko's GFM tables start, end and sit and what makes a cell rich, and
 //! `strikethrough.md` the edges of docling's `~~` rule. Re-create a reference
-//! with upstream's backend, never from our own output.
+//! with upstream's backend, never from our own output. One byte moved by
+//! hand: `autolinks_edge_cases`' `(https://example.com/a_%28b%29)` is
+//! docling-core 2.104's `markdown_link_destination` (#860), which the
+//! 2.140.0 capture predates.
 use std::fs;
 use std::path::{Path, PathBuf};
 

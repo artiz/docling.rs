@@ -917,7 +917,7 @@ impl Converter {
             let url = arg_text(&a.argnlist[0]);
             let display = arg_text(&a.argnlist[1]);
             let link = match (url.is_empty(), display.is_empty()) {
-                (false, false) => format!("[{display}]({url})"),
+                (false, false) => docling_core::hyperlink::markdown_link(&display, &url),
                 (false, true) => url,
                 (true, false) => display,
                 (true, true) => String::new(),

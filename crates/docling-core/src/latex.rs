@@ -381,6 +381,10 @@ fn hyperlink(label: &[char], url: &str) -> String {
         return content;
     }
     let url = unescape_text(url);
+    // An unsafe destination (`javascript:`, #860) keeps the text alone.
+    if !crate::hyperlink::is_safe_hyperlink(&url) {
+        return content;
+    }
     let url = match url.find("://") {
         Some(p) => {
             let (scheme, rest) = url.split_at(p + 3);

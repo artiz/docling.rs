@@ -2190,7 +2190,7 @@ fn serialize_run(text: &str, fmt: Fmt, link: Option<&str>) -> String {
         s = format!("~~{s}~~");
     }
     if let Some(url) = link {
-        s = format!("[{s}]({url})");
+        s = docling_core::hyperlink::markdown_link(&s, url);
     }
     s
 }

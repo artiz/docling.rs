@@ -65,6 +65,21 @@ unlimited there); use `--page-range` to convert a window, and the server's
 total or ratio cap across its parts (docling's strict OOXML path caps
 512 MiB per member and 2 GiB in total).
 
+### Hyperlinks in the output
+
+A document's hyperlinks reach the Markdown, HTML, LaTeX and Pandoc exports
+through `docling_core::hyperlink` (#860, docling-core 2.104's rules): a
+destination whose scheme is not `http`, `https`, `ftp`, `ftps`, `sftp`,
+`mailto`, `tel` or `file` — `javascript:`, `data:`, `vbscript:`, read the way
+a browser reads it (leading control characters and spaces ignored, tabs and
+newlines removed anywhere, any case) — is never written as a live link: the
+link text stays, the destination is dropped. A live Markdown destination is
+percent-escaped (whitespace, `()<>"\` and control characters) so it cannot
+end the `[text](…)` early and leave its tail to be read as Markdown or raw
+HTML, and an HTML `href` is attribute-escaped. The JSON export keeps the raw
+`hyperlink` string, as docling's model does — a consumer rendering the JSON
+applies its own policy.
+
 ### Hostile inputs
 
 Hostile inputs degrade, they do not abort: block quotes and lists in

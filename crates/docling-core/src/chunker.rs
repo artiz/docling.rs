@@ -972,6 +972,14 @@ fn inline_segments_tagged(md: &str) -> Vec<(String, bool)> {
                     }
                 }
                 if let Some(endp) = url_end {
+                    // An unsafe destination (`javascript:`, #860) is plain
+                    // text, not a hyperlink item.
+                    let url: String = chars[close + 2..endp].iter().collect();
+                    if !crate::hyperlink::is_safe_hyperlink(&url) {
+                        plain.extend(&chars[i + 1..close]);
+                        i = endp + 1;
+                        continue;
+                    }
                     flush(&mut out, &mut plain, true, after_span);
                     out.push((
                         unescape_text(&chars[i..=endp].iter().collect::<String>()),

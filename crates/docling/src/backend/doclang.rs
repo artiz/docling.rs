@@ -468,7 +468,7 @@ fn parse_list(el: XmlNode, level: u8, out: &mut Vec<Node>) {
                 .unwrap_or(*number);
             let text = match &inline.href {
                 Some(uri) if !inline.text.trim().is_empty() => {
-                    format!("[{}]({uri})", inline.text.trim())
+                    docling_core::hyperlink::markdown_link(inline.text.trim(), uri)
                 }
                 _ => inline.text.trim().to_string(),
             };

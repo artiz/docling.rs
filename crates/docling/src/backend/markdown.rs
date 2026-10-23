@@ -1141,7 +1141,7 @@ impl MarkdownBackend {
                     consume_end(events, i);
                     // A table cell keeps its links too (docling 2.140 prints
                     // `[label](url)` in a cell).
-                    runs.push(format!("[{inner}]({url})"));
+                    runs.push(docling_core::hyperlink::markdown_link(&inner, &url));
                 }
                 Event::Start(Tag::Image {
                     dest_url, title, ..

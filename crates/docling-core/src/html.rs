@@ -664,8 +664,9 @@ impl<'a> Serializer<'a> {
         } else if fmt.sup {
             res = format!("<sup>{res}</sup>");
         }
-        if let Some(url) = hyperlink {
-            res = format!("<a href=\"{url}\">{res}</a>");
+        // An unsafe destination (`javascript:`, #860) keeps the text alone.
+        if let Some(url) = hyperlink.filter(|u| crate::hyperlink::is_safe_hyperlink(u)) {
+            res = format!("<a href=\"{}\">{res}</a>", crate::hyperlink::html_href(url));
         }
         res
     }
