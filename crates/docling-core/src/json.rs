@@ -664,9 +664,17 @@ fn table_data_with(t: &Table, raw: bool) -> Value {
     // positions come back as docling's empty filler cells.
     let ragged = t.rows.iter().any(|r| r.len() != num_cols);
     if let Some(first_class) = t.cells.as_ref().filter(|c| ragged && !c.is_empty()) {
+        let (mut rows, mut cols) = (num_rows, num_cols);
         for c in first_class {
-            num_rows = num_rows.max(c.start_row + c.row_span);
-            num_cols = num_cols.max(c.start_col + c.col_span);
+            rows = rows.max(c.start_row.saturating_add(c.row_span));
+            cols = cols.max(c.start_col.saturating_add(c.col_span));
+        }
+        // A cell whose declared extent reaches past the cell budget (#861)
+        // does not size the slot map; the grid stays the rows' own and the
+        // cell is clipped to it, like any other cell reaching past the grid.
+        if rows.saturating_mul(cols) <= crate::limits::max_table_cells() {
+            num_rows = rows;
+            num_cols = cols;
         }
     }
     let mut grid = Vec::with_capacity(num_rows);

@@ -98,6 +98,23 @@ impl ConversionError {
         )
     }
 
+    /// The typed limit when this error says the input asked for more than a
+    /// safety cap allows (#861: a docling-JSON, DocTags or DocLang table past
+    /// `DOCLING_RS_MAX_TABLE_CELLS` / `_MAX_TOTAL_TABLE_CELLS`): anywhere on
+    /// the [`source`](std::error::Error::source) chain, so a caller names
+    /// the variable to raise instead of matching message text. `None` for
+    /// every other failure.
+    pub fn limit(&self) -> Option<&docling_core::LimitExceeded> {
+        let mut cause: Option<&(dyn std::error::Error + 'static)> = self.source();
+        while let Some(c) = cause {
+            if let Some(e) = c.downcast_ref::<docling_core::LimitExceeded>() {
+                return Some(e);
+            }
+            cause = c.source();
+        }
+        None
+    }
+
     /// The typed reason when this error says the document is encrypted
     /// (#636): anywhere on the [`source`](std::error::Error::source) chain —
     /// the PDF reader's [`docling_pdf::PdfError::Encrypted`], the Office

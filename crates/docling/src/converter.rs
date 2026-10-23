@@ -3004,9 +3004,11 @@ impl DocumentConverter {
                     crate::backend::DoclangBackend.convert(source)?
                 }
                 // Raw DocTags (VLM token markup, #152): the tolerant docling-core
-                // parser — never fails, best-effort document out.
+                // parser — a best-effort document out of any markup; only a
+                // table past the cell budget (#861) is an error.
                 InputFormat::DocTags => {
-                    let mut doc = docling_core::doctags::parse(&source.text()?);
+                    let mut doc = docling_core::doctags::try_parse(&source.text()?)
+                        .map_err(|e| ConversionError::with_source("doctags", e))?;
                     doc.name = source.name.clone();
                     doc
                 }

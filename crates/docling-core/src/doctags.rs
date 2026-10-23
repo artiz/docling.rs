@@ -32,13 +32,44 @@ pub fn parse(markup: &str) -> DoclingDocument {
     parse_pages([markup])
 }
 
+/// [`parse`] that refuses a table past the cell budget (#861,
+/// `DOCLING_RS_MAX_TABLE_CELLS` / `_MAX_TOTAL_TABLE_CELLS`) instead of
+/// dropping it — what a converter reading an untrusted file wants, and
+/// docling-core's own load-time error.
+pub fn try_parse(markup: &str) -> Result<DoclingDocument, crate::limits::LimitExceeded> {
+    try_parse_pages([markup])
+}
+
 /// Parse multiple per-page fragments into one document, mirroring Python
 /// docling-core's `DocTagsDocument.from_doctags_and_image_pairs` +
 /// `DoclingDocument.load_from_doctags` (sans images). A [`Node::PageBreak`]
 /// separates pages in the model; Markdown/JSON exports omit it.
 pub fn parse_pages<'a>(pages: impl IntoIterator<Item = &'a str>) -> DoclingDocument {
+    // A table past the cell budget is left out (a quiet diagnostic): the
+    // tolerant reader of a model's own output keeps the rest of the page.
+    let (doc, limit) = parse_pages_inner(pages);
+    if let Some(e) = limit {
+        crate::debug_log!("doctags: table dropped: {e}");
+    }
+    doc
+}
+
+/// [`parse_pages`] refusing a table past the cell budget (#861).
+pub fn try_parse_pages<'a>(
+    pages: impl IntoIterator<Item = &'a str>,
+) -> Result<DoclingDocument, crate::limits::LimitExceeded> {
+    match parse_pages_inner(pages) {
+        (doc, None) => Ok(doc),
+        (_, Some(e)) => Err(e),
+    }
+}
+
+fn parse_pages_inner<'a>(
+    pages: impl IntoIterator<Item = &'a str>,
+) -> (DoclingDocument, Option<crate::limits::LimitExceeded>) {
     let mut doc = DoclingDocument::new("doctags");
     let mut first = true;
+    let mut budget = Budget::default();
     for page in pages {
         if !first {
             doc.nodes.push(Node::PageBreak);
@@ -46,9 +77,16 @@ pub fn parse_pages<'a>(pages: impl IntoIterator<Item = &'a str>) -> DoclingDocum
         first = false;
         let toks = lex(page);
         let mut i = 0;
-        parse_blocks(&toks, &mut i, &mut doc.nodes, 0);
+        parse_blocks(&toks, &mut i, &mut doc.nodes, 0, &mut budget);
     }
-    doc
+    (doc, budget.exceeded)
+}
+
+/// The document's table cell budget and the first table that broke it.
+#[derive(Default)]
+struct Budget {
+    cells: crate::limits::TableCellBudget,
+    exceeded: Option<crate::limits::LimitExceeded>,
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +258,13 @@ fn collect_inline(toks: &[Tok], i: &mut usize, name: &str) -> (String, Option<[u
     (text, loc)
 }
 
-fn parse_blocks(toks: &[Tok], i: &mut usize, out: &mut Vec<Node>, list_level: u8) {
+fn parse_blocks(
+    toks: &[Tok],
+    i: &mut usize,
+    out: &mut Vec<Node>,
+    list_level: u8,
+    budget: &mut Budget,
+) {
     // Location tokens seen at block level (the degraded no-structure shape
     // servers produce when they strip special tokens) attach to the next
     // bare-text paragraph.
@@ -352,7 +396,7 @@ fn parse_blocks(toks: &[Tok], i: &mut usize, out: &mut Vec<Node>, list_level: u8
                             });
                         }
                     }
-                    "otsl" => parse_otsl(toks, i, out),
+                    "otsl" => parse_otsl(toks, i, out, budget),
                     "picture" | "chart" => parse_picture(toks, i, out, name),
                     // A form checkbox: the token precedes its label text.
                     "checkbox_selected" | "checkbox_unselected" => {
@@ -438,7 +482,7 @@ fn cell_kind(name: &str) -> Option<&'static str> {
     }
 }
 
-fn parse_otsl(toks: &[Tok], i: &mut usize, out: &mut Vec<Node>) {
+fn parse_otsl(toks: &[Tok], i: &mut usize, out: &mut Vec<Node>, budget: &mut Budget) {
     let mut locs: Vec<u16> = Vec::new();
     let mut caption: Option<String> = None;
     let mut rows: Vec<Vec<String>> = Vec::new();
@@ -525,6 +569,18 @@ fn parse_otsl(toks: &[Tok], i: &mut usize, out: &mut Vec<Node>) {
         out.push(Node::Paragraph { text });
     }
     if rows.is_empty() {
+        return;
+    }
+    // The grid every export materializes is `rows × the widest row` (#861):
+    // one row of a million tokens and a million rows of one are a few
+    // megabytes of markup asking for 10^12 slots. Past the budget the table
+    // is left out and the breach recorded for `try_parse`.
+    let num_cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+    if let Err(e) = budget
+        .cells
+        .table("doctags <otsl> table", rows.len(), num_cols)
+    {
+        budget.exceeded.get_or_insert(e);
         return;
     }
     // Span/header structure from the marker kinds. `rows` keeps empty
@@ -713,6 +769,27 @@ fn parse_field_region(toks: &[Tok], i: &mut usize, out: &mut Vec<Node>, close: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #861: an OTSL stream whose rows × widest row pass the cell budget is
+    /// an error for `try_parse` and left out by the tolerant `parse`.
+    #[test]
+    fn oversized_otsl_is_refused_or_dropped() {
+        let markup = format!(
+            "<doctag><text>before</text><otsl>{}<nl>{}</otsl><text>after</text></doctag>",
+            "<fcel>x".repeat(1001),
+            "<fcel>y<nl>".repeat(1000)
+        );
+        let err = try_parse(&markup).unwrap_err();
+        assert_eq!(err.variable, crate::limits::MAX_TABLE_CELLS_VAR);
+        assert_eq!(err.actual, 1001 * 1001);
+        let md = parse(&markup).export_to_markdown();
+        assert_eq!(md, "before\n\nafter\n");
+        let fits = format!(
+            "<doctag><otsl>{}<nl></otsl></doctag>",
+            "<fcel>x".repeat(1001)
+        );
+        assert!(try_parse(&fits).is_ok());
+    }
 
     /// The exact shape live granite-docling emits (loc runs, unclosed OTSL
     /// markers with span cells, in-otsl caption, furniture headers) — from

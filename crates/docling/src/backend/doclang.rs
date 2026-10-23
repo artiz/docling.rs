@@ -44,6 +44,7 @@ impl DeclarativeBackend for DoclangBackend {
                 root.tag_name().name()
             )));
         }
+        check_table_budget(root)?;
         let mut doc = DoclingDocument::new(&source.name);
         walk_body(root, &mut doc.nodes);
         // The JSON export reads docling's item tree (see `doclang_tree`);
@@ -65,6 +66,51 @@ impl DeclarativeBackend for DoclangBackend {
 // ---------------------------------------------------------------------------
 // Block-level walk.
 // ---------------------------------------------------------------------------
+
+/// Every OTSL table of the document against the cell budget (#861) before
+/// either walk materializes a grid: the dense `rows` here and the
+/// `num_rows × num_cols` grid of `doclang_tree` are `rows × the widest
+/// row`, so one row of a million tokens plus a million rows of one — a few
+/// megabytes of XML — would ask for 10^12 slots. Nested tables (a rich
+/// cell's) are tables of their own, counted on their own.
+fn check_table_budget(root: XmlNode) -> Result<(), ConversionError> {
+    fn dims(el: XmlNode, rows: &mut usize, cols: &mut usize, cur: &mut usize) {
+        for child in el.children().filter(|n| n.is_element()) {
+            match child.tag_name().name() {
+                "nl" => {
+                    if *cur > 0 {
+                        *rows += 1;
+                        *cols = (*cols).max(*cur);
+                        *cur = 0;
+                    }
+                }
+                "fcel" | "ched" | "rhed" | "ecel" | "lcel" | "ucel" | "xcel" | "srow" | "corn" => {
+                    *cur += 1
+                }
+                "table" | "tabular" | "index" => {}
+                // A `<content>` wrapper or a cell's content: tokens may sit
+                // below it (the tree walk's `otsl_parts`).
+                _ => dims(child, rows, cols, cur),
+            }
+        }
+    }
+    let mut budget = docling_core::limits::TableCellBudget::new();
+    for el in root
+        .descendants()
+        .filter(|n| n.is_element() && matches!(n.tag_name().name(), "table" | "tabular" | "index"))
+    {
+        let (mut rows, mut cols, mut cur) = (0usize, 0usize, 0usize);
+        dims(el, &mut rows, &mut cols, &mut cur);
+        if cur > 0 {
+            rows += 1;
+            cols = cols.max(cur);
+        }
+        budget
+            .table(&format!("doclang <{}>", el.tag_name().name()), rows, cols)
+            .map_err(|e| ConversionError::with_source("doclang", e))?;
+    }
+    Ok(())
+}
 
 fn walk_body(parent: XmlNode, out: &mut Vec<Node>) {
     for el in parent.children().filter(|n| n.is_element()) {
@@ -951,6 +997,32 @@ mod tests {
         let src =
             SourceDocument::from_bytes("t.dclg", InputFormat::XmlDoclang, dclg.as_bytes().to_vec());
         DoclangBackend.convert(&src).unwrap().export_to_markdown()
+    }
+
+    /// #861: one row of 1001 tokens and 1000 rows of one token ask for a
+    /// 1001 × 1001 grid — past the per-table cap — from two thousand
+    /// tokens; the document is refused before either walk builds it. The
+    /// same tokens as one wide row alone fit.
+    #[test]
+    fn oversized_otsl_table_is_rejected_with_a_typed_limit() {
+        let wide = "<fcel/>".repeat(1001);
+        let tall = "<fcel/><nl/>".repeat(1000);
+        let dclg = |table: &str| format!("<doclang><table>{table}</table></doclang>");
+        let convert = |dclg: String| {
+            DoclangBackend.convert(&SourceDocument::from_bytes(
+                "t.dclg",
+                InputFormat::XmlDoclang,
+                dclg.into_bytes(),
+            ))
+        };
+        let err = convert(dclg(&format!("{wide}<nl/>{tall}"))).unwrap_err();
+        let limit = err.limit().expect("typed limit");
+        assert_eq!(limit.variable, "DOCLING_RS_MAX_TABLE_CELLS");
+        assert_eq!(limit.actual, 1001 * 1001);
+        assert!(convert(dclg(&wide)).is_ok());
+        // Tokens under a `<content>` wrapper count the same.
+        let err = convert(dclg(&format!("<content>{wide}<nl/>{tall}</content>"))).unwrap_err();
+        assert!(err.limit().is_some(), "{err}");
     }
 
     fn json_of(dclg: &str) -> serde_json::Value {

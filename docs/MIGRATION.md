@@ -1531,6 +1531,7 @@ pointed at the wrong item).
 **API / CLI:** `export_to_json()` / `--to json`
 
 - docling-core native wire format (schema 1.10.0).
+- Reading it back: the `body` tree is walked once per item — a `$ref` reached through two parents (a DAG, 2^n paths on a crafted file) or a cycle renders its subtree once, at the first reference, and nesting stops at 256. docling-core 2.103.1 instead rejects such a file at load (`validate_tree`, #861); converting it is the deliberate divergence — the content is still a document — and a crafted one costs linear time either way. A table declaring more cells than `DOCLING_RS_MAX_TABLE_CELLS` / `_MAX_TOTAL_TABLE_CELLS` is rejected like upstream.
 
 ### Plain text (`.txt`)
 
@@ -1839,7 +1840,11 @@ These are deliberate or unavoidable divergences, not bugs.
      once each and at most 256 deep (a cycle converts like its acyclic twin);
      XML inputs and OOXML/ODF parts nested past `DOCLING_RS_MAX_XML_DEPTH`
      (512) are rejected; a spreadsheet sheet whose used area exceeds
-     `DOCLING_RS_SHEET_MAX_CELLS` (10M) is skipped; HTML past
+     `DOCLING_RS_SHEET_MAX_CELLS` (10M) is skipped; a docling-JSON, DocTags
+     or DocLang table declaring more than `DOCLING_RS_MAX_TABLE_CELLS` (1M)
+     cells, or a document's tables more than
+     `DOCLING_RS_MAX_TOTAL_TABLE_CELLS` (5M) together, is rejected before any
+     grid is materialized (docling-core 2.103.1's caps, #861); HTML past
      `DOCLING_RS_MAX_HTML_DEPTH` is emitted as text without a DOM; a PDF page
      rasterizing past `DOCLING_RS_MAX_RENDER_PIXELS` (15000 px/side) is rejected
      before the multi-GB bitmap is allocated.
