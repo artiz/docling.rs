@@ -1450,6 +1450,7 @@ pub(crate) fn ext_for(mimetype: &str) -> &str {
         "image/webp" => "webp",
         "image/bmp" => "bmp",
         "image/tiff" => "tif",
+        "image/svg+xml" => "svg",
         _ => "png",
     }
 }

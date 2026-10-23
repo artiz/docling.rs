@@ -1,0 +1,141 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "drawingml_arrow_tail",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 14331212624700344989,
+    "filename": "drawingml_arrow_tail"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/groups/0"
+      },
+      {
+        "$ref": "#/pictures/0"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
+      "content_layer": "body",
+      "name": "textbox",
+      "label": "section"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Arrow on tailEnd (A to B)",
+      "text": "Arrow on tailEnd (A to B)",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Node A",
+      "text": "Node A",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Node B",
+      "text": "Node B",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    }
+  ],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "image": {
+        "mimetype": "image/svg+xml",
+        "dpi": 96,
+        "size": {
+          "width": 420.0,
+          "height": 210.0
+        },
+        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MTkuOTUiIGhlaWdodD0iMjA5Ljk3IiB2aWV3Qm94PSIwIDAgNDE5Ljk1IDIwOS45NyI+CiAgPGcgZGF0YS1uYW1lPSJOb2RlQSI+CiAgICA8cGF0aCBkPSJNMTAuNSA1Mi40OSBMMTM2LjQ4IDUyLjQ5IEwxMzYuNDggMTE1LjQ5IEwxMC41IDExNS40OSBaIiBmaWxsPSIjRThGMUY4IiBzdHJva2U9Im5vbmUiLz4KICAgIDx0ZXh0IHg9IjIwLjEiIHk9IjcyLjQ5IiBmb250LWZhbWlseT0iQ2FsaWJyaSwgQXJpYWwsIEhlbHZldGljYSwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiIgdGV4dC1hbmNob3I9InN0YXJ0IiBmaWxsPSIjMDAwMDAwIj5Ob2RlIEE8L3RleHQ+CiAgPC9nPgogIDxnIGRhdGEtbmFtZT0iTm9kZUIiPgogICAgPHBhdGggZD0iTTI2Mi40NyA1Mi40OSBMMzg4LjQ1IDUyLjQ5IEwzODguNDUgMTE1LjQ5IEwyNjIuNDcgMTE1LjQ5IFoiIGZpbGw9IiNFOEYxRjgiIHN0cm9rZT0ibm9uZSIvPgogICAgPHRleHQgeD0iMjcyLjA3IiB5PSI3Mi40OSIgZm9udC1mYW1pbHk9IkNhbGlicmksIEFyaWFsLCBIZWx2ZXRpY2EsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTYiIHRleHQtYW5jaG9yPSJzdGFydCIgZmlsbD0iIzAwMDAwMCI+Tm9kZSBCPC90ZXh0PgogIDwvZz4KICA8ZyBkYXRhLW5hbWU9IkNvbm5lY3RvcjEiPgogICAgPHBhdGggZD0iTTEzNi40OCA4My45OSBMMjYyLjQ3IDg0LjA5IiBmaWxsPSJub25lIiBzdHJva2U9IiMwRjQ3NjEiIHN0cm9rZS13aWR0aD0iMS4zMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNMjYyLjQ3IDg0LjA5IEwyNTYuNDYgODYuNzkgTDI1Ni40NyA4MS4zOSBaIiBmaWxsPSIjMEY0NzYxIiBzdHJva2U9Im5vbmUiLz4KICA8L2c+Cjwvc3ZnPgo="
+      },
+      "annotations": []
+    }
+  ],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

@@ -55,6 +55,13 @@ impl DeclarativeBackend for DocxBackend {
         // Embedded images, by relationship id (for image export).
         let images = pkg.image_rels("word/document.xml", "word");
         let charts = chart_rels(&mut pkg, "word/document.xml");
+        // The theme's colours and line widths, for the DrawingML shapes
+        // (#858) whose fills and outlines reference them.
+        let theme = pkg
+            .read("word/theme/theme1.xml")
+            .map(|xml| super::docx_drawingml::Theme::parse(&xml))
+            .unwrap_or_default()
+            .with_styles(&styles);
 
         let sm = parse_styles(&styles);
         let num_levels = parse_numbering(&numbering, &sm.nums);
@@ -75,6 +82,7 @@ impl DeclarativeBackend for DocxBackend {
             rels: &rels,
             images: &images,
             charts: &charts,
+            theme: &theme,
             even_and_odd_headers,
             table_depth: std::cell::Cell::new(0),
             orphan_inline_groups: std::cell::Cell::new(0),
@@ -499,6 +507,9 @@ pub(super) struct Ctx<'a> {
     /// Native charts by relationship id: `(classified kind, title, data grid)`
     /// parsed from the `word/charts/*.xml` parts (docling PR #3809).
     pub(super) charts: &'a HashMap<String, (String, Option<String>, docling_core::Table)>,
+    /// `word/theme/theme1.xml` (#858): the scheme colours and line widths
+    /// a DrawingML shape's style references resolve through.
+    pub(super) theme: &'a super::docx_drawingml::Theme,
     /// `word/settings.xml` has `<w:evenAndOddHeaders/>`: the sections' even-page
     /// headers/footers are in use (#590).
     pub(super) even_and_odd_headers: bool,
@@ -538,6 +549,7 @@ impl<'a> Ctx<'a> {
             rels,
             images,
             charts,
+            theme: self.theme,
             even_and_odd_headers: self.even_and_odd_headers,
             table_depth: std::cell::Cell::new(0),
             orphan_inline_groups: std::cell::Cell::new(0),
@@ -1322,7 +1334,9 @@ fn has_drawing(p: XmlNode) -> bool {
 /// spacer; no corpus fixture hits that, so no geometry heuristic here.) With
 /// `skip_textbox`, drawings nested in a textbox are excluded (they're extracted
 /// as textbox text instead). Each entry carries the picture's alt text (#676,
-/// [`drawing_alt`]) when the author wrote one.
+/// [`drawing_alt`]) when the author wrote one. The blip-less drawings are
+/// rendered in-process into one SVG payload (#858, `docx_drawingml`), the
+/// picture staying payload-less only when nothing in them can be drawn.
 fn drawing_images(
     node: XmlNode,
     ctx: &Ctx,
@@ -1360,17 +1374,22 @@ fn drawing_images(
     if !vml.is_empty() {
         return vml;
     }
-    if node.descendants().any(|n| {
-        n.has_tag_name("drawing")
-            && keep(n)
-            // A drawing whose graphic is a parsed chart emits a Chart node
-            // instead of the rendered-placeholder picture.
-            && !n.descendants().any(|c| {
-                c.has_tag_name("chart")
-                    && attr(c, "id").is_some_and(|id| ctx.charts.contains_key(id))
-            })
-    }) {
-        return vec![(None, None)];
+    let drawings: Vec<XmlNode> = node
+        .descendants()
+        .filter(|n| {
+            n.has_tag_name("drawing")
+                && keep(*n)
+                // A drawing whose graphic is a parsed chart emits a Chart node
+                // instead of the rendered-placeholder picture.
+                && !n.descendants().any(|c| {
+                    c.has_tag_name("chart")
+                        && attr(c, "id").is_some_and(|id| ctx.charts.contains_key(id))
+                })
+        })
+        .collect();
+    if !drawings.is_empty() {
+        let image = super::docx_drawingml::render(&drawings, ctx.theme).map(|r| r.image);
+        return vec![(image, None)];
     }
     Vec::new()
 }

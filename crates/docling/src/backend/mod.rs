@@ -37,6 +37,7 @@ mod docling_json;
 mod docx;
 #[cfg(test)]
 mod docx_chain_parity;
+mod docx_drawingml;
 mod docx_tree;
 mod ebcdic;
 mod email;

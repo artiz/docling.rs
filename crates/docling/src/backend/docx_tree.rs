@@ -20,11 +20,12 @@
 //! code detection, list markers, chart parts — are `docx.rs`'s, so the two
 //! walks read the file the same way; only the item structure differs.
 //!
-//! What cannot be reproduced without upstream's optional tools is noted
-//! where it happens: a blip-less DrawingML shape and a chart image are
-//! rendered through LibreOffice upstream and become pictures with an `image`
-//! payload; here the same pictures carry no payload. An EMF/WMF picture is
-//! rendered to PNG in-process (`metafile.rs`, #536).
+//! What upstream reaches through its optional tools is done in-process
+//! here: a blip-less DrawingML drawing (shapes, connectors, text boxes) is
+//! rendered through LibreOffice upstream into a PNG picture, here into an
+//! SVG payload (`docx_drawingml.rs`, #858); an EMF/WMF picture is rendered
+//! to PNG in-process (`metafile.rs`, #536). A chart image is a classified
+//! picture with its data and no payload (`_handle_chart`).
 
 use std::collections::{HashMap, HashSet};
 
@@ -1191,18 +1192,18 @@ impl Walker {
                 // Native charts become classified pictures with their data;
                 // any other DrawingML (shapes, SmartArt) is one rendered
                 // picture upstream — a payload-less one here.
-                let mut others = false;
+                let mut others = Vec::new();
                 for d in &drawings {
                     if Self::is_chart_drawing(*d) {
                         if let Some(r) = self.handle_chart(*d, ctx) {
                             added.push(r);
                         }
                     } else {
-                        others = true;
+                        others.push(*d);
                     }
                 }
-                if others {
-                    self.handle_drawingml();
+                if !others.is_empty() {
+                    self.handle_drawingml(&others, ctx);
                 }
                 if tag == "p" && has_text() {
                     added.extend(self.handle_text_elements(element, ctx, true));
@@ -1382,13 +1383,16 @@ impl Walker {
                 .descendants()
                 .filter(|n| n.has_tag_name("imagedata"))
                 .collect();
-            let has_drawing = p.descendants().any(|n| n.has_tag_name("drawing"));
+            let drawings: Vec<XmlNode> = p
+                .descendants()
+                .filter(|n| n.has_tag_name("drawing"))
+                .collect();
             if !blips.is_empty() {
                 refs.extend(self.handle_pictures(&blips, "embed", ctx));
             } else if !vml.is_empty() {
                 refs.extend(self.handle_pictures(&vml, "id", ctx));
-            } else if has_drawing {
-                self.handle_drawingml();
+            } else if !drawings.is_empty() {
+                self.handle_drawingml(&drawings, ctx);
             }
         }
         self.set_parent(level, original);
@@ -1446,16 +1450,19 @@ impl Walker {
     }
 
     /// `_handle_drawingml`: upstream renders the paragraph's blip-less shapes
-    /// through LibreOffice into one picture; the picture here has no payload.
-    fn handle_drawingml(&mut self) {
+    /// through LibreOffice into one picture; here they are drawn in-process
+    /// into one SVG payload (#858, `docx_drawingml`), the picture staying
+    /// payload-less when nothing in them can be drawn.
+    fn handle_drawingml(&mut self, drawings: &[XmlNode], ctx: &Ctx) {
         let level = self.get_level();
         let parent = self.parent_at(level - 1);
+        let image = super::docx_drawingml::render(drawings, ctx.theme).map(|r| r.image);
         self.add(
             parent,
             self.layer,
             TreeKind::Picture {
                 captions: Vec::new(),
-                image: None,
+                image,
                 extra_classes: Vec::new(),
                 classification: None,
                 description: None,
