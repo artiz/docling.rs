@@ -297,6 +297,7 @@ converted once more as that format with a warning.
 
 - `md_tree.rs` rebuilds marko's element tree from a second pulldown parse with the GFM extension as docling configures it (docling#4488, 2.135: tables, `~~strikethrough~~` by marko's own rule — two tildes, none inside or around, no flanking, so `~x~` stays text — and bare URLs) and ports `MarkdownDocumentBackend._iterate_elements` call for call:
   - a heading or list item is created lazily on its first run (`title`/`section_header` of level − 1; `list_item` with `enumerated` and a `{start + count}.` marker)
+  - one whose content has no run — an alt-less image, inline HTML — is created with empty text (#864, docling#4870, 2.141): an image-only list item holds its picture and sub-list, and the next block no longer takes the item's place (an image-only heading used to become the following paragraph's text, an image-only list item to vanish while its sub-list repeated)
   - a paragraph or heading of several runs opens an `inline` group of one `text` per run with `formatting` (emphasis/strong) and `hyperlink` (AnyUrl-normalized)
   - a code span is a `code` item (the container's own text when it is the only run)
   - a fenced block a `code` with `detect_code_language(hint)`
