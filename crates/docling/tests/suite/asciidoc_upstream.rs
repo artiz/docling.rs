@@ -16,9 +16,16 @@
 //! files are mirrored in `tests/data/asciidoc/sources/` instead. The
 //! `edge_*` documents are our own probes of where docling.rs used to differ:
 //! the line under a bare table (dropped), a paragraph pending when a list
-//! opens (a line of the list, an inline one glued to the item), and an
-//! unterminated literal block (it keeps the file's last, empty line). Re-create
-//! a reference with upstream's backend, never from our own output.
+//! opens (a line of the list, an inline one glued to the item), an
+//! unterminated literal block (it keeps the file's last, empty line), and
+//! comments inside example blocks and lists, around a paragraph's lines, a
+//! `----` inside `////` and an unclosed `////` (#863, captured from
+//! docling 2.142.1). Re-create
+//! a reference with upstream's backend, never from our own output. All 56
+//! were re-run through docling 2.142.1: only the two comment documents
+//! (`comment_block_hides_content`, `line_comments_not_body_text`) moved —
+//! their comments are notes-layer items since docling#4663 (2.141, #863) —
+//! and those two JSON references are 2.142.1's.
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -52,7 +59,7 @@ fn documents_follow_docling() {
         .filter(|p| p.extension().is_some_and(|e| e == "adoc"))
         .collect();
     docs.sort();
-    assert_eq!(docs.len(), 56);
+    assert_eq!(docs.len(), 57);
     let mut failures = Vec::new();
     for path in &docs {
         let name = path.file_stem().unwrap().to_str().unwrap();

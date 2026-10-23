@@ -385,9 +385,10 @@ converted once more as that format with a warning.
 #### AsciiDoc
 
 **Backend:** `asciidoc.rs` (regex)\
-**Status:** **5/5 exact vs docling 2.140** (`asciidoc_02`–`_04` groundtruth refreshed to it), **JSON structurally identical on 5/5**, DocLang 2/2 exact (`asciidoc_04`'s archive refreshed)
+**Status:** **5/5 exact vs docling 2.142.1** (re-measured for #863; the content of the committed 2.140 groundtruth is unchanged in 2.142.1, which only spells its tables uncompacted), **JSON structurally identical on 5/5**, DocLang 2/2 exact (`asciidoc_04`'s archive refreshed)
 
-- the 42 documents upstream's `test_backend_asciidoc.py` converts are mirrored in `crates/docling/tests/data/asciidoc/upstream/` with docling 2.140's Markdown and JSON, and match **42/42** in both.
+- the 42 documents upstream's `test_backend_asciidoc.py` converts are mirrored in `crates/docling/tests/data/asciidoc/upstream/` with docling's Markdown and JSON — all re-run through 2.142.1, where only the two comment documents moved (their JSON is 2.142.1's) — and match **42/42** in both, as do our 15 `edge_*` probes.
+- **comments (#863, docling#4663, 2.141)**: a run of consecutive `//` lines is one comment and everything between two `////` lines another (an unclosed `////` runs to the end, as Asciidoctor reads it); each becomes a `text` item on the **notes** layer under the open list item, else under the current section, without ending the list or the paragraph it sits in — a comment between two lines of a paragraph lands before the paragraph. A comment block is checked ahead of every other construct (a `----` inside `////` is comment text, not a listing), and the lines inside an example / sidebar / quote / open / passthrough block now run through the same loop, so a comment there is one too. Exports leave the notes layer out by default, so the default Markdown is unchanged. In the flat outputs (Markdown / LaTeX / DocLang with the notes layer included) a comment met inside a list is printed after the list, not between its items — a node there would split the list the default Markdown prints; the JSON keeps it under its item.
 - The parser follows `_parse` / `_iter_blocks` step for step and builds docling's item tree alongside the flat nodes, mirroring the `parents` / `indents` / `list_kinds` bookkeeping:
   - the title is the root
   - a heading is parented to the nearest present ancestor level (docling 2.127+) and clears the deeper ones

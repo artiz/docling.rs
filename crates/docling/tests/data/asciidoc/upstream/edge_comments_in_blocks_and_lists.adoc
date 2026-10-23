@@ -1,0 +1,41 @@
+= Doc
+
+== Section
+
+First line
+// between lines
+second line.
+
+====
+Example text.
+// inside example
+****
+nested sidebar
+****
+====
+
+////
+----
+not a listing
+////
+
+. step one
+////
+block in list
+////
+. step two
+
+After list.
+
+//
+
+/////
+five slashes
+
+----
+code
+----
+
+////
+unclosed to the end
+Tail text.
