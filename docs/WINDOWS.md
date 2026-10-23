@@ -58,6 +58,31 @@ same way. The HTTP server is the same crate as on Linux:
 cargo run --release -p docling-serve            :: 127.0.0.1:5001, docs at /
 ```
 
+## GPU (DirectML)
+
+Every release carries `docling-rs-directml-<tag>-x86_64-pc-windows-msvc.zip`
+next to the CPU zip: the CLI built with `--features directml`, and
+`DirectML.dll`, which has to stay in the same directory as the exe. It runs
+the layout, table, OCR and enrichment models on any DirectX 12 GPU —
+NVIDIA, AMD or Intel integrated, no CUDA toolkit — and falls back to CPU
+when none is usable (a 10-page paper: 2.5 s on an NVIDIA T600 or 2.7 s on an
+Intel iGPU, against 5.5 s for the CPU build). On a machine without a GPU
+use the CPU zip: the DirectML build is slower on CPU.
+
+```bat
+docling-rs paper.pdf                      :: the high-performance GPU
+set DOCLING_RS_DML_DEVICE=1               :: or a DXGI adapter by index
+set DOCLING_RS_EP=directml                :: fail instead of falling back to CPU
+set DOCLING_RS_TIMING=1                   :: prints the providers registered
+```
+
+Build it yourself with `cargo build --release -p docling-cli --features
+directml`; `DirectML.dll` lands in `target\release\`. The defaults it
+changes (one page worker, per-page layout, fp32 models) and the
+measurements are in [MODELS.md](MODELS.md#gpu-execution-providers-optional-off-by-default).
+NVIDIA's CUDA provider builds on Windows too (`--features cuda`, CUDA 13 +
+cuDNN on the PATH); no CUDA zip is prebuilt.
+
 ## Notes & limits
 
 - **Model export / quantization / conformance scripts are bash** — run those

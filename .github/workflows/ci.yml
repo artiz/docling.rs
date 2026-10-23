@@ -245,6 +245,12 @@ jobs:
           - os: windows-latest
             features: directml
             slug: directml
+          # CUDA on Windows (#840): pyke ships a Windows CUDA ONNX Runtime,
+          # so the cfg paths a Windows CUDA build takes — and `cuda` +
+          # `directml` together, CUDA registered first under `auto` — compile.
+          - os: windows-latest
+            features: cuda,directml
+            slug: cuda-directml
     steps:
       - uses: actions/checkout@v7
 

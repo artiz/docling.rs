@@ -168,7 +168,11 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   `DOCLING_RS_CUDA_CONV_ALGO_SEARCH`, `DOCLING_RS_CUDA_CONV_MAX_WORKSPACE`;
   under a CUDA-class provider the page-worker pool and the OCR lanes default
   to one, `docling_onnx::prefers_single_worker`, decided by a probe session
-  so an `auto` build without a device keeps its CPU defaults) and serve's
+  so an `auto` build without a device keeps its CPU defaults; DirectML,
+  #840, takes the same one-worker defaults plus per-page layout and no
+  memory pattern, `docling_onnx::is_directml` — named, or `auto` with a
+  probe — and `DOCLING_RS_DML_DEVICE` pins its DXGI adapter, unset = the
+  high-performance one) and serve's
   `--idle-unload-secs` / `DOCLING_RS_IDLE_UNLOAD_SECS` (drops the warm
   pipeline, GPU memory included, after N idle seconds),
   `DOCLING_RS_GRAPH_CACHE_DIR` / `DOCLING_RS_NO_GRAPH_CACHE` (ONNX Runtime

@@ -162,7 +162,7 @@ Same options, same outputs on every surface — every option in
 - **Runs where you are:** Linux x64 / arm64 / s390x, macOS (Apple Silicon)
   and Windows prebuilt (CLI, wheels, npm), Intel macs from source, containers
   for amd64 and arm64; NVIDIA
-  CUDA and TensorRT, DirectML, CoreML and WebGPU in the browser as opt-in
+  CUDA and TensorRT, DirectML (a prebuilt Windows CLI), CoreML and WebGPU in the browser as opt-in
   accelerators ([GPU](./docs/MODELS.md#gpu-execution-providers-optional-off-by-default),
   [IBM Z](./docs/IBMZ.md)).
 

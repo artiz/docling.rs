@@ -566,6 +566,37 @@ every session through ONNX Runtime's environment allocators
 (`CreateAndRegisterAllocatorV2` + `session.use_env_allocators`), which
 `ort` 2.0.0-rc.14 has no safe binding for.
 
+**DirectML on Windows** (#840): the GPU on any DirectX 12 adapter —
+NVIDIA, AMD, Intel integrated — with no CUDA toolkit; the release ships it
+as `docling-rs-directml-<tag>-x86_64-pc-windows-msvc.zip` (the CLI plus the
+`DirectML.dll` it loads from its own directory; [WINDOWS.md](WINDOWS.md)).
+Under DirectML, as under CUDA, the page-worker pool and the OCR lanes
+default to one session each and the layout runs per page — four batched
+workers measured 2.5× slower at 4× the VRAM — and every session runs
+without memory patterns and sequentially, which the provider requires.
+These defaults follow the provider that actually runs: `auto` probes
+DirectML once, and a host without a usable adapter (or a `cuda` + `directml`
+build whose CUDA provider initialized first) keeps the CPU/CUDA defaults.
+`DOCLING_RS_DML_DEVICE=<n>` pins a DXGI adapter by index; unset, DirectML
+asks for the high-performance adapter — the discrete GPU on a laptop with
+both (DirectML's own default, adapter 0, is often the iGPU). The models run
+in fp32 like every GPU provider, and the output matched the CPU fp32
+Markdown byte for byte.
+
+| 10-page paper (2206.01062), Windows, warm median | convert |
+|---|---|
+| CPU, int8 (the default build) | 5.52 s |
+| CPU, fp32 | 7.94 s |
+| DirectML, NVIDIA T600, 4 workers + batch 4 (before #840) | 6.40 s |
+| DirectML, NVIDIA T600 (one worker, per page) | 2.52 s |
+| DirectML, Intel iGPU (one worker, per page) | 2.69 s |
+
+Keep the default build on a host without a GPU: the `directml` build's ONNX
+Runtime converted the same paper in 13.6 s on CPU (fp32) — the CPU
+fallback works, it is not the fast path. There is no WARP check: a machine
+whose only DirectX 12 adapter is the software rasterizer passes the probe
+and runs slowly on it; `DOCLING_RS_EP=cpu` is the fix there.
+
 CoreML defaults (#324, #602), measured on an M4 Max:
 
 - **Model format `NeuralNetwork`** (`DOCLING_RS_COREML_FORMAT`:
