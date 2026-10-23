@@ -357,15 +357,6 @@ fn py_cell_text(tc: XmlNode, policy: TrackChanges) -> String {
         .join("\n")
 }
 
-/// The paragraph's style id (`w:pStyle`), empty when unstyled.
-fn style_id_of<'a>(p: XmlNode<'a, '_>) -> &'a str {
-    p.children()
-        .find(|n| n.has_tag_name("pPr"))
-        .and_then(|pr| pr.children().find(|n| n.has_tag_name("pStyle")))
-        .and_then(|s| attr(s, "val"))
-        .unwrap_or("")
-}
-
 /// A cell's `tcPr` child element by name.
 fn tc_pr<'a, 'i>(tc: XmlNode<'a, 'i>, name: &str) -> Option<XmlNode<'a, 'i>> {
     tc.children()
@@ -696,7 +687,7 @@ impl Walker {
         if !bold {
             if let Some(p) = paragraph {
                 // Climb the paragraph style's `basedOn` chain for `font.bold`.
-                bold = style_chain_bold(style_id_of(p), ctx);
+                bold = style_chain_bold(super::docx::paragraph_style_id(p, ctx), ctx);
             }
         }
         let italic = prop("i").is_some_and(|n| on_off(attr(n, "val")));
@@ -1030,7 +1021,7 @@ impl Walker {
     /// `_get_label_and_level`: `("Heading", n)`, `("Code", None)`,
     /// `("Title", None)`, or the style id itself.
     fn label_and_level(&self, p: XmlNode, ctx: &Ctx) -> (String, Option<i64>) {
-        let style_id = style_id_of(p);
+        let style_id = super::docx::paragraph_style_id(p, ctx);
         // python-docx resolves an unstyled paragraph to the default paragraph
         // style; its id only names the label (the font-based code check still
         // runs, on the runs' own fonts — `docx.rs` reads an unstyled
@@ -1092,7 +1083,7 @@ impl Walker {
                 .and_then(|v| v.parse::<i64>().ok());
             return (numid, ilvl);
         }
-        match style_numbering(style_id_of(p), ctx) {
+        match style_numbering(super::docx::paragraph_style_id(p, ctx), ctx) {
             Some((numid, ilvl)) => (numid.parse::<i64>().ok().map(|n| n.to_string()), Some(ilvl)),
             None => (None, None),
         }
@@ -1560,7 +1551,7 @@ impl Walker {
         }
         if let Some(first) = paras.first() {
             if !py_paragraph_text(*first).trim().is_empty()
-                && is_code_style(style_id_of(*first), ctx)
+                && is_code_style(super::docx::paragraph_style_id(*first, ctx), ctx)
             {
                 return true;
             }
