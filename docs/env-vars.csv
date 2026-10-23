@@ -110,6 +110,7 @@ DOCLING_RS_NER_DIR,model path,crates/docling-pdf/src/ner.rs
 DOCLING_RS_MODELS_URL,network,crates/docling-py/python/docling_rs/models.py
 DOCLING_RS_MODELS_VERIFY,network,crates/docling-py/python/docling_rs/models.py
 DOCLING_RS_CUDA_DEVICE,operational,crates/docling-onnx/src/lib.rs
+DOCLING_RS_DML_DEVICE,operational,crates/docling-onnx/src/lib.rs
 DOCLING_RS_CUDA_MEM_LIMIT_MB,limit,crates/docling-onnx/src/lib.rs
 DOCLING_RS_CUDA_ARENA_EXTEND,performance,crates/docling-onnx/src/lib.rs
 DOCLING_RS_CUDA_ARENA_SHRINK,performance,crates/docling-onnx/src/lib.rs

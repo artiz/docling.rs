@@ -30,7 +30,14 @@
 # Until then Intel macs `cargo install docling-cli`.
 #
 # The binaries are the *default* build (CPU; ONNX Runtime statically linked by
-# ort's download-binaries, same as every other build of this workspace). The
+# ort's download-binaries, same as every other build of this workspace) —
+# plus, on Windows, a second `docling-rs-directml-<tag>-x86_64-pc-windows-msvc.zip`
+# (#840): the CLI built with `--features directml` (the GPU on any DirectX 12
+# adapter — NVIDIA, AMD, Intel, no CUDA toolkit) and the `DirectML.dll` it
+# loads, which must sit next to the exe. A separate asset, not the default,
+# because it is +40 MB (the larger ONNX Runtime and the DLL) and a GPU build
+# changes the defaults (fp32 models, one page worker); without a usable
+# adapter it converts on CPU. No FFI variant: embedders build their own. The
 # runtime assets (pdfium + models) stay a separate download —
 # scripts/install/download_dependencies.sh — exactly as with a cargo install;
 # the CLI prints that instruction when they are missing.
@@ -79,6 +86,13 @@ jobs:
             host: ubuntu-24.04-arm
           - target: x86_64-pc-windows-msvc
             host: windows-latest
+          # The DirectML CLI (see the header). `flavor` names the asset, the
+          # artifact and the cache; `cli_only` skips the FFI build.
+          - target: x86_64-pc-windows-msvc
+            host: windows-latest
+            features: directml
+            flavor: directml
+            cli_only: true
           # Apple Silicon, native (see the header for Intel).
           - target: aarch64-apple-darwin
             host: macos-14
@@ -125,8 +139,8 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-cli-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-cli-${{ matrix.target }}-
+          key: ${{ runner.os }}-cargo-cli-${{ matrix.target }}${{ matrix.flavor && format('-{0}', matrix.flavor) || '' }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cli-${{ matrix.target }}${{ matrix.flavor && format('-{0}', matrix.flavor) || '' }}-
 
       - name: Build
         shell: bash
@@ -138,6 +152,7 @@ jobs:
             build="cargo build"; target="${{ matrix.target }}"
           fi
           $build --release --locked -p docling-cli --target "$target" ${features:+--features $features}
+          [ -n "${{ matrix.cli_only }}" ] && exit 0
           # The C ABI shared library (#193) rides the same job: the docling
           # dependency tree is already compiled, only the thin FFI layer adds.
           $build --release --locked -p docling-ffi --target "$target" ${features:+--features $features}
@@ -168,7 +183,7 @@ jobs:
           tar -czf "docling-ffi-$TAG-${{ matrix.target }}.tar.gz" -C "$staging" "$libname" docling.h
 
       - name: Package (windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && !matrix.flavor
         shell: bash
         run: |
           7z a "docling-rs-$TAG-${{ matrix.target }}.zip" "./target/${{ matrix.target }}/release/docling-rs.exe"
@@ -178,10 +193,24 @@ jobs:
             "./target/${{ matrix.target }}/release/docling_ffi.dll.lib" \
             "./crates/docling-ffi/include/docling.h"
 
+      # The exe + DirectML.dll, which Windows loads from the exe's directory.
+      # ort's copy-dylibs leaves it in the target dir, possibly as a symlink
+      # into its cache — `cp -L` takes the file.
+      - name: Package (windows, directml)
+        if: runner.os == 'Windows' && matrix.flavor == 'directml'
+        shell: bash
+        run: |
+          rel="target/${{ matrix.target }}/release"
+          dll="$(find "$rel" target/release -maxdepth 2 -iname DirectML.dll 2>/dev/null | head -n1)"
+          [ -n "$dll" ] || { echo "::error::DirectML.dll not found next to the build"; exit 1; }
+          staging=$(mktemp -d)
+          cp -L "$rel/docling-rs.exe" "$dll" "$staging/"
+          7z a "docling-rs-directml-$TAG-${{ matrix.target }}.zip" "$staging/docling-rs.exe" "$staging/$(basename "$dll")"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: cli-${{ matrix.target }}
+          name: cli-${{ matrix.target }}${{ matrix.flavor && format('-{0}', matrix.flavor) || '' }}
           path: |
             docling-rs-*
             docling-ffi-*

@@ -383,17 +383,19 @@ fn prefers_fp32_for(ep: Ep, members: impl Fn(Ep) -> bool) -> bool {
 /// a CUDA-class provider — a CoreML-only `auto` registers CoreML first and
 /// wants the static graph.
 pub fn prefers_batching() -> bool {
-    prefers_batching_for(choice(), in_auto)
+    // A Windows build with both `cuda` and `directml` whose CUDA provider does
+    // not initialize runs on DirectML, which wants per-page too.
+    prefers_batching_for(choice(), in_auto) && !is_directml()
 }
 
 /// [`prefers_batching`] for a given choice; `members` = what `auto` registers.
 fn prefers_batching_for(ep: Ep, members: impl Fn(Ep) -> bool) -> bool {
     match ep {
-        Ep::Cpu | Ep::Xnnpack | Ep::CoreMl => false,
-        Ep::Cuda | Ep::TensorRt | Ep::DirectMl => true,
-        Ep::Auto => [Ep::Cuda, Ep::TensorRt, Ep::DirectMl]
-            .into_iter()
-            .any(members),
+        // DirectML (#840): batch 4 over the dynamic batch axis measured 2-5x
+        // slower than per-page on both an NVIDIA T600 and an Intel iGPU.
+        Ep::Cpu | Ep::Xnnpack | Ep::CoreMl | Ep::DirectMl => false,
+        Ep::Cuda | Ep::TensorRt => true,
+        Ep::Auto => [Ep::Cuda, Ep::TensorRt].into_iter().any(members),
     }
 }
 
@@ -675,6 +677,39 @@ fn cuda_ep() -> ort::ep::CUDA {
     .with_conv_max_workspace(o.conv_max_workspace)
 }
 
+/// `DOCLING_RS_DML_DEVICE` (#840): the DXGI adapter index DirectML runs on.
+/// `Ok(None)` when unset — the provider then asks for the high-performance
+/// adapter, which on a laptop with an integrated and a discrete GPU is the
+/// discrete one (DirectML's own default is adapter 0, often the iGPU).
+#[cfg_attr(not(feature = "directml"), allow(dead_code))]
+fn parse_dml_device(v: Option<String>) -> Result<Option<i32>, String> {
+    let Some(v) = v else { return Ok(None) };
+    match v.trim().parse::<i32>() {
+        Ok(n) if n >= 0 => Ok(Some(n)),
+        _ => Err(format!(
+            "DOCLING_RS_DML_DEVICE={v:?} is not an adapter index; using the high-performance adapter"
+        )),
+    }
+}
+
+/// The DirectML provider as `DOCLING_RS_DML_DEVICE` configures it.
+#[cfg(feature = "directml")]
+fn directml_ep() -> ort::ep::DirectML {
+    let ep = ort::ep::DirectML::default();
+    let high_performance = |ep: ort::ep::DirectML| {
+        ep.with_performance_preference(ort::ep::directml::PerformancePreference::HighPerformance)
+    };
+    match parse_dml_device(docling_core::env::nonempty("DOCLING_RS_DML_DEVICE")) {
+        Ok(Some(id)) => ep.with_device_id(id),
+        Ok(None) => high_performance(ep),
+        Err(warning) => {
+            static WARNED: OnceLock<()> = OnceLock::new();
+            WARNED.get_or_init(|| eprintln!("docling-rs: {warning}"));
+            high_performance(ep)
+        }
+    }
+}
+
 /// The dispatch list for the current choice. `None` means "register nothing"
 /// (CPU — leave the builder untouched, the pre-#74 code path).
 // The cfg-gated pushes read as sequential to clippy in single-feature builds.
@@ -693,7 +728,7 @@ fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
         #[cfg(feature = "tensorrt")]
         Ep::TensorRt => vec![ort::ep::TensorRT::default().build().error_on_failure()],
         #[cfg(feature = "directml")]
-        Ep::DirectMl => vec![ort::ep::DirectML::default().build().error_on_failure()],
+        Ep::DirectMl => vec![directml_ep().build().error_on_failure()],
         #[cfg(feature = "coreml")]
         Ep::CoreMl => vec![coreml_ep().build().error_on_failure()],
         #[cfg(feature = "xnnpack")]
@@ -711,7 +746,7 @@ fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
                 v.push(coreml_ep().build());
             }
             #[cfg(feature = "directml")]
-            v.push(ort::ep::DirectML::default().build());
+            v.push(directml_ep().build());
             // Last, above only the implicit CPU fallback: a CPU-class
             // accelerator must not shadow a usable GPU.
             #[cfg(feature = "xnnpack")]
@@ -822,6 +857,20 @@ pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     let builder = builder
         .with_execution_providers(eps)
         .map_err(|e| format!("execution provider registration: {e}"))?;
+    // DirectML supports neither memory patterns nor parallel execution (#840);
+    // ONNX Runtime turns both off itself with a warning per session — say it
+    // up front instead. Only when DirectML is what runs: an `auto` session
+    // that fell back to CPU keeps the CPU defaults.
+    #[cfg(feature = "directml")]
+    let builder = if is_directml() {
+        builder
+            .with_memory_pattern(false)
+            .map_err(|e| format!("directml memory pattern: {e}"))?
+            .with_parallel_execution(false)
+            .map_err(|e| format!("directml sequential execution: {e}"))?
+    } else {
+        builder
+    };
     // After the GPU EPs, so they keep registration priority.
     memory_opts(builder)
 }
@@ -852,9 +901,12 @@ fn memory_opts(builder: SessionBuilder) -> Result<SessionBuilder, String> {
 
 /// A one-node `Identity` ONNX graph (ir 8, opset 13; `x: float[1] -> y`),
 /// hand-encoded: the smallest model a session can be created from, used to
-/// find out whether the CUDA provider initializes on this machine
-/// ([`cuda_usable`]).
-#[cfg_attr(not(any(feature = "cuda", feature = "tensorrt")), allow(dead_code))]
+/// find out whether the CUDA or DirectML provider initializes on this
+/// machine ([`cuda_usable`], [`is_directml`]).
+#[cfg_attr(
+    not(any(feature = "cuda", feature = "tensorrt", feature = "directml")),
+    allow(dead_code)
+)]
 const PROBE_MODEL: &[u8] = &[
     0x08, 0x08, 0x12, 0x0c, 0x64, 0x6f, 0x63, 0x6c, 0x69, 0x6e, 0x67, 0x2d, 0x6f, 0x6e, 0x6e, 0x78,
     0x3a, 0x52, 0x0a, 0x1a, 0x0a, 0x01, 0x78, 0x12, 0x01, 0x79, 0x1a, 0x08, 0x69, 0x64, 0x65, 0x6e,
@@ -928,6 +980,58 @@ fn cuda_usable() -> bool {
     })
 }
 
+/// Whether DirectML is the provider the sessions run on (#840): named
+/// outright (`DOCLING_RS_EP=directml`, which fails loudly without a device),
+/// or `auto` with it compiled in, no CUDA-class provider ahead of it that
+/// initializes, and a DirectML device that does — probed once on
+/// [`PROBE_MODEL`] like [`cuda_usable`], because `auto` registers DirectML
+/// without `error_on_failure` and a host without a usable adapter silently
+/// converts on CPU, where the DirectML policies (one page worker, no
+/// batching, no memory pattern) would only cost throughput.
+pub fn is_directml() -> bool {
+    #[cfg(feature = "directml")]
+    {
+        static ACTIVE: OnceLock<bool> = OnceLock::new();
+        *ACTIVE.get_or_init(|| match choice() {
+            Ep::DirectMl => true,
+            Ep::Auto if in_auto(Ep::DirectMl) => {
+                if cuda_class_chosen() && cuda_usable() {
+                    return false;
+                }
+                let probe = || -> Result<(), String> {
+                    let mut builder = session_builder()?
+                        .with_execution_providers([directml_ep().build().error_on_failure()])
+                        .map_err(|e| e.to_string())?
+                        .with_memory_pattern(false)
+                        .map_err(|e| e.to_string())?
+                        .with_parallel_execution(false)
+                        .map_err(|e| e.to_string())?;
+                    let _guard = CREATION.lock().unwrap_or_else(|p| p.into_inner());
+                    builder
+                        .commit_from_memory(PROBE_MODEL)
+                        .map_err(|e| e.to_string())?;
+                    Ok(())
+                };
+                match probe() {
+                    Ok(()) => true,
+                    Err(e) => {
+                        docling_core::debug_log!(
+                            "docling-onnx: the DirectML provider did not initialize ({e}); \
+                             sessions run on CPU with the CPU defaults"
+                        );
+                        false
+                    }
+                }
+            }
+            _ => false,
+        })
+    }
+    #[cfg(not(feature = "directml"))]
+    {
+        false
+    }
+}
+
 /// Whether the sessions' CUDA arena is shrunk after every run (#842): on
 /// whenever a CUDA-class provider runs the sessions, `DOCLING_RS_CUDA_ARENA_SHRINK=0`
 /// opts out.
@@ -993,10 +1097,12 @@ pub fn run<'s, 'i, 'v: 'i, const N: usize>(
 /// its own layout/OCR sessions, and ~0.4 GB of host RAM per worker is
 /// several GB of VRAM per worker on a GPU, where inference is already
 /// parallel inside the device. `DOCLING_RS_PDF_WORKERS` /
-/// `DOCLING_RS_OCR_SESSIONS` still set any count. CPU, CoreML and DirectML
-/// keep their defaults.
+/// `DOCLING_RS_OCR_SESSIONS` still set any count. DirectML too (#840): one
+/// worker measured 2.5x faster than its four-worker batched default on a
+/// 10-page document (2.62 s vs 6.40 s, NVIDIA T600) at a quarter of the
+/// VRAM (0.6 vs 2.6 GB). CPU and CoreML keep their defaults.
 pub fn prefers_single_worker() -> bool {
-    cuda_class_chosen() && cuda_usable()
+    (cuda_class_chosen() && cuda_usable()) || is_directml()
 }
 
 /// The process-wide session-creation lock GPU builds take (#452).
@@ -1432,7 +1538,9 @@ mod tests {
         assert!(!prefers_batching_for(Ep::Cpu, cuda));
         assert!(!prefers_batching_for(Ep::Xnnpack, cuda));
         assert!(prefers_batching_for(Ep::Auto, cuda));
-        for ep in [Ep::Cuda, Ep::TensorRt, Ep::DirectMl] {
+        assert!(!prefers_batching_for(Ep::DirectMl, cuda));
+        assert!(!prefers_batching_for(Ep::Auto, |ep| ep == Ep::DirectMl));
+        for ep in [Ep::Cuda, Ep::TensorRt] {
             assert!(prefers_batching_for(ep, cuda), "{ep:?}");
         }
     }
@@ -1659,7 +1767,9 @@ mod cache_guard_tests {
 
 #[cfg(test)]
 mod cuda_option_tests {
-    use super::{cuda_options_from, ArenaExtend, ConvAlgo, CudaOptions, PROBE_MODEL};
+    use super::{
+        cuda_options_from, parse_dml_device, ArenaExtend, ConvAlgo, CudaOptions, PROBE_MODEL,
+    };
     use std::collections::HashMap;
 
     fn parse(vars: &[(&str, &str)]) -> (CudaOptions, Vec<String>) {
@@ -1682,6 +1792,14 @@ mod cuda_option_tests {
         assert_eq!(o.conv_algo, ConvAlgo::Exhaustive);
         assert!(o.conv_max_workspace);
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn dml_device_parses() {
+        assert_eq!(parse_dml_device(None), Ok(None));
+        assert_eq!(parse_dml_device(Some(" 1 ".into())), Ok(Some(1)));
+        assert!(parse_dml_device(Some("-1".into())).is_err());
+        assert!(parse_dml_device(Some("igpu".into())).is_err());
     }
 
     #[test]
