@@ -19,6 +19,9 @@
     "children": [
       {
         "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
       }
     ],
     "content_layer": "body",
@@ -29,6 +32,18 @@
   "texts": [
     {
       "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "hidden text",
+      "text": "hidden text"
+    },
+    {
+      "self_ref": "#/texts/1",
       "parent": {
         "$ref": "#/body"
       },

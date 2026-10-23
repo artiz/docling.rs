@@ -54,9 +54,9 @@ const LISTING_FENCE: &str = "----";
 /// `////` opens and closes a comment block; `//` starts a line comment.
 const COMMENT_BLOCK: &str = "////";
 /// Example, sidebar, quote, open and passthrough block delimiters: consumed
-/// so they do not leak into the text — with a matching closer the content
-/// is re-emitted as ordinary lines, without one the delimiter only breaks the
-/// paragraph (docling#4662).
+/// so they do not leak into the text — with a matching closer the lines up
+/// to it are read like any others, without one the delimiter only breaks
+/// the paragraph (docling#4662).
 const CONTENT_BLOCK_DELIMITERS: &[&str] = &["====", "****", "____", "--", "++++"];
 /// `[source]` / `[source,python]` / `[source, java, linenums]`: the optional
 /// language is the first attribute after `source`.
@@ -101,6 +101,7 @@ fn parse(text: &str, name: &str, images: &dyn ImageResolver) -> DoclingDocument 
         match block {
             Block::Line(line) => p.feed(line, &mut doc),
             Block::Literal { code, language } => p.feed_literal(code, language, &mut doc),
+            Block::Comment(text) => p.feed_comment(text, &mut doc),
         }
     }
     p.finish(&mut doc);
@@ -111,27 +112,44 @@ fn parse(text: &str, name: &str, images: &dyn ImageResolver) -> DoclingDocument 
 /// docling keeps ten section levels (`parents[0..10]`).
 const LEVELS: usize = 10;
 
-/// One unit of input: a raw line, or the body of a `....` literal / `----`
-/// listing block (with the `[source,lang]` language, if any).
+/// One unit of input: a raw line, the body of a `....` literal / `----`
+/// listing block (with the `[source,lang]` language, if any), or a comment's
+/// text.
 enum Block<'a> {
     Line(&'a str),
     Literal {
         code: String,
         language: Option<String>,
     },
+    /// A `//` comment (a run of consecutive `//` lines is one) or a `////`
+    /// comment block, its delimiters removed (#863, docling#4663).
+    Comment(String),
+}
+
+/// docling's `_make_comment`: the lines joined, stripped; a comment
+/// without text is none.
+fn comment(lines: &[String]) -> Option<Block<'static>> {
+    let text = lines.join("\n").trim().to_string();
+    (!text.is_empty()).then_some(Block::Comment(text))
 }
 
 /// docling's `_iter_blocks`: fold each `....`- or `----`-delimited run of
 /// lines into a single code block — only the matching closer ends it, and a
 /// `[source,lang]` attribute line consumed right before a `----` labels the
-/// listing's language. Comments go: a `//` line and everything between two
-/// `////` lines (docling#4431). An example / sidebar / quote / open /
-/// passthrough block's delimiter lines are dropped and its inner lines pass
-/// through unchanged, followed by a blank line so the text after it starts a
-/// fresh paragraph; a delimiter with no closer (a stray `--` separator) is a
-/// blank line, so it breaks the paragraph without swallowing the rest of the
-/// document or reaching the text (docling#4662). An unterminated literal
-/// block still yields its body at EOF.
+/// listing's language. A comment is a block of its own (#863, docling#4663,
+/// 2.141): a run of consecutive `//` lines is one comment, everything
+/// between two `////` lines another, and an unclosed `////` comments out
+/// the rest of the document, as Asciidoctor reads it. A comment block hides
+/// every construct, so it is checked ahead of the block openers (a `----`
+/// between `////` delimiters is comment text). An example / sidebar / quote
+/// / open / passthrough block's delimiter lines are dropped and the lines
+/// between them run through this loop like any other (a comment inside one
+/// is a comment); its closer leaves a blank line so the text after it
+/// starts a fresh paragraph; a delimiter with no closer (a stray `--`
+/// separator) is a blank line, so it breaks the paragraph without
+/// swallowing the rest of the document or reaching the text
+/// (docling#4662). An unterminated literal block still yields its body at
+/// EOF.
 fn blocks(text: &str) -> Vec<Block<'_>> {
     // Python's `split("\n")`: a trailing newline leaves an empty last line,
     // which an unterminated literal block keeps (`no close\n`).
@@ -140,13 +158,40 @@ fn blocks(text: &str) -> Vec<Block<'_>> {
         .map(|l| l.strip_suffix('\r').unwrap_or(l))
         .collect();
     let source_attr = cached_regex!(SOURCE_ATTR);
+    // `//` but not the `////` delimiter itself.
+    let is_line_comment = |l: &str| l.starts_with("//") && l.trim() != COMMENT_BLOCK;
     let mut out = Vec::new();
-    let mut in_comment_block = false;
+    let mut comment_data: Option<Vec<String>> = None;
+    // Content block delimiters still waiting for their closer, innermost
+    // last.
+    let mut open_content: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < lines.len() {
         let stripped = lines[i].trim();
-        // A fence opens a block even inside a comment block, as upstream
-        // checks it first.
+        if let Some(data) = comment_data.as_mut() {
+            if stripped == COMMENT_BLOCK {
+                out.extend(comment(data));
+                comment_data = None;
+            } else {
+                data.push(lines[i].to_string());
+            }
+            i += 1;
+            continue;
+        }
+        if stripped == COMMENT_BLOCK {
+            comment_data = Some(Vec::new());
+            i += 1;
+            continue;
+        }
+        if is_line_comment(lines[i]) {
+            let mut run = Vec::new();
+            while i < lines.len() && is_line_comment(lines[i]) {
+                run.push(lines[i][2..].trim().to_string());
+                i += 1;
+            }
+            out.extend(comment(&run));
+            continue;
+        }
         if stripped == LITERAL_FENCE || stripped == LISTING_FENCE {
             let (body, next) = delimited_body(&lines, i + 1, stripped);
             out.push(Block::Literal {
@@ -156,29 +201,18 @@ fn blocks(text: &str) -> Vec<Block<'_>> {
             i = next;
             continue;
         }
-        if in_comment_block {
-            in_comment_block = stripped != COMMENT_BLOCK;
-            i += 1;
-            continue;
-        }
-        if stripped == COMMENT_BLOCK {
-            in_comment_block = true;
-            i += 1;
-            continue;
-        }
-        if lines[i].starts_with("//") {
+        if open_content.last() == Some(&stripped) {
+            open_content.pop();
+            out.push(Block::Line(""));
             i += 1;
             continue;
         }
         if CONTENT_BLOCK_DELIMITERS.contains(&stripped) {
             if lines[i + 1..].iter().any(|l| l.trim() == stripped) {
-                i += 1;
-                while i < lines.len() && lines[i].trim() != stripped {
-                    out.push(Block::Line(lines[i]));
-                    i += 1;
-                }
+                open_content.push(stripped);
+            } else {
+                out.push(Block::Line(""));
             }
-            out.push(Block::Line(""));
             i += 1;
             continue;
         }
@@ -196,6 +230,9 @@ fn blocks(text: &str) -> Vec<Block<'_>> {
         }
         out.push(Block::Line(lines[i]));
         i += 1;
+    }
+    if let Some(data) = comment_data {
+        out.extend(comment(&data));
     }
     out
 }
@@ -247,6 +284,9 @@ struct Parser<'r> {
     last_item_tree: Option<usize>,
     /// The unescaped text of the caption [`Self::take_caption`] last returned.
     raw_caption: String,
+    /// Comments met inside a list, for the flat nodes: they reach them when
+    /// the list ends (see [`Parser::feed_comment`]).
+    list_notes: Vec<String>,
 }
 
 /// What is being fed to [`Parser::close_list_if_needed`] — docling passes a
@@ -369,6 +409,9 @@ impl Parser<'_> {
             .filter(|l| *l != "unknown")
             .map(str::to_string);
         self.close_list_if_needed(Trigger::Literal);
+        if !self.in_list {
+            self.flush_list_notes(doc);
+        }
         self.flush_text(doc);
         // A pending block title is the code item's *caption* since docling
         // 2.127 (`add_code(caption=…)`), and docling-core's Markdown renders
@@ -420,6 +463,9 @@ impl Parser<'_> {
             return;
         }
         self.close_list_if_needed(Trigger::Line(line));
+        if !self.in_list {
+            self.flush_list_notes(doc);
+        }
 
         // Block attributes, anchors and entry attributes (`[cols="2,1"]`,
         // `[NOTE]`, `[[some-id]]`, `:experimental:`) are metadata for the
@@ -830,6 +876,48 @@ impl Parser<'_> {
         self.list_continuation = false;
     }
 
+    /// docling's `_add_comment_block` (#863, docling#4663): a comment is
+    /// markup, not content — it neither ends the list nor the paragraph it
+    /// sits in. It becomes a `text` item on the notes layer under the open
+    /// list item, else under the current section; a comment between two
+    /// lines of a paragraph lands before that paragraph, as upstream's does.
+    /// The flat nodes carry it as a notes-layer paragraph — exports leave
+    /// that layer out by default — but one met inside a list waits for the
+    /// list's end there: a node between two list items would split the
+    /// list the default Markdown prints.
+    fn feed_comment(&mut self, text: String, doc: &mut DoclingDocument) {
+        let parent = if self.in_list {
+            self.last_item_tree
+        } else {
+            self.current_parent()
+        };
+        self.tree.add(
+            parent,
+            Some(docling_core::ContentLayer::Notes),
+            TreeKind::Text {
+                label: "text".into(),
+                text: text.clone(),
+                orig: None,
+                formatting: None,
+                hyperlink: None,
+                level: None,
+                list: None,
+            },
+        );
+        if self.in_list {
+            self.list_notes.push(text);
+        } else {
+            push_note(doc, &text);
+        }
+    }
+
+    /// The comments held back while a list was open, now that it is not.
+    fn flush_list_notes(&mut self, doc: &mut DoclingDocument) {
+        for text in std::mem::take(&mut self.list_notes) {
+            push_note(doc, &text);
+        }
+    }
+
     /// Take a pending caption for the picture or table that claims it — the
     /// Markdown-escaped text; the raw joined text stays in `raw_caption` for
     /// the tree item.
@@ -1020,6 +1108,7 @@ impl Parser<'_> {
 
     fn finish(&mut self, doc: &mut DoclingDocument) {
         self.flush_text(doc);
+        self.flush_list_notes(doc);
         if self.in_table {
             // An unclosed table still consumes its pending caption.
             self.flush_table(doc);
@@ -1029,6 +1118,16 @@ impl Parser<'_> {
             self.flush_caption_as_paragraph(doc);
         }
     }
+}
+
+/// A comment as a flat node: a notes-layer paragraph.
+fn push_note(doc: &mut DoclingDocument, text: &str) {
+    doc.push(Node::Furniture {
+        layer: docling_core::ContentLayer::Notes,
+        inner: Box::new(Node::Paragraph {
+            text: escape_text(text),
+        }),
+    });
 }
 
 /// One run of a paragraph's text — docling's `_InlineRun`.

@@ -297,6 +297,7 @@ converted once more as that format with a warning.
 
 - `md_tree.rs` rebuilds marko's element tree from a second pulldown parse with the GFM extension as docling configures it (docling#4488, 2.135: tables, `~~strikethrough~~` by marko's own rule — two tildes, none inside or around, no flanking, so `~x~` stays text — and bare URLs) and ports `MarkdownDocumentBackend._iterate_elements` call for call:
   - a heading or list item is created lazily on its first run (`title`/`section_header` of level − 1; `list_item` with `enumerated` and a `{start + count}.` marker)
+  - one whose content has no run — an alt-less image, inline HTML — is created with empty text (#864, docling#4870, 2.141): an image-only list item holds its picture and sub-list, and the next block no longer takes the item's place (an image-only heading used to become the following paragraph's text, an image-only list item to vanish while its sub-list repeated)
   - a paragraph or heading of several runs opens an `inline` group of one `text` per run with `formatting` (emphasis/strong) and `hyperlink` (AnyUrl-normalized)
   - a code span is a `code` item (the container's own text when it is the only run)
   - a fenced block a `code` with `detect_code_language(hint)`
@@ -384,9 +385,10 @@ converted once more as that format with a warning.
 #### AsciiDoc
 
 **Backend:** `asciidoc.rs` (regex)\
-**Status:** **5/5 exact vs docling 2.140** (`asciidoc_02`–`_04` groundtruth refreshed to it), **JSON structurally identical on 5/5**, DocLang 2/2 exact (`asciidoc_04`'s archive refreshed)
+**Status:** **5/5 exact vs docling 2.142.1** (re-measured for #863; the content of the committed 2.140 groundtruth is unchanged in 2.142.1, which only spells its tables uncompacted), **JSON structurally identical on 5/5**, DocLang 2/2 exact (`asciidoc_04`'s archive refreshed)
 
-- the 42 documents upstream's `test_backend_asciidoc.py` converts are mirrored in `crates/docling/tests/data/asciidoc/upstream/` with docling 2.140's Markdown and JSON, and match **42/42** in both.
+- the 42 documents upstream's `test_backend_asciidoc.py` converts are mirrored in `crates/docling/tests/data/asciidoc/upstream/` with docling's Markdown and JSON — all re-run through 2.142.1, where only the two comment documents moved (their JSON is 2.142.1's) — and match **42/42** in both, as do our 15 `edge_*` probes.
+- **comments (#863, docling#4663, 2.141)**: a run of consecutive `//` lines is one comment and everything between two `////` lines another (an unclosed `////` runs to the end, as Asciidoctor reads it); each becomes a `text` item on the **notes** layer under the open list item, else under the current section, without ending the list or the paragraph it sits in — a comment between two lines of a paragraph lands before the paragraph. A comment block is checked ahead of every other construct (a `----` inside `////` is comment text, not a listing), and the lines inside an example / sidebar / quote / open / passthrough block now run through the same loop, so a comment there is one too. Exports leave the notes layer out by default, so the default Markdown is unchanged. In the flat outputs (Markdown / LaTeX / DocLang with the notes layer included) a comment met inside a list is printed after the list, not between its items — a node there would split the list the default Markdown prints; the JSON keeps it under its item.
 - The parser follows `_parse` / `_iter_blocks` step for step and builds docling's item tree alongside the flat nodes, mirroring the `parents` / `indents` / `list_kinds` bookkeeping:
   - the title is the root
   - a heading is parented to the nearest present ancestor level (docling 2.127+) and clears the deeper ones
@@ -543,6 +545,7 @@ converted once more as that format with a warning.
 **Status:** **36/36 exact** vs docling 2.129 modulo the committed corpus's compact-table format (§4; 26/33 byte-identical to upstream's stored `.md`, the other 7 differ only in `| - |` vs padded separators)
 
 - docling#4243: a fragment-only relationship target (`Target="#anchor"`) is dropped as upstream strips it before python-docx opens the package — the hyperlink keeps its text, no target
+- #865 (docling#4831, 2.141): a style declared with the invalid `w:type="list"` is a numbering style, as upstream normalizes it (python-docx used to fail the whole document on it; `styles.xml` is read directly here, so it never failed). A paragraph whose `w:pStyle` names a style that is not a paragraph style — that one, a numbering, character or table style — reads as unstyled, python-docx's default paragraph style (it used to take the style's heading name or outline level); the style's `numPr` still serves the `numStyleLink`s that name it. Fixture `docx_list_style_type`
 - #858: a blip-less DrawingML drawing — a group (`wpg:wgp`) of shapes (`wps:wsp`), connectors and text boxes, or one lone shape — is drawn in-process into an **SVG picture payload** (`docx_drawingml.rs`; docling renders it through LibreOffice into a PNG, or leaves it payload-less without one). Covered: the common preset geometries (rectangles, rounded, ellipse, diamond, triangles, parallelogram, trapezoid, hexagon, octagon, the flowchart presets, `can`, `foldedCorner`, `bevel`, block arrows, callouts), `custGeom` paths, straight and bent connectors, solid and theme fills (`theme1.xml` colours with Word's `lumMod`/`lumOff`/`shade`/`tint`), outlines with width, dash and the `triangle`/`stealth`/`arrow`/`oval`/`diamond` ends, `rot`/`flipH`/`flipV`, nested groups, the labels as `<text>` (size, bold, italic, colour, alignment, wrapped at the shape's insets, bullets for list paragraphs). A gradient draws as its first stop, an unknown preset as its bounding box, each with a `DOCLING_RS_DEBUG` diagnostic. Several anchored drawings in one paragraph are one picture placed by their `wp:posOffset`s, as upstream renders them. The payload is `image/svg+xml` (vector, byte-deterministic — the regression suite pins the bytes; Markdown's referenced mode writes `image_NNNNNN.svg`), at 96 px/in with the drawing's extent as its display size. The labels stay as text items too, as docling keeps them.
 - JSON 36/36 — a JPEG picture is written as the PNG PIL re-encodes it to, from the same libjpeg pixels, #527
 - #385: a list item's `first_in_list` is Word's list identity — a `numId` the previous list item did not carry, or body text since it, opens a new list; the same `numId` continues one across nesting and across an empty spacer paragraph (docling's `_manage_list_structure` and its ListGroup cache)
@@ -775,8 +778,9 @@ converted once more as that format with a warning.
 #### ODF (odt/ods/odp)
 
 **Backend:** `odf.rs`\
-**Status:** **7/7 exact**; **JSON: structurally identical to docling 2.129's on 7/7**
+**Status:** **7/7 exact**; **JSON: structurally identical to docling 2.129's on 7/7** (`odf_presentation_01` / `_02` against docling 2.142.1, #862)
 
+- #862 (docling#4869, 2.141): an ODP slide's speaker notes (`<presentation:notes>`) are items on the **notes** layer under the slide's group, after the slide's content — the notes page's text boxes walked like a slide's (headings, paragraphs, lists), its thumbnail and slide-number / date / header / footer placeholders skipped. Exports leave the layer out by default, so the Markdown is unchanged; `odf_presentation_01`'s three notes reach the JSON (docling 2.129 dropped them). Both presentations' groundtruth is refreshed from docling 2.142.1 — besides the notes, its Markdown now repeats a merged cell's text in every slot it spans (docling-core#857), as ours already did, and `_02`'s picture is PIL's newer PNG encoding.
 - #527: `odf_presentation_02`'s JPEG is written as the PNG PIL re-encodes it to — pixel-identical — and the flat nodes carry the package's pictures too, so DocLang names and packages them
 - `odf_tree.rs` ports `opendocument_backend`'s construction call for call over `odf.rs`'s style/run/list/cell readers:
   - a paragraph of several formatting or hyperlink runs (`_normalize_odf_text_runs`: same-format neighbours merged, whitespace at a hyperlink boundary stripped, blank edge runs dropped) is an `inline` group of `text` items
@@ -1179,7 +1183,7 @@ converted once more as that format with a warning.
   - `'T'` text nodes as paragraphs in document order — tables flatten to cell texts, inline redline fragments kept
 - StarDraw/StarImpress (`StarDrawDocument3` stream):
   - pages (`DrPg`) as sections with outliner (`xV4B`) texts, outline depth as list nesting
-  - master pages, the object-less handout and `~LT~Notizen` notes pages dropped (docling drops speaker notes too)
+  - master pages, the object-less handout and `~LT~Notizen` notes pages dropped (the binary format's notes pages are not read; ODP speaker notes are notes-layer items since #862)
 - `.vor` templates dispatch by the contained stream
 - Strings decode as cp1252
 - StarCalc (.sdc) has a different cell-record model and errors with a targeted save-as-.ods message — a follow-up

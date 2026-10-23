@@ -738,6 +738,8 @@ impl Walker<'_> {
             self.pending_hard_break = false;
             self.pending_soft_break = false;
         }
+        // The payloads below this size were pushed by enclosing elements.
+        let stack_size = self.creation_stack.len();
         match el {
             El::Heading { level, children } if !children.is_empty() => {
                 if children.len() > 1 {
@@ -813,7 +815,20 @@ impl Walker<'_> {
                         .push(Pending::ListItem { enumerated, marker });
                 }
             }
-            El::Image { title, dest, .. } => {
+            El::Image {
+                title,
+                dest,
+                children,
+            } => {
+                // An image without alt text emits no text run (#864,
+                // docling#4870): when it is the content of a list item or
+                // heading, that item is created now, with empty text, and the
+                // picture goes under the list item — else the next text run
+                // of the document, in a later block, took the item's place.
+                if !self.creation_stack.is_empty() && children.is_empty() {
+                    parent =
+                        self.flush_creation_stack("", parent, formatting, hyperlink.as_deref());
+                }
                 // The `"title"` is the caption (on the body, like every
                 // `add_text` without a parent); the alt text runs are walked
                 // as the picture's children afterwards. The payload is what
@@ -1026,6 +1041,19 @@ impl Walker<'_> {
                 }
             }
             self.iterate(child, parent, formatting, hyperlink.clone());
+            // The content of a list item or heading had no text run — only
+            // inline HTML, say (#864, docling#4870): the item is created
+            // with empty text now, or the next text run of the document, in
+            // a later block, would take it. Not kept as the parent, as
+            // upstream keeps it not.
+            if self.creation_stack.len() > stack_size
+                && matches!(el, El::ListItem(_) | El::Heading { .. })
+            {
+                let pending = self.creation_stack.split_off(stack_size);
+                let outer = std::mem::replace(&mut self.creation_stack, pending);
+                self.flush_creation_stack("", parent, formatting, hyperlink.as_deref());
+                self.creation_stack = outer;
+            }
         }
     }
 
@@ -1066,6 +1094,78 @@ mod tests {
             TreeKind::Text { text, .. } | TreeKind::Code { text, .. } => text,
             _ => "",
         }
+    }
+
+    /// #864 (docling#4870's tests): a heading or list item whose content
+    /// has no text run — an alt-less image, inline HTML — is created with
+    /// empty text, so the next block keeps its own text; an image-only list
+    /// item holds its picture and its sub-list, and the next item keeps its
+    /// number.
+    #[test]
+    fn a_container_without_text_does_not_take_the_next_block() {
+        for heading in [
+            "# ![](logo.png)",
+            "# <img src=\"logo.png\" width=\"80\">",
+            "![](logo.png)\n===",
+        ] {
+            let t = tree(&format!("{heading}\n\nIntro paragraph.\n"));
+            let texts: Vec<(String, &str)> = t
+                .items
+                .iter()
+                .filter(|it| matches!(it.kind, TreeKind::Text { .. }))
+                .map(|it| (label(it), text(it)))
+                .collect();
+            assert_eq!(
+                texts,
+                [("title".into(), ""), ("text".into(), "Intro paragraph.")],
+                "{heading}"
+            );
+        }
+        let t = tree("1. ![](a.png)\n2. Second step\n3. Third step\n");
+        let items: Vec<(&str, &str)> = t
+            .items
+            .iter()
+            .filter_map(|it| match &it.kind {
+                TreeKind::Text {
+                    text,
+                    list: Some(l),
+                    ..
+                } => Some((l.marker.as_str(), text.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            items,
+            [("1.", ""), ("2.", "Second step"), ("3.", "Third step")]
+        );
+        let first = t
+            .items
+            .iter()
+            .position(|it| text(it).is_empty() && label(it) == "list_item")
+            .unwrap();
+        let picture = t
+            .items
+            .iter()
+            .position(|it| label(it) == "picture")
+            .unwrap();
+        assert_eq!(t.items[picture].parent, Some(first));
+
+        let t = tree("- ![](a.png)\n  - nested\n- next\n");
+        let texts: Vec<&str> = t
+            .items
+            .iter()
+            .filter(|it| matches!(it.kind, TreeKind::Text { .. }))
+            .map(text)
+            .collect();
+        assert_eq!(texts, ["", "nested", "next"]);
+        let empty = t
+            .items
+            .iter()
+            .position(|it| label(it) == "list_item" && text(it).is_empty())
+            .unwrap();
+        let nested = t.items.iter().position(|it| text(it) == "nested").unwrap();
+        let sub_list = t.items[nested].parent.unwrap();
+        assert_eq!(t.items[sub_list].parent, Some(empty));
     }
 
     /// docling's `_iterate_elements`: a paragraph of several runs is an

@@ -2538,8 +2538,9 @@ pub(super) fn ods_cell_text(cell: XmlNode) -> String {
 /// Port of docling's `OdpDocumentBackend`: each `<draw:page>` gets its slide
 /// name as a title when no element on it is a visible title (a frame with
 /// `presentation:class="title"`, or a `draw:custom-shape` carrying the slide's
-/// first text); speaker notes (`<presentation:notes>`) and animations are
-/// dropped; a title element's paragraphs become the slide title.
+/// first text); speaker notes (`<presentation:notes>`) go to the notes
+/// layer (#862) and animations are dropped; a title element's paragraphs
+/// become the slide title.
 fn walk_presentation(pres: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
     for (idx, page) in pres
         .children()
@@ -2655,8 +2656,15 @@ fn walk_slide(page: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
     let mut seen_text = false;
     for el in page.children().filter(XmlNode::is_element) {
         let tag = el.tag_name().name();
-        // Speaker notes and animation trees never reach the document.
-        if tag == "notes" || tag == "par" {
+        // Speaker notes go to the notes layer (#862, docling#4869): the
+        // body walk of the notes' text boxes, each node wrapped on that
+        // layer — exports leave it out by default. Animation trees never
+        // reach the document.
+        if tag == "notes" {
+            walk_slide_notes(el, styles, doc);
+            continue;
+        }
+        if tag == "par" {
             continue;
         }
         let has_text = element_has_text(el);
@@ -2674,6 +2682,42 @@ fn walk_slide(page: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
                 is_title,
             );
         }
+    }
+}
+
+/// `_walk_slide_notes` for the flat nodes: the notes page's text boxes —
+/// not its thumbnail or field placeholders — walked like a slide's, each
+/// resulting node on the notes layer.
+fn walk_slide_notes(notes: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
+    let mut sub = DoclingDocument::new("");
+    for el in notes.children().filter(XmlNode::is_element) {
+        if attr(el, "class").is_some_and(|c| super::odf_tree::NOTES_PAGE_FIELD_CLASSES.contains(&c))
+        {
+            continue;
+        }
+        if el.has_tag_name("frame") {
+            for tb in el.descendants().filter(|n| n.has_tag_name("text-box")) {
+                walk_textbox_children(
+                    tb.children().filter(XmlNode::is_element),
+                    styles,
+                    &mut sub,
+                    false,
+                );
+            }
+        } else {
+            walk_textbox_children(
+                el.children().filter(XmlNode::is_element),
+                styles,
+                &mut sub,
+                false,
+            );
+        }
+    }
+    for node in sub.nodes {
+        doc.push(Node::Furniture {
+            layer: docling_core::ContentLayer::Notes,
+            inner: Box::new(node),
+        });
     }
 }
 

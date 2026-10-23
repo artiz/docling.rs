@@ -82,6 +82,7 @@ impl DeclarativeBackend for DocxBackend {
             style_fonts: &sm.fonts,
             style_outline: &sm.outlines,
             style_bold: &sm.bolds,
+            not_paragraph_styles: &sm.not_paragraph,
             num_levels: &num_levels,
             rels: &rels,
             images: &images,
@@ -506,6 +507,9 @@ pub(super) struct Ctx<'a> {
     /// reads it (`true`/`false`; absent = not set) — the item tree's
     /// `_get_format_from_run` climbs the paragraph style chain for bold.
     pub(super) style_bold: &'a HashMap<String, bool>,
+    /// The style ids a `w:pStyle` cannot name (#865): see
+    /// [`paragraph_style_id`].
+    pub(super) not_paragraph_styles: &'a HashSet<String>,
     pub(super) num_levels: &'a HashMap<(String, i64), NumLevel>, // (numId, ilvl) -> level props
     pub(super) rels: &'a HashMap<String, String>,
     pub(super) images: &'a HashMap<String, PictureImage>, // image relationship id -> extracted image
@@ -552,6 +556,7 @@ impl<'a> Ctx<'a> {
             style_fonts: self.style_fonts,
             style_outline: self.style_outline,
             style_bold: self.style_bold,
+            not_paragraph_styles: self.not_paragraph_styles,
             num_levels: self.num_levels,
             rels,
             images,
@@ -619,12 +624,7 @@ const DUMMY_BOOKMARKS: [&str; 1] = ["_GoBack"];
 /// Is `p` a heading or title paragraph — the style checks both walks make,
 /// without the numbering / text they add.
 pub(super) fn is_heading_paragraph(p: XmlNode, ctx: &Ctx) -> bool {
-    let style_id = p
-        .children()
-        .find(|n| n.has_tag_name("pPr"))
-        .and_then(|pr| pr.children().find(|n| n.has_tag_name("pStyle")))
-        .and_then(|s| attr(s, "val"))
-        .unwrap_or("");
+    let style_id = paragraph_style_id(p, ctx);
     let style_name = ctx
         .style_names
         .get(style_id)
@@ -864,11 +864,7 @@ fn handle_paragraph_inner(
     rich: bool,
     skip_textbox: bool,
 ) {
-    let p_pr = p.children().find(|n| n.has_tag_name("pPr"));
-    let style_id = p_pr
-        .and_then(|pr| pr.children().find(|n| n.has_tag_name("pStyle")))
-        .and_then(|s| attr(s, "val"))
-        .unwrap_or("");
+    let style_id = paragraph_style_id(p, ctx);
     let style_name = ctx
         .style_names
         .get(style_id)
@@ -2067,12 +2063,7 @@ fn paragraph_bold(p: XmlNode, ctx: &Ctx) -> bool {
             rp.children()
                 .any(|n| n.has_tag_name("b") && !matches!(attr(n, "val"), Some("0" | "false")))
         });
-    mark || style_chain_bold(
-        p_pr.and_then(|pr| pr.children().find(|n| n.has_tag_name("pStyle")))
-            .and_then(|s| attr(s, "val"))
-            .unwrap_or(""),
-        ctx,
-    )
+    mark || style_chain_bold(paragraph_style_id(p, ctx), ctx)
 }
 
 /// Whether a paragraph style or one of its `basedOn` ancestors sets
@@ -2997,6 +2988,9 @@ struct StyleMaps {
     /// styleId → the style's own `w:rPr/w:b` (python-docx `font.bold`:
     /// `true`/`false` when the element is present). See [`Ctx::style_bold`].
     bolds: HashMap<String, bool>,
+    /// The styles a paragraph cannot take (#865): every `w:type` but
+    /// `paragraph` — see [`paragraph_style_id`].
+    not_paragraph: HashSet<String>,
 }
 fn parse_styles(styles_xml: &str) -> StyleMaps {
     let mut names = HashMap::new();
@@ -3005,6 +2999,7 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
     let mut fonts = HashMap::new();
     let mut outlines = HashMap::new();
     let mut bolds = HashMap::new();
+    let mut not_paragraph = HashSet::new();
     let Ok(dom) = Document::parse(styles_xml) else {
         return StyleMaps {
             names,
@@ -3013,12 +3008,21 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
             fonts,
             outlines,
             bolds,
+            not_paragraph,
         };
     };
     for style in dom.descendants().filter(|n| n.has_tag_name("style")) {
         let Some(id) = attr(style, "styleId") else {
             continue;
         };
+        // `ST_StyleType`'s absent value is `paragraph`. Some generators
+        // write the invalid `list` — docling#4831 (2.141) reads it as
+        // `numbering`, the type it means — which is not a paragraph type
+        // either. The style's other properties are still read: a numbering
+        // style's `numPr` is what a `numStyleLink` resolves through.
+        if attr(style, "type").is_some_and(|t| t != "paragraph") {
+            not_paragraph.insert(id.to_string());
+        }
         if let Some(name) = style
             .children()
             .find(|n| n.has_tag_name("name"))
@@ -3068,6 +3072,26 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
         fonts,
         outlines,
         bolds,
+        not_paragraph,
+    }
+}
+
+/// A paragraph's style id (`w:pStyle`), empty when unstyled — and empty
+/// when the id names a style that is not a paragraph style (a numbering
+/// style, a `w:type="list"` one, a character or table style): python-docx's
+/// `paragraph.style` resolves such a reference to the default paragraph
+/// style, so docling reads the paragraph as unstyled (#865, docling#4831).
+pub(super) fn paragraph_style_id<'a>(p: XmlNode<'a, '_>, ctx: &Ctx) -> &'a str {
+    let id = p
+        .children()
+        .find(|n| n.has_tag_name("pPr"))
+        .and_then(|pr| pr.children().find(|n| n.has_tag_name("pStyle")))
+        .and_then(|s| attr(s, "val"))
+        .unwrap_or("");
+    if ctx.not_paragraph_styles.contains(id) {
+        ""
+    } else {
+        id
     }
 }
 
