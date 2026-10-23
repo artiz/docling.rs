@@ -203,3 +203,42 @@ fn html_layers_match_docling_core() {
         failures.join("\n")
     );
 }
+
+/// #860: a hyperlink with an active scheme keeps its text and loses the
+/// link on every export but the JSON (docling-core 2.104's
+/// `is_safe_hyperlink`); a live destination is percent-escaped in Markdown
+/// and attribute-escaped in HTML, so neither can end the link early.
+#[test]
+fn unsafe_hyperlinks_are_text_and_destinations_are_escaped() {
+    let html = r#"<p>One <a href="javascript:alert(1)">click</a> two
+<a href=" JAVA&#10;SCRIPT:alert(2)">spaced</a> three
+<a href="/wiki/Duck_(film)?a=1&amp;b=2 c">paren</a> four
+<a href="data:text/html;base64,PHNjcmlwdD4=">data</a>.</p>"#;
+    let source = SourceDocument::from_bytes("links.html", docling::InputFormat::Html, html.into());
+    let doc = DocumentConverter::new()
+        .convert(source)
+        .expect("convert")
+        .document;
+    let md = doc.export_to_markdown();
+    assert!(md.contains("One click two"), "{md}");
+    assert!(md.contains("spaced three"), "{md}");
+    assert!(
+        md.contains("[paren](/wiki/Duck_%28film%29?a=1&b=2%20c)"),
+        "{md}"
+    );
+    assert!(md.contains("four data"), "{md}");
+    assert!(!md.contains("javascript:") && !md.contains("data:"), "{md}");
+    let out = doc.export_to_html();
+    assert!(
+        !out.contains("<a href=\"javascript") && !out.contains("<a href=\"data:"),
+        "{out}"
+    );
+    assert!(!out.contains("<a href=\" JAVA"), "{out}");
+    assert!(
+        out.contains("<a href=\"/wiki/Duck_(film)?a=1&amp;b=2 c\">paren</a>"),
+        "{out}"
+    );
+    // The JSON keeps the raw destination, as docling's model does.
+    let json = doc.export_to_json();
+    assert!(json.contains("javascript:alert(1)"), "{json}");
+}

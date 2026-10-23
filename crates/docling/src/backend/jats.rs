@@ -1091,7 +1091,7 @@ fn seg_markdown(s: &Seg) -> String {
         out = format!("~~{out}~~");
     }
     if let Some(url) = &s.hyperlink {
-        out = format!("[{out}]({url})");
+        out = docling_core::hyperlink::markdown_link(&out, url);
     }
     out
 }

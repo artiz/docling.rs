@@ -346,7 +346,7 @@ converted once more as that format with a warning.
 #### HTML
 
 **Backend:** `html.rs` (scraper/html5ever)\
-**Status:** **32/32 exact** vs docling 2.129 modulo the stored corpus's compact-table format (docling 2.126 groundtruth); **JSON: structurally identical to docling's on 32/32** (every key and value but `origin`/`version`; `wiki_duck` modulo one caption item — its stored JSON predates docling#4050, whose figure dispatch the refreshed Markdown groundtruth already shows)
+**Status:** **32/32 exact** vs docling 2.129 modulo the stored corpus's compact-table format (docling 2.126 groundtruth; `wiki_duck`'s triple refreshed from docling 2.142.1 / docling-core 2.104.0 with upstream's own test recipe, so it carries the percent-escaped link destinations of #860 — `/wiki/Duck_%28film%29` — and `compact_tables=True`); **JSON: structurally identical to docling's on 32/32** (every key and value but `origin`/`version`; `wiki_duck` modulo the two footer badges docling 2.142 reads as list items — `Wikimedia Foundation`, `Powered by MediaWiki`, each a list item with a picture and an empty caption, 1379 texts / 27 pictures to our 1375 / 25 — since its groundtruth triple is docling 2.142.1's; the HTML backend tracks 2.129 there)
 
 - docling#4287: a zero `colspan`/`rowspan` defaults to 1 like a missing one, so the cell no longer drops out of the grid; spans read python-style — the leading digits when the attribute starts with one, `"2px"` → 2
 - JSON 31/32 — `html_code_snippets`: 2.129 maps a `language-python` class to `code_language: Python`, we still write `unknown`
@@ -1505,6 +1505,8 @@ pointed at the wrong item).
 - A heading inside a rich table cell renders as plain text (docling-core#540).
 - Field regions / field items emit nothing of their own — no more `<!-- missing-text -->` markers (docling-core#724).
 - The hard-break marker is Markdown-only: JSON cell text and LaTeX cells see the raw newlines.
+- Code fences and spans are docling-core 2.103.1's (#859): a code item's fence is three backticks or one more than the longest backtick run in its text (`` ````md `` around a body quoting a ``` fence), an inline code span one backtick more than the longest run in it, space-padded when the text starts or ends with a backtick (`` ``a`b`` ``, `` `` `x `` ``) — `docling_core::code_fence` / `code_span`, which every backend baking a span uses; the readers of the baked text (the plain export, DocLang runs, LaTeX, the chunker) take the longer form back, so no fixture moved.
+- Hyperlinks are docling-core 2.104's (`is_safe_hyperlink` / `markdown_link_destination`, #860): a destination whose scheme is not `http`, `https`, `ftp`, `ftps`, `sftp`, `mailto`, `tel` or `file` (`javascript:`, `data:`, `vbscript:`, read the way a browser reads it — leading controls and spaces ignored, tabs and newlines removed, case-insensitive; a relative reference and a Windows drive are fine) keeps its text and loses the link; a live destination is written percent-escaped (`[Duck (film)](/wiki/Duck_%28film%29)`, spaces, `<>"\` and controls too, an entity's `&` as `&amp;`). `docling_core::hyperlink` is the one helper, and every backend that bakes `[text](url)` into an item's text goes through it, so LaTeX (`\href`), the Pandoc AST (`Link`) and the chunker (a hyperlink item) see the same verdict; the JSON export keeps the raw `hyperlink`, as docling's model does.
 
 ### Markdown (strict)
 
@@ -1592,6 +1594,7 @@ pointed at the wrong item).
 - Pinned byte-for-byte against upstream's HTML groundtruth for the ODF/DOCX fixtures (8/8, picture payloads masked — upstream's `save_as_html` re-encodes them through PIL) and against docling-core 2.99's own `export_to_html()` over our exported JSON for the whole declarative corpus: **265/265 byte-identical**
   - formulas as MathML through `docling_core::mathml`, a port of the `latex2mathml` 3.81 library upstream runs (checked against the Python package on every corpus formula and a synthetic suite, inline and block, error cases included; `<annotation encoding="TeX">` + `<div>` block wrapper as docling-core adds them, `<pre>{latex}</pre>` where the library raises)
   - a referenced picture's `src` is the Markdown destination HTML-escaped (`Q&amp;A,%20v2+final_artifacts/image_000000.png`, a URL keeping its `https://`, no `%` encoded twice — docling-core#772 2.102, #781; Python's plain `quote` used to give `Q%26A%2C…`)
+- An item's `hyperlink` is written as docling-core 2.104's `<a href>` (#860): `html.escape`d (`&amp;`, `&quot;`, `&#x27;`), and left out — the text alone — when the scheme is not on the allow-list above (`javascript:`, `data:`).
 - Served as `text/html` (`to=html`), Node `to: 'html'`, wasm `"html"`; Python needs nothing (`result.document` is upstream's).
 
 ### Pandoc AST (`.pandoc.json`)

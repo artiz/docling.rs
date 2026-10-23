@@ -514,7 +514,13 @@ fn text_inlines(text: &str) -> Vec<Value> {
                     }
                     label_inlines.push(ast::str_(word));
                 }
-                out.push(ast::link(label_inlines, target));
+                // An unsafe destination (`javascript:`, #860) keeps the
+                // label's words alone.
+                if crate::hyperlink::is_safe_hyperlink(target) {
+                    out.push(ast::link(label_inlines, target));
+                } else {
+                    out.extend(label_inlines);
+                }
                 pending_space = false;
             }
         }
@@ -1345,7 +1351,12 @@ impl<'a> Serializer<'a> {
                 _ => {}
             }
         }
-        if let Some(url) = item.get("hyperlink").and_then(Value::as_str) {
+        // An unsafe destination (`javascript:`, #860) keeps the text alone.
+        if let Some(url) = item
+            .get("hyperlink")
+            .and_then(Value::as_str)
+            .filter(|u| crate::hyperlink::is_safe_hyperlink(u))
+        {
             inlines = vec![ast::link(inlines, url)];
         }
         // A tracked change kept under `all` (#851): Pandoc's docx reader's

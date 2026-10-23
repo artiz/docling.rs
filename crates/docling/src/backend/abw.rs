@@ -329,7 +329,7 @@ fn runs_markdown(runs: &[Run]) -> String {
             s = format!("~~{s}~~");
         }
         if let Some(href) = &r.href {
-            s = format!("[{s}]({href})");
+            s = docling_core::hyperlink::markdown_link(&s, href);
         }
         out.push_str(&s);
     }

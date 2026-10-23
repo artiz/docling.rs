@@ -679,7 +679,9 @@ impl<'a> Parser<'a> {
         // (the DOCX backend's cell convention); body text gets the Markdown
         // link.
         let text = match field_instruction_url(&raw) {
-            Some(url) if !self.state.in_table => format!("[{result}]({url})"),
+            Some(url) if !self.state.in_table => {
+                docling_core::hyperlink::markdown_link(&result, &url)
+            }
             _ => result,
         };
         // The nested parser already baked the formatting — append verbatim.

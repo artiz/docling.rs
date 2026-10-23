@@ -400,7 +400,7 @@ impl Parser<'_> {
                 captions: tree_caption.into_iter().collect(),
             },
         );
-        if !(self.in_list && self.fold_child(doc, &format!("```\n{code}\n```"))) {
+        if !(self.in_list && self.fold_child(doc, &docling_core::code_fence("", &code))) {
             doc.push(Node::Code {
                 language,
                 text: code,
@@ -904,7 +904,7 @@ impl Parser<'_> {
                         captions: Vec::new(),
                     },
                 );
-                md.push(format!("`{t}`"));
+                md.push(docling_core::code_span(t));
             } else {
                 let formatting = (run.bold || run.italic).then(|| Formatting {
                     bold: run.bold,

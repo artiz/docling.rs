@@ -1235,7 +1235,7 @@ fn serialize_run(text: &str, fmt: Fmt, href: Option<&str>) -> String {
     }
     // docling-core's Markdown `serialize_hyperlink`, applied after formatting.
     if let Some(href) = href {
-        s = format!("[{s}]({href})");
+        s = docling_core::hyperlink::markdown_link(&s, href);
     }
     s
 }

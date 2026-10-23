@@ -3344,17 +3344,12 @@ impl ParaAccum {
             };
             out.push_str(lead);
             // A `HYPERLINK` field's result as a Markdown link (#852), the
-            // DOCX backend's shape, the formatting markers inside it.
-            if link.is_some() {
-                out.push('[');
-            }
-            out.push_str(marker);
-            out.push_str(core);
-            out.push_str(marker);
-            if let Some(url) = link {
-                out.push_str("](");
-                out.push_str(url);
-                out.push(')');
+            // DOCX backend's shape, the formatting markers inside it (an
+            // unsafe destination keeps the text alone, #860).
+            let inner = format!("{marker}{core}{marker}");
+            match link {
+                Some(url) => out.push_str(&docling_core::hyperlink::markdown_link(&inner, url)),
+                None => out.push_str(&inner),
             }
             out.push_str(trail);
         }

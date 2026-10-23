@@ -200,10 +200,10 @@ fn inline_runs(text: &str) -> Vec<Run> {
             }
         }
         if chars[i] == '`' {
-            if let Some(end) = find(i + 1, &['`']) {
-                let inner: String = chars[i + 1..end].iter().collect();
+            if let Some((s, e, after)) = crate::markdown::code_span_bounds(&chars, i) {
+                let inner: String = chars[s..e].iter().collect();
                 take(&mut runs, &mut plain, Run::Code(inner));
-                i = end + 1;
+                i = after;
                 continue;
             }
         }
@@ -340,9 +340,9 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
             }
         }
         if chars[i] == '`' {
-            if let Some(end) = find(i + 1, &['`']) {
+            if let Some((s, e, after)) = crate::markdown::code_span_bounds(chars, i) {
                 flush_md_plain(&mut plain, &style, out);
-                let inner: String = sub(i + 1, end).iter().collect();
+                let inner: String = sub(s, e).iter().collect();
                 let inner = inner.trim();
                 if !inner.is_empty() {
                     out.push(InlineRun {
@@ -351,7 +351,7 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
                         ..style.clone()
                     });
                 }
-                i = end + 1;
+                i = after;
                 continue;
             }
         }

@@ -89,7 +89,7 @@ fn formatted_text(item: &Value) -> String {
         res = format!("~~{res}~~");
     }
     if let Some(url) = item["hyperlink"].as_str() {
-        res = format!("[{res}]({url})");
+        res = docling_core::hyperlink::markdown_link(&res, url);
     }
     res
 }
