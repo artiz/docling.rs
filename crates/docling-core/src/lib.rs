@@ -25,6 +25,7 @@ pub mod jpeg;
 mod json;
 mod labels;
 mod latex;
+pub mod limits;
 mod markdown;
 mod mathml;
 pub mod metadata;
@@ -45,6 +46,7 @@ pub use document::{
 pub use encryption::EncryptionError;
 pub use json::code_language_label;
 pub use labels::DocItemLabel;
+pub use limits::LimitExceeded;
 pub use markdown::{code_fence, code_span, longest_backtick_run, ImageMode, MarkdownStreamer};
 pub use metadata::{DocumentMetadata, GpsPosition, MetadataOutput};
 pub use redact::{

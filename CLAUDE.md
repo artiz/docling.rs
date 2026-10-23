@@ -203,7 +203,11 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   int8→fp32 layout-retry notice), `DOCLING_RS_MAX_XML_DEPTH` (512; XML
   element nesting any input/part may reach — roxmltree recurses per level),
   `DOCLING_RS_SHEET_MAX_CELLS` (10M; a sheet's used area before it is
-  skipped — calamine materializes a dense grid),
+  skipped — calamine materializes a dense grid), `DOCLING_RS_MAX_TABLE_CELLS`
+  / `DOCLING_RS_MAX_TOTAL_TABLE_CELLS` (#861; 1M per table, 5M per document —
+  docling-core 2.103.1's caps; a docling-JSON, DocTags or DocLang table
+  declaring more is rejected with the typed `LimitExceeded`,
+  `ConversionError::limit()`, before any grid is materialized),
   `DOCLING_RS_MAX_IMAGE_BYTES` / `DOCLING_RS_MAX_IMAGES` /
   `DOCLING_RS_MAX_IMAGE_TOTAL_MB` / `DOCLING_RS_MIN_IMAGE_BYTES` (#646; 32 MiB /
   unlimited / unlimited / 0 — the per-document budget of the image resolvers

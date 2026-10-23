@@ -34,6 +34,7 @@ impl DeclarativeBackend for DoclingJsonBackend {
         if !crate::backend::text::is_docling_document(&root) {
             return crate::backend::text::convert_json_text(source);
         }
+        check_table_budget(&root)?;
         // Referenced images resolve against the JSON file's directory (#403).
         inline_referenced_images(
             &mut root,
@@ -54,6 +55,33 @@ impl DeclarativeBackend for DoclingJsonBackend {
         }
         Ok(doc)
     }
+}
+
+/// Every table of the file against the cell budget (#861; docling-core
+/// 2.103.1's load-time validators): the declared `num_rows × num_cols` and
+/// the `grid` the file carries, whichever is larger, per table and summed
+/// over `tables` — all of them, reachable or not, as upstream counts them,
+/// since the dense `rows` of each is what the reader materializes.
+fn check_table_budget(root: &Value) -> Result<(), ConversionError> {
+    let mut budget = docling_core::limits::TableCellBudget::new();
+    for (i, table) in root["tables"].as_array().into_iter().flatten().enumerate() {
+        let data = &table["data"];
+        let declared = |key: &str| data[key].as_u64().unwrap_or(0).min(usize::MAX as u64) as usize;
+        let grid = data["grid"].as_array();
+        let rows = declared("num_rows").max(grid.map_or(0, Vec::len));
+        let cols = declared("num_cols").max(
+            grid.into_iter()
+                .flatten()
+                .filter_map(Value::as_array)
+                .map(Vec::len)
+                .max()
+                .unwrap_or(0),
+        );
+        budget
+            .table(&format!("docling-json #/tables/{i}"), rows, cols)
+            .map_err(|e| ConversionError::with_source("docling-json", e))?;
+    }
+    Ok(())
 }
 
 /// Resolve a `{"$ref": "#/texts/3"}` reference into its array element.
@@ -680,6 +708,108 @@ mod tests {
         );
         // Converts (the text sits past the depth cap and is dropped).
         let _ = md(&deep);
+    }
+
+    /// #861 (docling-core 2.103.1's `validate_tree`): an item reachable
+    /// through two references is walked once — 30 levels of a group whose
+    /// two children are the same next group would be 2^30 walks without the
+    /// guard — on every export; the leaf renders once.
+    #[test]
+    fn dag_shaped_tree_converts_once_and_in_linear_time() {
+        let n = 30;
+        let groups: Vec<String> = (0..n)
+            .map(|i| {
+                let child = if i + 1 < n {
+                    format!(r##"{{"$ref":"#/groups/{}"}}"##, i + 1)
+                } else {
+                    r##"{"$ref":"#/texts/0"}"##.to_string()
+                };
+                let parent = if i == 0 { "#/body".to_string() } else { format!("#/groups/{}", i - 1) };
+                format!(
+                    r##"{{"self_ref":"#/groups/{i}","parent":{{"$ref":"{parent}"}},"children":[{child},{child}],"name":"g","label":"section"}}"##
+                )
+            })
+            .collect();
+        let dag = format!(
+            r##"{{"schema_name":"DoclingDocument","version":"1.7.0","name":"d",
+            "body":{{"self_ref":"#/body","children":[{{"$ref":"#/groups/0"}},{{"$ref":"#/groups/0"}}],"name":"_root_","label":"unspecified"}},
+            "groups":[{}],
+            "texts":[{{"self_ref":"#/texts/0","parent":{{"$ref":"#/groups/29"}},"children":[],"label":"text","text":"leaf","prov":[]}}]}}"##,
+            groups.join(",")
+        );
+        let doc = DoclingJsonBackend
+            .convert(&SourceDocument::from_bytes(
+                "dag.json",
+                InputFormat::JsonDocling,
+                dag.into_bytes(),
+            ))
+            .unwrap();
+        assert_eq!(doc.export_to_markdown().matches("leaf").count(), 1);
+        // The JSON writes the text as `text` and `orig`: one item, two hits.
+        assert_eq!(doc.export_to_json().matches("leaf").count(), 2);
+        assert_eq!(doc.export_to_html().matches("leaf").count(), 1);
+        assert_eq!(doc.export_to_latex().matches("leaf").count(), 1);
+        assert_eq!(doc.export_to_doclang().matches("leaf").count(), 1);
+        let pandoc = doc.export_to_pandoc_json();
+        assert_eq!(pandoc.matches("leaf").count(), 1);
+        let chunks = docling_core::chunker::HierarchicalChunker.chunk(&doc);
+        assert_eq!(chunks.len(), 1, "{chunks:?}");
+    }
+
+    /// #861 (docling-core 2.103.1's `max_table_cells` /
+    /// `max_total_table_cells`): a table declaring more cells than the
+    /// budget — around one real cell — is refused before any grid is
+    /// built, with the typed limit on the error's source chain; so is a
+    /// document whose tables together pass the total.
+    #[test]
+    fn oversized_tables_are_rejected_with_a_typed_limit() {
+        let doc = |tables: &str| {
+            format!(
+                r##"{{"schema_name":"DoclingDocument","version":"1.7.0","name":"t",
+                "body":{{"self_ref":"#/body","children":[{{"$ref":"#/tables/0"}}],"name":"_root_","label":"unspecified"}},
+                "tables":[{tables}]}}"##
+            )
+        };
+        let table = |i: usize, rows: usize, cols: usize| {
+            format!(
+                r##"{{"self_ref":"#/tables/{i}","parent":{{"$ref":"#/body"}},"children":[],"label":"table","prov":[],
+                "data":{{"num_rows":{rows},"num_cols":{cols},"table_cells":[{{"text":"x","start_row_offset_idx":0,"end_row_offset_idx":1,"start_col_offset_idx":0,"end_col_offset_idx":1,"row_span":1,"col_span":1}}],
+                "grid":[[{{"text":"x","start_row_offset_idx":0,"end_row_offset_idx":1,"start_col_offset_idx":0,"end_col_offset_idx":1,"row_span":1,"col_span":1}}]]}}}}"##
+            )
+        };
+        let convert = |json: String| {
+            DoclingJsonBackend.convert(&SourceDocument::from_bytes(
+                "t.json",
+                InputFormat::JsonDocling,
+                json.into_bytes(),
+            ))
+        };
+        let err = convert(doc(&table(0, 1_000_000, 1_000_000))).unwrap_err();
+        let limit = err.limit().expect("typed limit");
+        assert_eq!(limit.variable, "DOCLING_RS_MAX_TABLE_CELLS");
+        assert_eq!(limit.actual, 1_000_000 * 1_000_000);
+        assert!(
+            err.to_string().contains("DOCLING_RS_MAX_TABLE_CELLS"),
+            "{err}"
+        );
+        // Rows alone past the cap, with no columns at all.
+        assert!(convert(doc(&table(0, 1_000_001, 0)))
+            .unwrap_err()
+            .limit()
+            .is_some());
+        // Six tables of 999 999 cells pass each on their own and break the
+        // document's total — reachable or not, as upstream counts them.
+        let six: Vec<String> = (0..6).map(|i| table(i, 999, 1001)).collect();
+        let err = convert(doc(&six.join(","))).unwrap_err();
+        assert_eq!(
+            err.limit().unwrap().variable,
+            "DOCLING_RS_MAX_TOTAL_TABLE_CELLS"
+        );
+        // Under the caps the one real cell converts.
+        let md = convert(doc(&table(0, 1000, 1000)))
+            .unwrap()
+            .export_to_markdown();
+        assert!(md.contains("| x"), "{md}");
     }
 
     fn item(self_ref: &str, parent: &str, label: &str, extra: &str) -> String {

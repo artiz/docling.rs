@@ -743,7 +743,10 @@ OOXML/ODF part may reach, default 512 — deeper files are rejected before the
 XML parser, whose recursion would otherwise overflow the stack),
 `DOCLING_RS_SHEET_MAX_CELLS` (the used area of one spreadsheet sheet, default
 10 million cells — a sheet with a value in `A1` and one in `XFD1048576` is
-skipped instead of materializing 17 billion cells), `DOCLING_RS_IMAGE_FETCH_CONCURRENCY`
+skipped instead of materializing 17 billion cells), `DOCLING_RS_MAX_TABLE_CELLS`
+/ `DOCLING_RS_MAX_TOTAL_TABLE_CELLS` (the grid a docling-JSON, DocTags or
+DocLang table may declare, 1 million cells per table and 5 million per
+document — docling-core's own caps; a larger one rejects the document), `DOCLING_RS_IMAGE_FETCH_CONCURRENCY`
 (parallel `--fetch-images` downloads), `DOCLING_RS_VLM_EXTRA_BODY` (extra JSON
 merged into VLM requests).
 
