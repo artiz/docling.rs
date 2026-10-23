@@ -2028,7 +2028,7 @@ pub(crate) fn normalize_url(href: &str) -> String {
 /// (innermost, literal) → bold → italic → strikethrough → hyperlink (outermost).
 fn serialize_run(text: &str, fmt: Fmt, hyperlink: Option<&str>) -> String {
     let mut res = if fmt.code {
-        format!("`{text}`")
+        docling_core::code_span(text)
     } else if fmt.raw {
         text.to_string()
     } else {

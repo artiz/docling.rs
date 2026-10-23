@@ -196,7 +196,7 @@ impl Ctx {
                     .filter_map(|line| {
                         // A folded code block's fences go too: the plain
                         // export prints code unfenced.
-                        if line.trim() == MARKER || line.trim() == "```" {
+                        if line.trim() == MARKER || is_fence_line(line.trim()) {
                             return None;
                         }
                         Some(line.replace(MARKER, &self.image_placeholder))
@@ -605,6 +605,87 @@ fn strict_text(text: &str, strict: bool) -> String {
         .replace("[ ", "[")
 }
 
+/// The longest run of consecutive backticks in `text` (docling-core
+/// 2.103.1's `_longest_backtick_run`, #859).
+pub fn longest_backtick_run(text: &str) -> usize {
+    let (mut best, mut run) = (0, 0);
+    for c in text.chars() {
+        if c == '`' {
+            run += 1;
+            best = best.max(run);
+        } else {
+            run = 0;
+        }
+    }
+    best
+}
+
+/// `text` as a Markdown code span no backtick run inside can close
+/// (docling-core's `_code_span`, #859): one backtick more than the longest
+/// run in it, and a space on both sides when the text starts or ends with
+/// a backtick — the pad CommonMark strips again — so `` a`b `` is
+/// ``` ``a`b`` ``` and `` `x `` is ``` `` `x `` ```.
+pub fn code_span(text: &str) -> String {
+    let ticks = "`".repeat(longest_backtick_run(text) + 1);
+    let pad = if text.starts_with('`') || text.ends_with('`') {
+        " "
+    } else {
+        ""
+    };
+    format!("{ticks}{pad}{text}{pad}{ticks}")
+}
+
+/// A fenced code block whose fence out-lengths every backtick run in `body`
+/// (docling-core's `_code_block`, #859): three backticks, or one more than
+/// the longest run inside, so a body quoting a ``` fence cannot close the
+/// block early. `language` rides on the opening fence (empty for none).
+pub fn code_fence(language: &str, body: &str) -> String {
+    let fence = "`".repeat(longest_backtick_run(body).max(2) + 1);
+    format!("{fence}{language}\n{body}\n{fence}")
+}
+
+/// The code span (or flattened fence) opening at `chars[i]`, a run of
+/// backticks: `(content start, content end, index after the closing run)`.
+/// The closing run is the first later run of exactly the same length — a
+/// run of another length is literal inside the span, as in CommonMark. A
+/// span of two or more backticks sheds the one-space pad [`code_span`]
+/// adds; a single-backtick span keeps its content as it stands, the shape
+/// every reader of the baked text relied on.
+pub(crate) fn code_span_bounds(chars: &[char], i: usize) -> Option<(usize, usize, usize)> {
+    let n = chars[i..].iter().take_while(|&&c| c == '`').count();
+    if n == 0 {
+        return None;
+    }
+    let mut k = i + n;
+    while k < chars.len() {
+        if chars[k] != '`' {
+            k += 1;
+            continue;
+        }
+        let run = chars[k..].iter().take_while(|&&c| c == '`').count();
+        if run == n {
+            let (mut s, mut e) = (i + n, k);
+            if n > 1
+                && e - s >= 2
+                && chars[s] == ' '
+                && chars[e - 1] == ' '
+                && chars[s..e].iter().any(|&c| c != ' ')
+            {
+                s += 1;
+                e -= 1;
+            }
+            return Some((s, e, k + run));
+        }
+        k += run;
+    }
+    None
+}
+
+/// A line that is a code fence: three or more backticks and nothing else.
+fn is_fence_line(line: &str) -> bool {
+    line.len() >= 3 && line.bytes().all(|b| b == b'`')
+}
+
 /// The plain export's inline text (#613): the Markdown markers docling-core's
 /// `PlainTextDocSerializer` never writes — `serialize_bold` / `_italic` /
 /// `_strikethrough` return the text, `serialize_hyperlink` the label, and
@@ -664,11 +745,11 @@ fn plain_inline_into(chars: &[char], out: &mut String) {
         // writes it — a backtick opening a quotation (`` `like this’ ``,
         // JATS prose) stays.
         if chars[i] == '`' {
-            if let Some(end) = find(i + 1, &['`']).filter(|&e| {
-                e > i + 1 && !chars[i + 1].is_whitespace() && !chars[e - 1].is_whitespace()
+            if let Some((s, e, after)) = code_span_bounds(chars, i).filter(|&(s, e, _)| {
+                e > s && !chars[s].is_whitespace() && !chars[e - 1].is_whitespace()
             }) {
-                out.extend(&chars[i + 1..end]);
-                i = end + 1;
+                out.extend(&chars[s..e]);
+                i = after;
                 continue;
             }
         }
@@ -941,18 +1022,18 @@ fn list_item_text(text: &str, ctx: &Ctx) -> String {
 /// indent is ignored here.
 fn is_folded_child_tail(tail: &str) -> bool {
     const MARKER: &str = "<!-- image -->";
-    const FENCE: &str = "```";
     let mut lines = tail.split('\n').peekable();
     let mut any = false;
     while let Some(line) = lines.next() {
         let line = line.trim_start();
         if line == MARKER {
             any = true;
-        } else if line == FENCE {
+        } else if is_fence_line(line) {
             // Skip the block's body; an unclosed fence is not a folded child.
+            // The closing fence is the opening one's length (#859).
             loop {
                 match lines.next() {
-                    Some(l) if l.trim_start() == FENCE => break,
+                    Some(l) if l.trim_start() == line => break,
                     Some(_) => {}
                     None => return false,
                 }
@@ -1052,7 +1133,7 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             blocks.push(if ctx.plain {
                 body.to_string()
             } else {
-                format!("```{lang}\n{body}\n```")
+                code_fence(lang, body)
             });
         }
         // A CodeFormula-decoded display formula renders as docling's `$$…$$`
@@ -2605,6 +2686,62 @@ mod tests {
             ..MarkdownExportOptions::default()
         });
         assert_eq!(md, "```\na &amp; b \\_ c\n```\n");
+    }
+
+    /// #859 (docling-core 2.103.1): a fence out-lengths every backtick run
+    /// in the block and a span its text, so neither can be closed early; the
+    /// readers of the baked spans take the longer form back.
+    #[test]
+    fn fences_and_spans_out_length_inner_backticks() {
+        let code = |text: &str| Node::Code {
+            language: Some("md".into()),
+            text: text.into(),
+            orig: None,
+            pretty: None,
+        };
+        let fence_of = |text: &str| {
+            let mut doc = DoclingDocument::new("d");
+            doc.push(code(text));
+            (doc.export_to_markdown(), doc.export_to_markdown_with(true))
+        };
+        assert_eq!(fence_of("x").0, "```\nx\n```\n");
+        assert_eq!(fence_of("a ` b").0, "```\na ` b\n```\n");
+        assert_eq!(fence_of("a ``` b").0, "````\na ``` b\n````\n");
+        assert_eq!(
+            fence_of("a ``` b ```` c"),
+            (
+                "`````\na ``` b ```` c\n`````\n".to_string(),
+                "`````md\na ``` b ```` c\n`````\n".to_string()
+            )
+        );
+        assert_eq!(code_span("x"), "`x`");
+        assert_eq!(code_span("a`b"), "``a`b``");
+        assert_eq!(code_span("a ``` b"), "````a ``` b````");
+        assert_eq!(code_span("`x"), "`` `x ``");
+        assert_eq!(code_span("x`"), "`` x` ``");
+        for (span, text) in [
+            ("`x`", "x"),
+            ("``a`b``", "a`b"),
+            ("`` `x ``", "`x"),
+            ("````a ``` b````", "a ``` b"),
+        ] {
+            assert_eq!(
+                plain_inline(&format!("see {span} here")),
+                format!("see {text} here")
+            );
+        }
+        // The plain export prints a folded fence's body unfenced, whatever
+        // the fence's length.
+        let mut doc = DoclingDocument::new("d");
+        doc.push(code("a ``` b"));
+        assert_eq!(doc.export_to_text(), "a ``` b");
+        // Streamed and buffered agree on the longer fence.
+        let mut doc = DoclingDocument::new("d");
+        doc.add_paragraph("Before.");
+        doc.push(code("a ``` b ```` c"));
+        doc.add_paragraph("After.");
+        assert_stream_matches(&doc, false, ImageMode::Placeholder, &[1, 2]);
+        assert_stream_matches(&doc, true, ImageMode::Placeholder, &[1, 2]);
     }
 
     #[test]

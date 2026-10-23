@@ -45,7 +45,7 @@ pub use document::{
 pub use encryption::EncryptionError;
 pub use json::code_language_label;
 pub use labels::DocItemLabel;
-pub use markdown::{ImageMode, MarkdownStreamer};
+pub use markdown::{code_fence, code_span, longest_backtick_run, ImageMode, MarkdownStreamer};
 pub use metadata::{DocumentMetadata, GpsPosition, MetadataOutput};
 pub use redact::{
     CustomPattern, ImageRedaction, PiiDetector, PiiKind, RedactionOptions, RedactionReport,

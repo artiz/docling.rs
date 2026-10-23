@@ -1114,7 +1114,7 @@ impl MarkdownBackend {
                     runs.push(if table {
                         content
                     } else {
-                        format!("`{content}`")
+                        docling_core::code_span(&content)
                     });
                     *i += 1;
                 }

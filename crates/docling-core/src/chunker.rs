@@ -501,7 +501,7 @@ impl Walker<'_> {
             }
             Node::Code { text, .. } => {
                 let self_ref = self.alloc.text();
-                let body = format!("```\n{}\n```", unescape_text(text));
+                let body = crate::markdown::code_fence("", &unescape_text(text));
                 self.emit(
                     body.clone(),
                     vec![ChunkItem {
@@ -991,10 +991,27 @@ fn inline_segments_tagged(md: &str) -> Vec<(String, bool)> {
                 }
             }
         }
-        // A formatted span; longest markers first. An inline code span is a
-        // code item in docling's model, whose standalone form is a fenced block.
+        // An inline code span is a code item in docling's model, whose
+        // standalone form is a fenced block; its backticks may run longer
+        // than one (#859).
+        if chars[i] == '`' {
+            if let Some((s, e, after)) = crate::markdown::code_span_bounds(&chars, i) {
+                if e > s && !chars[s..e].iter().all(|c| c.is_whitespace()) {
+                    flush(&mut out, &mut plain, true, after_span);
+                    let inner: String = chars[s..e].iter().collect();
+                    out.push((
+                        crate::markdown::code_fence("", &unescape_text(&inner)),
+                        false,
+                    ));
+                    i = after;
+                    after_span = true;
+                    continue;
+                }
+            }
+        }
+        // A formatted span; longest markers first.
         let mut matched = false;
-        for marker in ["***", "**", "*", "~~", "`"] {
+        for marker in ["***", "**", "*", "~~"] {
             if rest.starts_with(marker) {
                 let mlen = marker.chars().count();
                 if let Some(end) = find(i + mlen, marker) {
@@ -1004,15 +1021,10 @@ fn inline_segments_tagged(md: &str) -> Vec<(String, bool)> {
                     let inner_blank = chars[i + mlen..end].iter().all(|c| c.is_whitespace());
                     if end > i + mlen && !inner_blank {
                         flush(&mut out, &mut plain, true, after_span);
-                        if marker == "`" {
-                            let inner: String = chars[i + 1..end].iter().collect();
-                            out.push((format!("```\n{}\n```", unescape_text(&inner)), false));
-                        } else {
-                            out.push((
-                                unescape_text(&chars[i..end + mlen].iter().collect::<String>()),
-                                false,
-                            ));
-                        }
+                        out.push((
+                            unescape_text(&chars[i..end + mlen].iter().collect::<String>()),
+                            false,
+                        ));
                         i = end + mlen;
                         after_span = true;
                         matched = true;
@@ -1163,7 +1175,7 @@ fn block_chunk_text(node: &Node) -> String {
         Node::Paragraph { text } | Node::ListText { text, .. } => unescape_text(text),
         Node::LabeledText { .. } => block_chunk_text(&node.labeled_as_paragraph()),
         Node::InlineGroup { md_text, .. } => unescape_text(md_text),
-        Node::Code { text, .. } => format!("```\n{}\n```", unescape_text(text)),
+        Node::Code { text, .. } => crate::markdown::code_fence("", &unescape_text(text)),
         Node::Table(inner) => triplet_table_text(inner),
         Node::Picture { caption, .. } => caption
             .as_deref()

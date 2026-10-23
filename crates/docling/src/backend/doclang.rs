@@ -282,7 +282,7 @@ fn collect_inline(el: XmlNode, parts: &mut Vec<String>, inline: &mut Inline) {
                 "strikethrough" => parts.push(wrap_md(child, "~~")),
                 // No Markdown marker — the content flattens to plain text.
                 "underline" | "subscript" | "superscript" => parts.push(inline_md(child)),
-                "code" => parts.push(format!("`{}`", flatten_text(child))),
+                "code" => parts.push(docling_core::code_span(&flatten_text(child))),
                 // docling's inline formula serializes space-padded (" $eq$ "),
                 // which stacks with a neighbour's own boundary space into the
                 // double-space the reference shows.
@@ -570,7 +570,7 @@ fn collect_inline_single(el: XmlNode, parts: &mut Vec<String>, inline: &mut Inli
         "italic" => parts.push(wrap_md(el, "*")),
         "strikethrough" => parts.push(wrap_md(el, "~~")),
         "underline" | "subscript" | "superscript" => parts.push(inline_md(el)),
-        "code" => parts.push(format!("`{}`", flatten_text(el))),
+        "code" => parts.push(docling_core::code_span(&flatten_text(el))),
         // Leading space per docling's inline formula serialization.
         "formula" => parts.push(format!(" ${}$ ", raw_text(el))),
         "href" => inline.href = attr(el, "uri").map(str::to_string),

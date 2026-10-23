@@ -253,18 +253,31 @@ fn render_inline(chars: &[char], formulas: bool) -> String {
         // A fenced code block flattened into the text (a rich cell's block
         // code): upstream's `CodeItem` renders `verbatim`.
         if starts_with(chars, i, "```") {
-            if let Some(end) = find(chars, i + 3, "```") {
+            // The closing fence is the opening one's length (#859).
+            if let Some((s, e, after)) = crate::markdown::code_span_bounds(chars, i) {
                 flush(&mut out, &mut plain);
-                let raw: String = chars[i + 3..end].iter().collect();
+                let raw: String = chars[s..e].iter().collect();
                 let raw = unescape_text(raw.trim());
                 out.push_str(&format!("\\begin{{verbatim}}\n{raw}\n\\end{{verbatim}}"));
-                i = end + 3;
+                i = after;
                 continue;
             }
         }
-        // A formatted / code span; longest markers first.
+        // A code span, its backticks possibly more than one (#859).
+        if chars[i] == '`' {
+            if let Some((s, e, after)) = crate::markdown::code_span_bounds(chars, i) {
+                let inner = &chars[s..e];
+                if !inner.is_empty() && !inner.iter().all(|c| c.is_whitespace()) {
+                    flush(&mut out, &mut plain);
+                    out.push_str(&span("`", inner));
+                    i = after;
+                    continue;
+                }
+            }
+        }
+        // A formatted span; longest markers first.
         let mut matched = false;
-        for marker in ["***", "**", "*", "~~", "`"] {
+        for marker in ["***", "**", "*", "~~"] {
             if starts_with(chars, i, marker) {
                 let mlen = marker.chars().count();
                 if let Some(end) = find(chars, i + mlen, marker) {
@@ -350,9 +363,11 @@ fn is_bare_item(inner: &[char]) -> bool {
     if n < 3 {
         return false;
     }
+    if inner[0] == '`' {
+        return crate::markdown::code_span_bounds(inner, 0).is_some_and(|(_, _, after)| after == n);
+    }
     let body = &inner[1..n - 1];
-    (inner[0] == '`' && inner[n - 1] == '`' && !body.contains(&'`'))
-        || (inner[0] == '$' && inner[n - 1] == '$' && inner[1] != '$' && !body.contains(&'$'))
+    inner[0] == '$' && inner[n - 1] == '$' && inner[1] != '$' && !body.contains(&'$')
 }
 
 fn span(marker: &str, inner: &[char]) -> String {
