@@ -108,11 +108,6 @@ pub struct TableFormer {
     /// The decoder session was built without the GPU provider (DirectML):
     /// its tensors live on the host whatever the other sessions use.
     decoder_on_host: bool,
-    /// Under DirectML with the bound loop: a host copy of the decoder that
-    /// runs each decode's first step — the one with an empty `past` cache,
-    /// which DirectML cannot run — and takes over for good should the device
-    /// fail a step before any state lives there.
-    decoder_host: Option<Box<Session>>,
 }
 
 /// The three decoder-graph generations the loop supports.
@@ -183,10 +178,6 @@ struct DeviceCache {
     /// Where the cache outputs are bound: the GPU provider's device memory,
     /// or the CPU when `DOCLING_RS_TF_IOBINDING` forces the loop without one.
     device: ort::memory::MemoryInfo<'static>,
-    /// A bound step has succeeded: `cache` lives in device memory. Until
-    /// then it holds host values (empty, or the host decoder's first step),
-    /// and a failure can resume the decode on the host.
-    on_device: bool,
 }
 
 /// The `KvLayered` decoder's self-attention caches, in memory docling owns
@@ -232,33 +223,6 @@ impl LayerCache {
             cur: 0,
             empty,
         })
-    }
-
-    /// A cache already `past` tokens long, copied from host values in
-    /// [`Self::input_name`] order — a decode resuming on the host after its
-    /// device steps failed.
-    fn seeded(
-        alloc: &ort::memory::Allocator,
-        rows: usize,
-        past: usize,
-        values: &[DynValue],
-    ) -> Result<Self, String> {
-        let mut lc = Self::new(alloc, rows)?;
-        let (cap, len) = (lc.cap, rows * KV_HEADS * past * KV_HEAD_DIM);
-        for (j, v) in values.iter().enumerate().take(2 * N_LAYERS) {
-            let (_, data) = v
-                .try_extract_tensor::<f32>()
-                .map_err(|e| format!("tableformer: kv cache {j}: {e}"))?;
-            if data.len() != len {
-                return Err(format!(
-                    "tableformer: kv cache {j} holds {} values, {len} expected",
-                    data.len()
-                ));
-            }
-            lc.bufs[0][j * cap..j * cap + len].copy_from_slice(data);
-        }
-        lc.past = past;
-        Ok(lc)
     }
 
     /// Tensor `j`'s shape at `past` tokens: `Kᵀ` for the first `N_LAYERS`.
@@ -356,15 +320,15 @@ impl TableFormer {
         // thread for exactly that reason; the default now matches them). The
         // encoder keeps the shared budget: one 448×448 CNN + transformer pass
         // per table, 680 ms single-threaded vs 165 on four.
-        // DirectML cannot run a decoder step whose `past` cache is empty (a
-        // zero-size tensor — every decoder graph's first step): it failed
-        // inside the provider (`Reshape node_view`, 0x8007023E, on both
-        // adapters of the first machine that tried) and every table fell back
-        // to geometric structure. Below, a decoder that runs bound to the
-        // device gets a host copy for each decode's first step; any other
-        // decoder runs on the host altogether (encoder and bbox head stay on
-        // the GPU either way).
-        let directml = docling_onnx::is_directml();
+        // The decoder runs on the CPU under DirectML: every decoder graph's
+        // first step — an empty `past` cache, a zero-size tensor — failed
+        // inside the provider on the first DirectML machine that tried
+        // (`Reshape node_view`, 0x8007023E, on both adapters), and every
+        // table fell back to geometric structure. A step is ~150 tiny ops
+        // over one token, which a GPU barely speeds up (CUDA: 9-12 ms per
+        // step; that machine's CPU: 14.6), so the encoder and the bbox head
+        // stay on the GPU and only the decoder moves.
+        let decoder_on_host = docling_onnx::is_directml();
         let build = |path: &str,
                      mem_pattern: bool,
                      threads: usize,
@@ -390,10 +354,10 @@ impl TableFormer {
         };
         match (
             build(&enc, true, intra, false),
-            build(&dec, false, 1, false),
+            build(&dec, false, 1, decoder_on_host),
             build(&bbx, false, intra, false),
         ) {
-            (Ok(encoder), Ok(mut decoder), Ok(bbox)) => {
+            (Ok(encoder), Ok(decoder), Ok(bbox)) => {
                 let has = |n: &str| decoder.inputs().iter().any(|i| i.name() == n);
                 let style = if has("cache_kt_0") {
                     DecoderStyle::KvLayered
@@ -424,45 +388,18 @@ impl TableFormer {
                 if crate::timing::enabled() && batched {
                     eprintln!("docling-pdf: tableformer decoder batches a page's tables per step");
                 }
-                let mut iobinding = style == DecoderStyle::KvLayered
+                if crate::timing::enabled() && decoder_on_host {
+                    eprintln!("docling-pdf: tableformer decoder runs on the CPU (DirectML)");
+                }
+                let iobinding = style == DecoderStyle::KvLayered
                     && match docling_core::env::nonempty("DOCLING_RS_TF_IOBINDING") {
                         Some(_) => docling_core::env::flag("DOCLING_RS_TF_IOBINDING"),
-                        None => docling_onnx::device_memory_info().is_some(),
+                        // Not when the decoder was kept on the host
+                        // (DirectML, above): nothing to keep on a device.
+                        None => !decoder_on_host && docling_onnx::device_memory_info().is_some(),
                     };
-                let mut decoder_on_host = false;
-                let mut decoder_host = None;
-                if directml {
-                    match build(&dec, false, 1, true) {
-                        Ok(host) if iobinding => decoder_host = Some(Box::new(host)),
-                        Ok(host) => {
-                            decoder = host;
-                            decoder_on_host = true;
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "docling-pdf: tableformer: no host decoder under DirectML ({e}); \
-                                 geometric tables"
-                            );
-                            return None;
-                        }
-                    }
-                }
-                if decoder_on_host {
-                    iobinding = false;
-                }
-                if crate::timing::enabled() {
-                    if decoder_on_host {
-                        eprintln!("docling-pdf: tableformer decoder runs on the CPU (DirectML)");
-                    } else if iobinding {
-                        eprintln!(
-                            "docling-pdf: tableformer decoder keeps its caches on the device{}",
-                            if decoder_host.is_some() {
-                                " (first step of each table on the CPU)"
-                            } else {
-                                ""
-                            }
-                        );
-                    }
+                if crate::timing::enabled() && iobinding {
+                    eprintln!("docling-pdf: tableformer decoder keeps its caches on the device");
                 }
                 Some(Self {
                     encoder,
@@ -472,7 +409,6 @@ impl TableFormer {
                     batched,
                     iobinding,
                     decoder_on_host,
-                    decoder_host,
                 })
             }
             _ => None,
@@ -646,29 +582,18 @@ impl TableFormer {
         if self.style == DecoderStyle::KvLayered && self.iobinding {
             match self.step_kv_device(tags, per_layer, cache) {
                 Ok(step) => return Ok(step),
-                // A provider that cannot run the bound step fails before any
-                // state lives on the device (its first bound step): decode on
-                // with host caches — from the host values the decode holds,
-                // on the host decoder when there is one — here and for every
-                // later table. A later failure is a real one.
-                Err(e) if cache.device.as_ref().is_none_or(|d| !d.on_device) => {
+                // A provider that will not hand out its device memory to a
+                // binding (the device-resident path is only verified on CUDA
+                // and on CPU) fails on a decode's first step, before any
+                // state lives there: decode on with host caches, here and for
+                // every later table. A later failure is a real one.
+                Err(e) if cache.device.as_ref().is_none_or(|d| d.past == 0) => {
                     eprintln!(
                         "docling-pdf: tableformer: device-resident decode unavailable ({e}); \
                          decoding with host caches"
                     );
                     self.iobinding = false;
-                    if let Some(host) = self.decoder_host.take() {
-                        self.decoder = *host;
-                        self.decoder_on_host = true;
-                    }
-                    if let Some(dc) = cache.device.take().filter(|d| d.past > 0) {
-                        cache.layers = Some(LayerCache::seeded(
-                            self.decoder.allocator(),
-                            dc.rows,
-                            dc.past,
-                            &dc.cache,
-                        )?);
-                    }
+                    cache.device = None;
                 }
                 Err(e) => return Err(e),
             }
@@ -725,7 +650,6 @@ impl TableFormer {
                     } else {
                         docling_onnx::device_memory_info().unwrap_or_default()
                     },
-                    on_device: false,
                 })
             }
         };
@@ -737,50 +661,6 @@ impl TableFormer {
         }
         let tag_t =
             Tensor::from_array(([rows, 1usize], tags.to_vec())).map_err(|e| err("tag", e))?;
-        // The first step on the host decoder (DirectML): its empty `past`
-        // cache is what the provider cannot run. Its cache outputs are host
-        // values, bound as the next step's inputs like any others.
-        if dc.past == 0 {
-            if let Some(host) = self.decoder_host.as_mut() {
-                let mut inputs: Vec<(
-                    std::borrow::Cow<'_, str>,
-                    ort::session::SessionInputValue<'_>,
-                )> = Vec::with_capacity(1 + 2 * N_LAYERS + per_layer.len());
-                inputs.push(("tag".into(), (&tag_t).into()));
-                for j in 0..2 * N_LAYERS {
-                    inputs.push((LayerCache::input_name(j).into(), (&dc.empty[j]).into()));
-                }
-                for (name, v) in per_layer {
-                    inputs.push((name.as_str().into(), v.into()));
-                }
-                let mut hout =
-                    docling_onnx::run(host.as_mut(), inputs).map_err(|e| err("decode", e))?;
-                let (_, logits) = hout["logits"]
-                    .try_extract_tensor::<f32>()
-                    .map_err(|e| err("logits", e))?;
-                let vocab = logits.len() / rows;
-                let raws: Vec<i64> = logits
-                    .chunks_exact(vocab)
-                    .map(|row| argmax(row) as i64)
-                    .collect();
-                let (_, hidden) = hout["hidden"]
-                    .try_extract_tensor::<f32>()
-                    .map_err(|e| err("hidden", e))?;
-                let hidden = hidden.to_vec();
-                let mut next = Vec::with_capacity(2 * N_LAYERS);
-                for j in 0..2 * N_LAYERS {
-                    let out = format!("out_{}", LayerCache::input_name(j));
-                    next.push(
-                        hout.remove(out.as_str())
-                            .ok_or_else(|| format!("tableformer: {out} missing"))?,
-                    );
-                }
-                drop(hout);
-                dc.cache = next;
-                dc.past = 1;
-                return Ok((raws, hidden));
-            }
-        }
         dc.binding
             .bind_input("tag", &tag_t)
             .map_err(|e| err("tag", e))?;
@@ -844,7 +724,6 @@ impl TableFormer {
         drop(dout);
         dc.cache = next;
         dc.past += 1;
-        dc.on_device = true;
         Ok((raws, hidden))
     }
 

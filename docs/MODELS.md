@@ -613,16 +613,12 @@ Markdown byte for byte.
 | DirectML, NVIDIA T600 (one worker, per page) | 2.52 s |
 | DirectML, Intel iGPU (one worker, per page) | 2.69 s |
 
-DirectML cannot run a TableFormer decoder step whose `past` cache is empty
-— every decoder graph's first step: it failed inside the provider
-(`Reshape node_view`, 0x8007023E) and sent each table to the geometric
-fallback. With `decoder_kv_layers.onnx` each table's first step therefore
-runs on a host copy of the decoder, and the rest on the GPU through the
-same `IoBinding` loop as CUDA (the first step's cache is bound as the next
-one's input); should the GPU fail a step before any state lives there, the
-table finishes on the host from that cache and the host copy decodes from
-then on. Any other decoder graph — or `DOCLING_RS_TF_IOBINDING=0` — runs
-the decoder on the CPU altogether (a laptop CPU: ~5–15 ms per step).
+The TableFormer *decoder* runs on the CPU under DirectML (the encoder and
+the bbox head stay on the GPU): every decoder graph's first step, an empty
+`past` cache, failed inside the provider (`Reshape node_view`, 0x8007023E)
+and sent each table to the geometric fallback. A step is ~150 tiny ops over
+one token, which the GPU barely speeds up (CUDA 9–12 ms per step, a laptop
+CPU 14.6 ms), and on the CPU the tables come out exactly as in a CPU run.
 
 Keep the default build on a host without a GPU: the `directml` build's ONNX
 Runtime converted the same paper in 13.6 s on CPU (fp32) — the CPU
