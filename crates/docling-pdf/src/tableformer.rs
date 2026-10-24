@@ -320,14 +320,17 @@ impl TableFormer {
         // thread for exactly that reason; the default now matches them). The
         // encoder keeps the shared budget: one 448×448 CNN + transformer pass
         // per table, 680 ms single-threaded vs 165 on four.
-        // The decoder runs on the CPU under DirectML: every decoder graph's
-        // first step — an empty `past` cache, a zero-size tensor — failed
-        // inside the provider on the first DirectML machine that tried
-        // (`Reshape node_view`, 0x8007023E, on both adapters), and every
-        // table fell back to geometric structure. A step is ~150 tiny ops
-        // over one token, which a GPU barely speeds up (CUDA: 9-12 ms per
-        // step; that machine's CPU: 14.6), so the encoder and the bbox head
-        // stay on the GPU and only the decoder moves.
+        // The decoder runs on the CPU under DirectML. As exported, every
+        // decoder graph fails inside the provider (`Reshape node_view`,
+        // 0x8007023E, on both adapters of the first DirectML machine that
+        // tried), and every table fell back to geometric structure: DirectML
+        // rejects the `allowzero=1` torch's exporter writes on each `view`
+        // Reshape. With it cleared — equivalent here, no target shape holds a
+        // 0 — the decoder runs there, but slower than on the CPU: 36.9 ms per
+        // step against 13.9 on the same laptop (2203.01017v2, 141 steps). A
+        // step is ~150 tiny ops over one token, kernel launches dominate, so
+        // the encoder and the bbox head stay on the GPU and only the decoder
+        // moves.
         let decoder_on_host = docling_onnx::is_directml();
         let build = |path: &str,
                      mem_pattern: bool,

@@ -884,8 +884,8 @@ pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
 /// [`apply`] without the execution providers: the session runs on the CPU
 /// whatever `DOCLING_RS_EP` chose, keeping the CPU memory options. For a
 /// model one provider cannot run while the others it can — the TableFormer
-/// decoder under DirectML, whose first step (an empty `past` cache, a
-/// zero-size tensor) fails inside the provider for every decoder graph.
+/// decoder under DirectML, which rejects the graphs' `allowzero=1`
+/// Reshapes and, with those cleared, ran slower than on the CPU.
 pub fn apply_host(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     memory_opts(builder)
 }

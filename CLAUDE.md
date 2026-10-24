@@ -166,9 +166,9 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   TableFormer decoder `decoder_kv_layers.onnx` — `kv_layers.py`'s rewrite of
   `decoder_kv.onnx`, bit-identical — keeps its KV caches in loop-owned
   buffers, `docling_onnx::borrowed_f32`, so no per-step tensor grows;
-  under DirectML the decoder session runs on the CPU — its empty first-step
-  cache fails inside the provider for every decoder graph,
-  `docling_onnx::apply_host`; under a CUDA-class provider it steps through
+  under DirectML the decoder session runs on the CPU — the provider
+  rejects the graphs' `allowzero=1` Reshapes, and with those cleared it ran
+  2.7× slower than the CPU, `docling_onnx::apply_host`; under a CUDA-class provider it steps through
   an `IoBinding` instead — cross tensors bound once, caches left on the
   device, `docling_onnx::device_memory_info`; `DOCLING_RS_TF_IOBINDING`
   `0`/`1` overrides, `1` also on CPU; a refused first bound step falls back
