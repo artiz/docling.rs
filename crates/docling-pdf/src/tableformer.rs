@@ -100,8 +100,10 @@ pub struct TableFormer {
     batched: bool,
     /// The `KvLayered` loop runs through an `IoBinding` that keeps the caches
     /// and the cross tensors where the provider computes ([`DeviceCache`]):
-    /// on under a CUDA-class provider, `DOCLING_RS_TF_IOBINDING` forces it
-    /// either way (`1` also on CPU, which is how it is tested without a GPU).
+    /// on under a GPU provider (CUDA, TensorRT, DirectML),
+    /// `DOCLING_RS_TF_IOBINDING` forces it either way (`1` also on CPU, which
+    /// is how it is tested without a GPU). Cleared — for good — when a
+    /// table's first bound step fails, so the host-buffer loop takes over.
     iobinding: bool,
 }
 
@@ -151,7 +153,8 @@ struct DecodeCache {
     device: Option<DeviceCache>,
 }
 
-/// The `KvLayered` decode under a GPU provider: an `IoBinding` holding the
+/// The `KvLayered` decode under a GPU provider (CUDA, TensorRT, DirectML):
+/// an `IoBinding` holding the
 /// step's inputs where the provider computes. With plain runs, every step
 /// handed ONNX Runtime host tensors to copy to the device and got host
 /// tensors back — the 12 constant cross tensors (~19 MB per table, the same
@@ -169,8 +172,8 @@ struct DeviceCache {
     cache: Vec<DynValue>,
     /// Zero-`past` first-step inputs.
     empty: Vec<Tensor<f32>>,
-    /// Where the cache outputs are bound: the CUDA device, or the CPU when
-    /// `DOCLING_RS_TF_IOBINDING` forces the loop without one.
+    /// Where the cache outputs are bound: the GPU provider's device memory,
+    /// or the CPU when `DOCLING_RS_TF_IOBINDING` forces the loop without one.
     device: ort::memory::MemoryInfo<'static>,
 }
 
@@ -367,7 +370,7 @@ impl TableFormer {
                 let iobinding = style == DecoderStyle::KvLayered
                     && match docling_core::env::nonempty("DOCLING_RS_TF_IOBINDING") {
                         Some(_) => docling_core::env::flag("DOCLING_RS_TF_IOBINDING"),
-                        None => docling_onnx::cuda_memory_info().is_some(),
+                        None => docling_onnx::device_memory_info().is_some(),
                     };
                 if crate::timing::enabled() && iobinding {
                     eprintln!("docling-pdf: tableformer decoder keeps its caches on the device");
@@ -550,8 +553,25 @@ impl TableFormer {
         empty: &EmptyCache,
     ) -> Result<(Vec<i64>, Vec<f32>), String> {
         if self.style == DecoderStyle::KvLayered && self.iobinding {
-            self.step_kv_device(tags, per_layer, cache)
-        } else if self.style == DecoderStyle::KvLayered {
+            match self.step_kv_device(tags, per_layer, cache) {
+                Ok(step) => return Ok(step),
+                // A provider that will not hand out its device memory to a
+                // binding (the device-resident path is only verified on CUDA
+                // and on CPU) fails on a decode's first step, before any
+                // state lives there: decode on with host caches, here and for
+                // every later table. A later failure is a real one.
+                Err(e) if cache.device.as_ref().is_none_or(|d| d.past == 0) => {
+                    eprintln!(
+                        "docling-pdf: tableformer: device-resident decode unavailable ({e}); \
+                         decoding with host caches"
+                    );
+                    self.iobinding = false;
+                    cache.device = None;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        if self.style == DecoderStyle::KvLayered {
             self.step_kv_layered(tags, per_layer, cache)
         } else {
             self.step_kv_hoisted(tags, per_layer, cache, empty)
@@ -598,7 +618,7 @@ impl TableFormer {
                     past: 0,
                     cache: Vec::new(),
                     empty,
-                    device: docling_onnx::cuda_memory_info().unwrap_or_default(),
+                    device: docling_onnx::device_memory_info().unwrap_or_default(),
                 })
             }
         };

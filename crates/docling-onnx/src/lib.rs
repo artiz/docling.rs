@@ -1101,23 +1101,24 @@ pub fn run_options_with_outputs(
     Ok(opts)
 }
 
-/// The device memory a CUDA-class provider (CUDA, TensorRT) runs the
-/// sessions in — `gpu:<DOCLING_RS_CUDA_DEVICE>` — or `None` when the
-/// sessions run anywhere else (CPU, an `auto` build without a usable device,
-/// the other providers). A loop that feeds a session its own outputs binds
-/// them here (`IoBinding::bind_output_to_device`) so they never leave the
-/// device between runs.
-pub fn cuda_memory_info() -> Option<ort::memory::MemoryInfo<'static>> {
-    if !(cuda_class_chosen() && cuda_usable()) {
+/// The device memory a GPU provider runs the sessions in, or `None` when
+/// they run on the host (CPU, an `auto` build without a usable device,
+/// CoreML/XNNPACK). A loop that feeds a session its own outputs binds them
+/// here (`IoBinding::bind_output_to_device`) so they never leave the device
+/// between runs. CUDA-class providers (CUDA, TensorRT): `Cuda` on
+/// `DOCLING_RS_CUDA_DEVICE`. DirectML: `DML` device 0 — the provider owns
+/// one adapter (`DOCLING_RS_DML_DEVICE` picks it when the provider is
+/// created) and registers its allocator as its device 0.
+pub fn device_memory_info() -> Option<ort::memory::MemoryInfo<'static>> {
+    use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
+    let (device, id) = if cuda_class_chosen() && cuda_usable() {
+        (AllocationDevice::CUDA, cuda_options().device)
+    } else if is_directml() {
+        (AllocationDevice::DIRECTML, 0)
+    } else {
         return None;
-    }
-    ort::memory::MemoryInfo::new(
-        ort::memory::AllocationDevice::CUDA,
-        cuda_options().device,
-        ort::memory::AllocatorType::Device,
-        ort::memory::MemoryType::Default,
-    )
-    .ok()
+    };
+    MemoryInfo::new(device, id, AllocatorType::Device, MemoryType::Default).ok()
 }
 
 /// An owned ONNX Runtime `f32` tensor of `shape` over the first elements of

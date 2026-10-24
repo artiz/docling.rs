@@ -514,12 +514,17 @@ fleets.
 one token per step, and with plain runs every step copied the 12 constant
 cross-attention tensors (~19 MB per table) to the device and the growing KV
 cache both ways — measured under CUDA, 12.6 ms per step, 70% of a 462-page
-book's conversion, for ~3 ms of GEMMs. Under a CUDA-class provider the
-loop now runs through an ONNX Runtime `IoBinding`: the cross tensors are
+book's conversion, for ~3 ms of GEMMs. Under a GPU provider (CUDA,
+TensorRT, DirectML) the loop now runs through an ONNX Runtime `IoBinding`: the cross tensors are
 copied once per table, the cache outputs stay in device memory and feed
 the next step, and only the logits and hidden state come back; the CUDA
 arena is shrunk once per table instead of after every step. Same graph and
-kernels, same output (needs `decoder_kv_layers.onnx`).
+kernels, same output (needs `decoder_kv_layers.onnx`); measured on CUDA
+(WSL2, the same book, back to back): 9.0 ms per step with the binding
+against 54 ms without — on a slow day for that machine, whose host-buffer
+loop had measured 12.6 ms per step the day before, so the gain against a
+quiet GPU is nearer 1.4× than 6×. Should a provider refuse to bind its device memory, the first step
+says so on stderr and the decode carries on with host caches.
 `DOCLING_RS_TF_IOBINDING=0` turns it off for a comparison, `=1` forces the
 binding loop on CPU (where it is no faster — there is nothing to copy).
 
