@@ -86,7 +86,7 @@ if /i not "%VERIFY%"=="off" (
       echo error: %BASE_URL%/SHA256SUMS unavailable and DOCLING_RS_MODELS_VERIFY=require
       exit /b 1
     )
-    echo   ! %BASE_URL% hosts no SHA256SUMS - downloads from it are not integrity-checked
+    echo   warning: %BASE_URL% hosts no SHA256SUMS - downloads from it are not integrity-checked
   )
 )
 
@@ -164,7 +164,7 @@ if %WITH_INT8%==1 (
   call :fetch_opt "%BASE_URL%/decoder_int8.onnx"        .models\tableformer\decoder_int8.onnx
   call :fetch_opt "%BASE_URL%/decoder_kv_int8.onnx"     .models\tableformer\decoder_kv_int8.onnx
   call :fetch_opt "%BASE_URL%/decoder_kv_int8.onnx.data" .models\tableformer\decoder_kv_int8.onnx.data
-  if exist .models\layout_heron_int8.onnx echo int8 models present - used by default (DOCLING_RS_FP32=1 forces full precision)
+  if exist .models\layout_heron_int8.onnx echo int8 models present - used by default ^(DOCLING_RS_FP32=1 forces full precision^)
 )
 
 if not "%MANIFEST%"=="" del "%MANIFEST%" 2>nul
@@ -205,15 +205,20 @@ if "%MANIFEST%"=="" exit /b 0
 set "VURL=%~1"
 set "VNAME=!VURL:%BASE_URL%/=!"
 if "!VNAME!"=="!VURL!" exit /b 0
+rem The manifest is read line by line rather than searched: GitHub serves it
+rem with LF line endings, and findstr's /e (end-of-line) never matches a line
+rem that lacks a CR - every asset came out "not listed", i.e. unchecked.
+rem No lone exclamation mark in the messages below: under delayed expansion
+rem it pairs with the next one and swallows the text between them.
 set "WANT="
-for /f "tokens=1,2" %%h in ('findstr /e /c:"  !VNAME!" "%MANIFEST%"') do if "%%i"=="!VNAME!" set "WANT=%%h"
+for /f "usebackq tokens=1,2" %%h in ("%MANIFEST%") do if "%%i"=="!VNAME!" set "WANT=%%h"
 if "!WANT!"=="" (
   if /i "%VERIFY%"=="require" (
     del "%~2" 2>nul
     echo error: !VNAME! is not listed in %BASE_URL%/SHA256SUMS ^(DOCLING_RS_MODELS_VERIFY=require^)
     exit /b 1
   )
-  echo   ! !VNAME! is not listed in SHA256SUMS - not integrity-checked
+  echo   warning: !VNAME! is not listed in SHA256SUMS - not integrity-checked
   exit /b 0
 )
 set "GOT="
