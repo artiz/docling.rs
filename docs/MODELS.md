@@ -519,8 +519,7 @@ TensorRT) the loop now runs through an ONNX Runtime `IoBinding`: the cross tenso
 copied once per table, the cache outputs stay in device memory and feed
 the next step, and only the logits and hidden state come back; the CUDA
 arena is shrunk once per table instead of after every step. Same graph and
-kernels, same output (needs `decoder_kv_layers.onnx`, which DirectML does
-not run — it keeps `decoder_kv.onnx`, see below); measured on CUDA
+kernels, same output (needs `decoder_kv_layers.onnx`); measured on CUDA
 (WSL2, a 462-page book with 36 tables, 5,750 steps, runs alternating
 bound/unbound): 10.5–11.9 ms per step bound against 49.6–55.7 ms unbound,
 the whole conversion 137–148 s against 364–397 s, output identical. A
@@ -613,11 +612,6 @@ Markdown byte for byte.
 | DirectML, NVIDIA T600, 4 workers + batch 4 (before #840) | 6.40 s |
 | DirectML, NVIDIA T600 (one worker, per page) | 2.52 s |
 | DirectML, Intel iGPU (one worker, per page) | 2.69 s |
-
-The TableFormer decoder stays on `decoder_kv.onnx` under DirectML: the
-per-layer-cache graph (`decoder_kv_layers.onnx`, #871) failed inside the
-provider on every run (`Reshape node_view`, 0x8007023E), which in 2.51.1
-sent every table to the geometric fallback.
 
 Keep the default build on a host without a GPU: the `directml` build's ONNX
 Runtime converted the same paper in 13.6 s on CPU (fp32) — the CPU

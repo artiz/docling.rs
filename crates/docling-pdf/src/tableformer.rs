@@ -37,8 +37,7 @@ const N_LAYERS: usize = 6;
 /// measured, and it is byte-exact (its own int8 variant is not produced — see
 /// quantize_models.py). `decoder_kv_layers` ranks just above `decoder_kv`:
 /// the same graph with per-layer caches (#871, [`DecoderStyle::KvLayered`]),
-/// bit-identical and without per-step allocations that grow with the table —
-/// except under DirectML, which fails on it and keeps `decoder_kv`.
+/// bit-identical and without per-step allocations that grow with the table.
 pub fn resolved_paths() -> (String, String, String) {
     // The encoder ranks its fp16-weight repack (`encoder_fp16.onnx`, #374 —
     // the same graph with the weights stored as fp16 and cast back to fp32
@@ -75,15 +74,8 @@ pub fn resolved_paths() -> (String, String, String) {
                 ".models/tableformer/decoder.onnx",
             ]
         };
-        // Not the per-layer graph under DirectML: every run of it failed in
-        // the provider on the first machine that tried (`Reshape node_view`,
-        // 0x8007023E — with host caches as with the bound loop) and the table
-        // fell back to geometry, while `decoder_kv.onnx` converts there (#840).
-        // CPU and CUDA run the per-layer graph bit-identically.
-        let skip_layers = docling_onnx::is_directml();
         candidates
             .iter()
-            .filter(|p| !(skip_layers && p.ends_with("decoder_kv_layers.onnx")))
             .map(|p| crate::resolve_asset(p))
             .find(|p| std::path::Path::new(p).exists())
             .unwrap_or_else(|| ".models/tableformer/decoder.onnx".to_string())
