@@ -1101,6 +1101,25 @@ pub fn run_options_with_outputs(
     Ok(opts)
 }
 
+/// The device memory a CUDA-class provider (CUDA, TensorRT) runs the
+/// sessions in — `gpu:<DOCLING_RS_CUDA_DEVICE>` — or `None` when the
+/// sessions run anywhere else (CPU, an `auto` build without a usable device,
+/// the other providers). A loop that feeds a session its own outputs binds
+/// them here (`IoBinding::bind_output_to_device`) so they never leave the
+/// device between runs.
+pub fn cuda_memory_info() -> Option<ort::memory::MemoryInfo<'static>> {
+    if !(cuda_class_chosen() && cuda_usable()) {
+        return None;
+    }
+    ort::memory::MemoryInfo::new(
+        ort::memory::AllocationDevice::CUDA,
+        cuda_options().device,
+        ort::memory::AllocatorType::Device,
+        ort::memory::MemoryType::Default,
+    )
+    .ok()
+}
+
 /// An owned ONNX Runtime `f32` tensor of `shape` over the first elements of
 /// `data` — memory the caller owns, which ONNX Runtime writes or reads in
 /// place and never frees (dropping the value releases only its handle). The

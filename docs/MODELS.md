@@ -510,6 +510,19 @@ driver/toolkit libs) fails the conversion rather than silently running 10×
 slower on CPU; `auto` is the quiet-fallback mode for images deployed on mixed
 fleets.
 
+**The TableFormer decoder keeps its state on the GPU.** A table is decoded
+one token per step, and with plain runs every step copied the 12 constant
+cross-attention tensors (~19 MB per table) to the device and the growing KV
+cache both ways — measured under CUDA, 12.6 ms per step, 70% of a 462-page
+book's conversion, for ~3 ms of GEMMs. Under a CUDA-class provider the
+loop now runs through an ONNX Runtime `IoBinding`: the cross tensors are
+copied once per table, the cache outputs stay in device memory and feed
+the next step, and only the logits and hidden state come back; the CUDA
+arena is shrunk once per table instead of after every step. Same graph and
+kernels, same output (needs `decoder_kv_layers.onnx`).
+`DOCLING_RS_TF_IOBINDING=0` turns it off for a comparison, `=1` forces the
+binding loop on CPU (where it is no faster — there is nothing to copy).
+
 **Session creation is serialized under a GPU provider** (#452). The page
 workers, OCR lanes and enrichment models normally open their ONNX Runtime
 sessions concurrently so start-up is paid once; the CUDA provider does not

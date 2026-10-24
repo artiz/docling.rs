@@ -165,7 +165,11 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   has it, and the Node/Python/FFI bindings trim after each conversion; the
   TableFormer decoder `decoder_kv_layers.onnx` — `kv_layers.py`'s rewrite of
   `decoder_kv.onnx`, bit-identical — keeps its KV caches in loop-owned
-  buffers, `docling_onnx::borrowed_f32`, so no per-step tensor grows), the CUDA arena knobs (#842: `DOCLING_RS_CUDA_DEVICE`,
+  buffers, `docling_onnx::borrowed_f32`, so no per-step tensor grows;
+  under a CUDA-class provider it steps through an `IoBinding` instead —
+  cross tensors bound once, caches left on the device,
+  `docling_onnx::cuda_memory_info`; `DOCLING_RS_TF_IOBINDING` `0`/`1`
+  overrides, `1` also on CPU), the CUDA arena knobs (#842: `DOCLING_RS_CUDA_DEVICE`,
   `DOCLING_RS_CUDA_MEM_LIMIT_MB`, `DOCLING_RS_CUDA_ARENA_EXTEND`
   `next_power_of_two`|`same_as_requested`, `DOCLING_RS_CUDA_ARENA_SHRINK` —
   on: every run hands its arena growth back, `docling_onnx::run` /
