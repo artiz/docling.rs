@@ -520,10 +520,12 @@ copied once per table, the cache outputs stay in device memory and feed
 the next step, and only the logits and hidden state come back; the CUDA
 arena is shrunk once per table instead of after every step. Same graph and
 kernels, same output (needs `decoder_kv_layers.onnx`); measured on CUDA
-(WSL2, the same book, back to back): 9.0 ms per step with the binding
-against 54 ms without — on a slow day for that machine, whose host-buffer
-loop had measured 12.6 ms per step the day before, so the gain against a
-quiet GPU is nearer 1.4× than 6×. Should a provider refuse to bind its device memory, the first step
+(WSL2, a 462-page book with 36 tables, 5,750 steps, runs alternating
+bound/unbound): 10.5–11.9 ms per step bound against 49.6–55.7 ms unbound,
+the whole conversion 137–148 s against 364–397 s, output identical. A
+quieter earlier run of the same machine had the unbound loop at 12.6 ms
+per step (102 s in all) — host↔device copies are what a busy GPU makes
+slow, so the bound loop's margin is widest exactly there. Should a provider refuse to bind its device memory, the first step
 says so on stderr and the decode carries on with host caches.
 `DOCLING_RS_TF_IOBINDING=0` turns it off for a comparison, `=1` forces the
 binding loop on CPU (where it is no faster — there is nothing to copy).
