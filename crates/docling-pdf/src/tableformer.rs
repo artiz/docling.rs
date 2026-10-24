@@ -105,6 +105,9 @@ pub struct TableFormer {
     /// which is how it is tested without a GPU; `0` turns it off). Cleared — for good — when a
     /// table's first bound step fails, so the host-buffer loop takes over.
     iobinding: bool,
+    /// The decoder session was built without the GPU provider (DirectML):
+    /// its tensors live on the host whatever the other sessions use.
+    decoder_on_host: bool,
 }
 
 /// The three decoder-graph generations the loop supports.
@@ -317,7 +320,20 @@ impl TableFormer {
         // thread for exactly that reason; the default now matches them). The
         // encoder keeps the shared budget: one 448×448 CNN + transformer pass
         // per table, 680 ms single-threaded vs 165 on four.
-        let build = |path: &str, mem_pattern: bool, threads: usize| -> Result<Session, String> {
+        // The decoder runs on the CPU under DirectML: every decoder graph's
+        // first step — an empty `past` cache, a zero-size tensor — failed
+        // inside the provider on the first DirectML machine that tried
+        // (`Reshape node_view`, 0x8007023E, on both adapters), and every
+        // table fell back to geometric structure. A step is ~150 tiny ops
+        // over one token, which a GPU barely speeds up (CUDA: 9-12 ms per
+        // step; that machine's CPU: 14.6), so the encoder and the bbox head
+        // stay on the GPU and only the decoder moves.
+        let decoder_on_host = docling_onnx::is_directml();
+        let build = |path: &str,
+                     mem_pattern: bool,
+                     threads: usize,
+                     host: bool|
+         -> Result<Session, String> {
             let builder = docling_onnx::session_builder()?
                 .with_intra_threads(threads)
                 .map_err(|e| e.to_string())?
@@ -328,13 +344,18 @@ impl TableFormer {
             } else {
                 "no_mem_pattern"
             };
-            docling_onnx::commit(docling_onnx::apply(builder)?, path, variant)
+            let builder = if host {
+                docling_onnx::apply_host(builder)?
+            } else {
+                docling_onnx::apply(builder)?
+            };
+            docling_onnx::commit(builder, path, variant)
                 .map_err(|e| format!("tableformer load {path}: {e}"))
         };
         match (
-            build(&enc, true, intra),
-            build(&dec, false, 1),
-            build(&bbx, false, intra),
+            build(&enc, true, intra, false),
+            build(&dec, false, 1, decoder_on_host),
+            build(&bbx, false, intra, false),
         ) {
             (Ok(encoder), Ok(decoder), Ok(bbox)) => {
                 let has = |n: &str| decoder.inputs().iter().any(|i| i.name() == n);
@@ -367,18 +388,15 @@ impl TableFormer {
                 if crate::timing::enabled() && batched {
                     eprintln!("docling-pdf: tableformer decoder batches a page's tables per step");
                 }
+                if crate::timing::enabled() && decoder_on_host {
+                    eprintln!("docling-pdf: tableformer decoder runs on the CPU (DirectML)");
+                }
                 let iobinding = style == DecoderStyle::KvLayered
                     && match docling_core::env::nonempty("DOCLING_RS_TF_IOBINDING") {
                         Some(_) => docling_core::env::flag("DOCLING_RS_TF_IOBINDING"),
-                        // Not by default under DirectML: its first bound
-                        // step failed in the provider (`Reshape node_view`,
-                        // 0x8007023E) on the first machine that tried it,
-                        // and a failed DirectML run can leave the device
-                        // failing later runs as well.
-                        None => {
-                            docling_onnx::device_memory_info().is_some()
-                                && !docling_onnx::is_directml()
-                        }
+                        // Not when the decoder was kept on the host
+                        // (DirectML, above): nothing to keep on a device.
+                        None => !decoder_on_host && docling_onnx::device_memory_info().is_some(),
                     };
                 if crate::timing::enabled() && iobinding {
                     eprintln!("docling-pdf: tableformer decoder keeps its caches on the device");
@@ -390,6 +408,7 @@ impl TableFormer {
                     style,
                     batched,
                     iobinding,
+                    decoder_on_host,
                 })
             }
             _ => None,
@@ -626,7 +645,11 @@ impl TableFormer {
                     past: 0,
                     cache: Vec::new(),
                     empty,
-                    device: docling_onnx::device_memory_info().unwrap_or_default(),
+                    device: if self.decoder_on_host {
+                        ort::memory::MemoryInfo::default()
+                    } else {
+                        docling_onnx::device_memory_info().unwrap_or_default()
+                    },
                 })
             }
         };

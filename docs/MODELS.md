@@ -613,6 +613,13 @@ Markdown byte for byte.
 | DirectML, NVIDIA T600 (one worker, per page) | 2.52 s |
 | DirectML, Intel iGPU (one worker, per page) | 2.69 s |
 
+The TableFormer *decoder* runs on the CPU under DirectML (the encoder and
+the bbox head stay on the GPU): every decoder graph's first step, an empty
+`past` cache, failed inside the provider (`Reshape node_view`, 0x8007023E)
+and sent each table to the geometric fallback. A step is ~150 tiny ops over
+one token, which the GPU barely speeds up (CUDA 9–12 ms per step, a laptop
+CPU 14.6 ms), and on the CPU the tables come out exactly as in a CPU run.
+
 Keep the default build on a host without a GPU: the `directml` build's ONNX
 Runtime converted the same paper in 13.6 s on CPU (fp32) — the CPU
 fallback works, it is not the fast path. There is no WARP check: a machine

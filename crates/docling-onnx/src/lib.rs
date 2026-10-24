@@ -881,6 +881,15 @@ pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     memory_opts(builder)
 }
 
+/// [`apply`] without the execution providers: the session runs on the CPU
+/// whatever `DOCLING_RS_EP` chose, keeping the CPU memory options. For a
+/// model one provider cannot run while the others it can — the TableFormer
+/// decoder under DirectML, whose first step (an empty `past` cache, a
+/// zero-size tensor) fails inside the provider for every decoder graph.
+pub fn apply_host(builder: SessionBuilder) -> Result<SessionBuilder, String> {
+    memory_opts(builder)
+}
+
 /// Session memory options (#263): with `DOCLING_RS_NO_ARENA` set, the CPU
 /// execution provider registers with its memory arena disabled
 /// (`DisableCpuMemArena`) and initializers stay out of arena allocations.
