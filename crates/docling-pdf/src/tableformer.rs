@@ -100,9 +100,9 @@ pub struct TableFormer {
     batched: bool,
     /// The `KvLayered` loop runs through an `IoBinding` that keeps the caches
     /// and the cross tensors where the provider computes ([`DeviceCache`]):
-    /// on under a GPU provider (CUDA, TensorRT, DirectML),
-    /// `DOCLING_RS_TF_IOBINDING` forces it either way (`1` also on CPU, which
-    /// is how it is tested without a GPU). Cleared — for good — when a
+    /// on under a CUDA-class provider (CUDA, TensorRT); DirectML only with
+    /// `DOCLING_RS_TF_IOBINDING=1`, which forces it either way (also on CPU,
+    /// which is how it is tested without a GPU; `0` turns it off). Cleared — for good — when a
     /// table's first bound step fails, so the host-buffer loop takes over.
     iobinding: bool,
 }
@@ -370,7 +370,15 @@ impl TableFormer {
                 let iobinding = style == DecoderStyle::KvLayered
                     && match docling_core::env::nonempty("DOCLING_RS_TF_IOBINDING") {
                         Some(_) => docling_core::env::flag("DOCLING_RS_TF_IOBINDING"),
-                        None => docling_onnx::device_memory_info().is_some(),
+                        // Not by default under DirectML: its first bound
+                        // step failed in the provider (`Reshape node_view`,
+                        // 0x8007023E) on the first machine that tried it,
+                        // and a failed DirectML run can leave the device
+                        // failing later runs as well.
+                        None => {
+                            docling_onnx::device_memory_info().is_some()
+                                && !docling_onnx::is_directml()
+                        }
                     };
                 if crate::timing::enabled() && iobinding {
                     eprintln!("docling-pdf: tableformer decoder keeps its caches on the device");
