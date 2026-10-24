@@ -98,6 +98,16 @@ pub struct TableFormer {
     /// together, one step for all of them — see [`Self::predict_tables_on`].
     /// The older fixed-`[1,1]` export decodes the tables one after another.
     batched: bool,
+    /// The `KvLayered` loop runs through an `IoBinding` that keeps the caches
+    /// and the cross tensors where the provider computes ([`DeviceCache`]):
+    /// on under a CUDA-class provider (CUDA, TensorRT); DirectML only with
+    /// `DOCLING_RS_TF_IOBINDING=1`, which forces it either way (also on CPU,
+    /// which is how it is tested without a GPU; `0` turns it off). Cleared — for good — when a
+    /// table's first bound step fails, so the host-buffer loop takes over.
+    iobinding: bool,
+    /// The decoder session was built without the GPU provider (DirectML):
+    /// its tensors live on the host whatever the other sessions use.
+    decoder_on_host: bool,
 }
 
 /// The three decoder-graph generations the loop supports.
@@ -142,6 +152,32 @@ struct DecodeCache {
     b: Option<DynValue>,
     /// The `KvLayered` caches, set up on the first step.
     layers: Option<LayerCache>,
+    /// The `KvLayered` caches on the device, when the loop binds them there.
+    device: Option<DeviceCache>,
+}
+
+/// The `KvLayered` decode under a GPU provider (CUDA, TensorRT, DirectML):
+/// an `IoBinding` holding the
+/// step's inputs where the provider computes. With plain runs, every step
+/// handed ONNX Runtime host tensors to copy to the device and got host
+/// tensors back — the 12 constant cross tensors (~19 MB per table, the same
+/// every step) and both directions of the KV cache (~4 MB each way at 160
+/// tokens, growing) — so on CUDA a step cost 12.6 ms against the ~3 ms its
+/// 49 small GEMMs take. Here the cross tensors are bound once per decode
+/// (one copy), the cache outputs stay in device memory and are bound as the
+/// next step's inputs, and only `logits`/`hidden` (kilobytes) come back.
+/// Same graph, same kernels: the output is the plain loop's.
+struct DeviceCache {
+    binding: ort::session::IoBinding,
+    rows: usize,
+    past: usize,
+    /// The last step's cache outputs, where the provider wrote them.
+    cache: Vec<DynValue>,
+    /// Zero-`past` first-step inputs.
+    empty: Vec<Tensor<f32>>,
+    /// Where the cache outputs are bound: the GPU provider's device memory,
+    /// or the CPU when `DOCLING_RS_TF_IOBINDING` forces the loop without one.
+    device: ort::memory::MemoryInfo<'static>,
 }
 
 /// The `KvLayered` decoder's self-attention caches, in memory docling owns
@@ -284,7 +320,23 @@ impl TableFormer {
         // thread for exactly that reason; the default now matches them). The
         // encoder keeps the shared budget: one 448×448 CNN + transformer pass
         // per table, 680 ms single-threaded vs 165 on four.
-        let build = |path: &str, mem_pattern: bool, threads: usize| -> Result<Session, String> {
+        // The decoder runs on the CPU under DirectML. As exported, every
+        // decoder graph fails inside the provider (`Reshape node_view`,
+        // 0x8007023E, on both adapters of the first DirectML machine that
+        // tried), and every table fell back to geometric structure: DirectML
+        // rejects the `allowzero=1` torch's exporter writes on each `view`
+        // Reshape. With it cleared — equivalent here, no target shape holds a
+        // 0 — the decoder runs there, but slower than on the CPU: 36.9 ms per
+        // step against 13.9 on the same laptop (2203.01017v2, 141 steps). A
+        // step is ~150 tiny ops over one token, kernel launches dominate, so
+        // the encoder and the bbox head stay on the GPU and only the decoder
+        // moves.
+        let decoder_on_host = docling_onnx::is_directml();
+        let build = |path: &str,
+                     mem_pattern: bool,
+                     threads: usize,
+                     host: bool|
+         -> Result<Session, String> {
             let builder = docling_onnx::session_builder()?
                 .with_intra_threads(threads)
                 .map_err(|e| e.to_string())?
@@ -295,13 +347,18 @@ impl TableFormer {
             } else {
                 "no_mem_pattern"
             };
-            docling_onnx::commit(docling_onnx::apply(builder)?, path, variant)
+            let builder = if host {
+                docling_onnx::apply_host(builder)?
+            } else {
+                docling_onnx::apply(builder)?
+            };
+            docling_onnx::commit(builder, path, variant)
                 .map_err(|e| format!("tableformer load {path}: {e}"))
         };
         match (
-            build(&enc, true, intra),
-            build(&dec, false, 1),
-            build(&bbx, false, intra),
+            build(&enc, true, intra, false),
+            build(&dec, false, 1, decoder_on_host),
+            build(&bbx, false, intra, false),
         ) {
             (Ok(encoder), Ok(decoder), Ok(bbox)) => {
                 let has = |n: &str| decoder.inputs().iter().any(|i| i.name() == n);
@@ -334,12 +391,27 @@ impl TableFormer {
                 if crate::timing::enabled() && batched {
                     eprintln!("docling-pdf: tableformer decoder batches a page's tables per step");
                 }
+                if crate::timing::enabled() && decoder_on_host {
+                    eprintln!("docling-pdf: tableformer decoder runs on the CPU (DirectML)");
+                }
+                let iobinding = style == DecoderStyle::KvLayered
+                    && match docling_core::env::nonempty("DOCLING_RS_TF_IOBINDING") {
+                        Some(_) => docling_core::env::flag("DOCLING_RS_TF_IOBINDING"),
+                        // Not when the decoder was kept on the host
+                        // (DirectML, above): nothing to keep on a device.
+                        None => !decoder_on_host && docling_onnx::device_memory_info().is_some(),
+                    };
+                if crate::timing::enabled() && iobinding {
+                    eprintln!("docling-pdf: tableformer decoder keeps its caches on the device");
+                }
                 Some(Self {
                     encoder,
                     decoder,
                     bbox,
                     style,
                     batched,
+                    iobinding,
+                    decoder_on_host,
                 })
             }
             _ => None,
@@ -510,11 +582,152 @@ impl TableFormer {
         cache: &mut DecodeCache,
         empty: &EmptyCache,
     ) -> Result<(Vec<i64>, Vec<f32>), String> {
+        if self.style == DecoderStyle::KvLayered && self.iobinding {
+            match self.step_kv_device(tags, per_layer, cache) {
+                Ok(step) => return Ok(step),
+                // A provider that will not hand out its device memory to a
+                // binding (the device-resident path is only verified on CUDA
+                // and on CPU) fails on a decode's first step, before any
+                // state lives there: decode on with host caches, here and for
+                // every later table. A later failure is a real one.
+                Err(e) if cache.device.as_ref().is_none_or(|d| d.past == 0) => {
+                    eprintln!(
+                        "docling-pdf: tableformer: device-resident decode unavailable ({e}); \
+                         decoding with host caches"
+                    );
+                    self.iobinding = false;
+                    cache.device = None;
+                }
+                Err(e) => return Err(e),
+            }
+        }
         if self.style == DecoderStyle::KvLayered {
             self.step_kv_layered(tags, per_layer, cache)
         } else {
             self.step_kv_hoisted(tags, per_layer, cache, empty)
         }
+    }
+
+    /// One `KvLayered` step through the decode's [`DeviceCache`] binding.
+    fn step_kv_device(
+        &mut self,
+        tags: &[i64],
+        per_layer: &[(String, DynValue)],
+        cache: &mut DecodeCache,
+    ) -> Result<(Vec<i64>, Vec<f32>), String> {
+        let rows = tags.len();
+        let err = |what: &str, e: ort::Error| format!("tableformer: {what}: {e}");
+        let dc = match &mut cache.device {
+            Some(dc) => dc,
+            None => {
+                let mut binding = self
+                    .decoder
+                    .create_binding()
+                    .map_err(|e| err("io binding", e))?;
+                // The constant cross tensors: copied to the device once here,
+                // and every step of this decode reads that copy.
+                for (name, v) in per_layer {
+                    binding
+                        .bind_input(name.as_str(), v)
+                        .map_err(|e| err(name, e))?;
+                }
+                binding
+                    .synchronize_inputs()
+                    .map_err(|e| err("cross inputs", e))?;
+                let alloc = self.decoder.allocator();
+                let mut empty = Vec::with_capacity(2 * N_LAYERS);
+                for j in 0..2 * N_LAYERS {
+                    empty.push(
+                        Tensor::<f32>::new(alloc, LayerCache::shape(j, rows, 0))
+                            .map_err(|e| err("empty kv cache", e))?,
+                    );
+                }
+                cache.device.insert(DeviceCache {
+                    binding,
+                    rows,
+                    past: 0,
+                    cache: Vec::new(),
+                    empty,
+                    device: if self.decoder_on_host {
+                        ort::memory::MemoryInfo::default()
+                    } else {
+                        docling_onnx::device_memory_info().unwrap_or_default()
+                    },
+                })
+            }
+        };
+        if dc.rows != rows || dc.past >= MAX_STEPS {
+            return Err(format!(
+                "tableformer: kv cache for {} rows at {} tokens, asked for {rows} rows one more",
+                dc.rows, dc.past
+            ));
+        }
+        let tag_t =
+            Tensor::from_array(([rows, 1usize], tags.to_vec())).map_err(|e| err("tag", e))?;
+        dc.binding
+            .bind_input("tag", &tag_t)
+            .map_err(|e| err("tag", e))?;
+        for j in 0..2 * N_LAYERS {
+            let name = LayerCache::input_name(j);
+            if dc.past == 0 {
+                dc.binding.bind_input(name.as_str(), &dc.empty[j])
+            } else {
+                dc.binding.bind_input(name.as_str(), &dc.cache[j])
+            }
+            .map_err(|e| err(&name, e))?;
+            // Re-bound every step: the output is one token longer each time,
+            // so ONNX Runtime must allocate it afresh rather than reuse the
+            // previous step's value.
+            let out = format!("out_{name}");
+            dc.binding
+                .bind_output_to_device(out.as_str(), &dc.device)
+                .map_err(|e| err(&out, e))?;
+        }
+        let host = ort::memory::MemoryInfo::default();
+        for name in ["logits", "hidden"] {
+            dc.binding
+                .bind_output_to_device(name, &host)
+                .map_err(|e| err(name, e))?;
+        }
+        // The CUDA arena is shrunk at a decode's first step only (#842's run
+        // option): shrinking after every step handed the step's working
+        // memory back to the driver and allocated it again on the next one —
+        // a cudaFree + cudaMalloc pair per token. Once per decode still
+        // returns the previous table's chunks before this one grows.
+        let shrink = if dc.past == 0 {
+            docling_onnx::run_options()
+        } else {
+            None
+        };
+        let mut dout = match shrink {
+            Some(opts) => self.decoder.run_binding_with_options(&dc.binding, opts),
+            None => self.decoder.run_binding(&dc.binding),
+        }
+        .map_err(|e| err("decode", e))?;
+        let (_, logits) = dout["logits"]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| err("logits", e))?;
+        let vocab = logits.len() / rows;
+        let raws: Vec<i64> = logits
+            .chunks_exact(vocab)
+            .map(|row| argmax(row) as i64)
+            .collect();
+        let (_, hidden) = dout["hidden"]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| err("hidden", e))?;
+        let hidden = hidden.to_vec();
+        let mut next = Vec::with_capacity(2 * N_LAYERS);
+        for j in 0..2 * N_LAYERS {
+            let out = format!("out_{}", LayerCache::input_name(j));
+            next.push(
+                dout.remove(out.as_str())
+                    .ok_or_else(|| format!("tableformer: {out} missing"))?,
+            );
+        }
+        drop(dout);
+        dc.cache = next;
+        dc.past += 1;
+        Ok((raws, hidden))
     }
 
     /// One `KvLayered` step: [`Self::step_kv_hoisted`] with the caches read

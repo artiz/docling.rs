@@ -8,4 +8,7 @@ crates/*/tests/data/**    linguist-vendored
 
 # cmd resolves goto/call :labels only reliably with CRLF line endings; ship the
 # Windows script byte-exact and keep git (any autocrlf setting) from touching it.
+# -text keeps whatever bytes are committed, so the committed bytes must be CRLF
+# themselves (an LF copy made `call :fetch_opt` land mid-script on Windows: the
+# run printed "done", deleted its SHA256SUMS copy, then kept fetching).
 *.bat -text

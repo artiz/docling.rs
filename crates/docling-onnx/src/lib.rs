@@ -881,6 +881,15 @@ pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     memory_opts(builder)
 }
 
+/// [`apply`] without the execution providers: the session runs on the CPU
+/// whatever `DOCLING_RS_EP` chose, keeping the CPU memory options. For a
+/// model one provider cannot run while the others it can — the TableFormer
+/// decoder under DirectML, which rejects the graphs' `allowzero=1`
+/// Reshapes and, with those cleared, ran slower than on the CPU.
+pub fn apply_host(builder: SessionBuilder) -> Result<SessionBuilder, String> {
+    memory_opts(builder)
+}
+
 /// Session memory options (#263): with `DOCLING_RS_NO_ARENA` set, the CPU
 /// execution provider registers with its memory arena disabled
 /// (`DisableCpuMemArena`) and initializers stay out of arena allocations.
@@ -1099,6 +1108,26 @@ pub fn run_options_with_outputs(
             .map_err(|e| format!("arena shrinkage for {device}: {e}"))?;
     }
     Ok(opts)
+}
+
+/// The device memory a GPU provider runs the sessions in, or `None` when
+/// they run on the host (CPU, an `auto` build without a usable device,
+/// CoreML/XNNPACK). A loop that feeds a session its own outputs binds them
+/// here (`IoBinding::bind_output_to_device`) so they never leave the device
+/// between runs. CUDA-class providers (CUDA, TensorRT): `Cuda` on
+/// `DOCLING_RS_CUDA_DEVICE`. DirectML: `DML` device 0 — the provider owns
+/// one adapter (`DOCLING_RS_DML_DEVICE` picks it when the provider is
+/// created) and registers its allocator as its device 0.
+pub fn device_memory_info() -> Option<ort::memory::MemoryInfo<'static>> {
+    use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
+    let (device, id) = if cuda_class_chosen() && cuda_usable() {
+        (AllocationDevice::CUDA, cuda_options().device)
+    } else if is_directml() {
+        (AllocationDevice::DIRECTML, 0)
+    } else {
+        return None;
+    };
+    MemoryInfo::new(device, id, AllocatorType::Device, MemoryType::Default).ok()
 }
 
 /// An owned ONNX Runtime `f32` tensor of `shape` over the first elements of

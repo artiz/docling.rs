@@ -88,6 +88,7 @@ DOCLING_RS_PDF_THREADS,performance,crates/docling-pdf/src/lib.rs
 DOCLING_RS_PDF_WORKERS,performance,crates/docling-pdf/src/lib.rs
 DOCLING_RS_SLOW_RESIZE,performance,crates/docling-pdf/src/ocr_det.rs
 DOCLING_RS_TF_INTRA,performance,crates/docling-pdf/src/lib.rs
+DOCLING_RS_TF_IOBINDING,performance,crates/docling-pdf/src/tableformer.rs
 DOCLING_RS_XNNPACK_THREADS,performance,crates/docling-onnx/src/lib.rs
 DOCLING_LATEX_DUMP,debug,crates/docling/src/backend/latex_walker.rs
 DOCLING_RS_DEBUG,debug,crates/docling-core/src/env.rs

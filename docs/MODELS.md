@@ -510,6 +510,28 @@ driver/toolkit libs) fails the conversion rather than silently running 10×
 slower on CPU; `auto` is the quiet-fallback mode for images deployed on mixed
 fleets.
 
+**The TableFormer decoder keeps its state on the GPU.** A table is decoded
+one token per step, and with plain runs every step copied the 12 constant
+cross-attention tensors (~19 MB per table) to the device and the growing KV
+cache both ways — measured under CUDA, 12.6 ms per step, 70% of a 462-page
+book's conversion, for ~3 ms of GEMMs. Under a CUDA-class provider (CUDA,
+TensorRT) the loop now runs through an ONNX Runtime `IoBinding`: the cross tensors are
+copied once per table, the cache outputs stay in device memory and feed
+the next step, and only the logits and hidden state come back; the CUDA
+arena is shrunk once per table instead of after every step. Same graph and
+kernels, same output (needs `decoder_kv_layers.onnx`); measured on CUDA
+(WSL2, a 462-page book with 36 tables, 5,750 steps, runs alternating
+bound/unbound): 10.5–11.9 ms per step bound against 49.6–55.7 ms unbound,
+the whole conversion 137–148 s against 364–397 s, output identical. A
+quieter earlier run of the same machine had the unbound loop at 12.6 ms
+per step (102 s in all) — host↔device copies are what a busy GPU makes
+slow, so the bound loop's margin is widest exactly there. Should a provider refuse to bind its device memory, the first step
+says so on stderr and the decode carries on with host caches.
+`DOCLING_RS_TF_IOBINDING=0` turns it off for a comparison, `=1` forces the
+binding loop on CPU (where it is no faster — there is nothing to copy) or
+under DirectML, where it is not the default: the first DirectML machine
+that ran it failed inside the provider on the first bound step.
+
 **Session creation is serialized under a GPU provider** (#452). The page
 workers, OCR lanes and enrichment models normally open their ONNX Runtime
 sessions concurrently so start-up is paid once; the CUDA provider does not
@@ -590,6 +612,16 @@ Markdown byte for byte.
 | DirectML, NVIDIA T600, 4 workers + batch 4 (before #840) | 6.40 s |
 | DirectML, NVIDIA T600 (one worker, per page) | 2.52 s |
 | DirectML, Intel iGPU (one worker, per page) | 2.69 s |
+
+The TableFormer *decoder* runs on the CPU under DirectML (the encoder and
+the bbox head stay on the GPU). As exported, every decoder graph fails
+inside the provider (`Reshape node_view`, 0x8007023E) and sends each table
+to the geometric fallback — DirectML rejects the `allowzero=1` on the
+graph's `view` Reshapes. With it cleared (equivalent here, no target shape
+holds a 0) the GPU runs the decoder, but slower than the CPU: 36.9 ms per
+step against 13.9 ms on the same laptop (2203.01017v2, 141 steps). A step
+is ~150 tiny ops over one token, so kernel launches dominate; on the CPU
+the tables come out exactly as in a CPU run.
 
 Keep the default build on a host without a GPU: the `directml` build's ONNX
 Runtime converted the same paper in 13.6 s on CPU (fp32) — the CPU
