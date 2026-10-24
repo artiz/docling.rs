@@ -58,6 +58,21 @@ pub fn pin_mmap_threshold() {
     }
 }
 
+/// [`release_free_memory`] when dropped: bound at the top of a conversion's
+/// scope (`let _trim = TrimOnDrop;`), the trim runs however the scope ends —
+/// return, early `?`, panic unwinding — after the buffers declared in it are
+/// gone. The bindings put one at every entry point that converts (#871:
+/// Node's `Pipeline.convertAsync` path had no trim, and RSS between
+/// documents climbed 950 → 1,566 MiB over five PDFs).
+#[must_use = "bind it for the scope (`let _trim = TrimOnDrop;`); `let _ =` drops it at once"]
+pub struct TrimOnDrop;
+
+impl Drop for TrimOnDrop {
+    fn drop(&mut self) {
+        release_free_memory();
+    }
+}
+
 /// Return the free memory glibc still holds in its arenas to the OS —
 /// after a conversion, once its buffers are dropped.
 pub fn release_free_memory() {

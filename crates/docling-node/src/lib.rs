@@ -985,14 +985,10 @@ fn check_allowed(source: &SourceDocument, cfg: &ConvertConfig) -> Result<()> {
 /// Run a buffered conversion and render it per the config. Runs off the JS
 /// thread for the async path, so it must stay free of napi/JS types.
 fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult> {
-    let result = run_convert_inner(source, cfg);
     // The heap the conversion freed goes back to the OS rather than staying
     // in glibc's arenas between calls (#871; `docling::memory`, as serve does).
-    docling::memory::release_free_memory();
-    result
-}
-
-fn run_convert_inner(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult> {
+    // Every converting entry point below binds one.
+    let _trim = docling::memory::TrimOnDrop;
     // #77: the remote VLM replaces the entire ML stack — no ONNX model is
     // loaded, and every other converter knob (OCR, TableFormer, text panels)
     // has nothing to act on. A page that failed or came back cut off
@@ -1484,6 +1480,7 @@ impl DocumentConverter {
         // The background conversion thread owns the stream and pushes each chunk
         // through the threadsafe function (which marshals back to the JS loop).
         std::thread::spawn(move || {
+            let _trim = docling::memory::TrimOnDrop;
             let source = match SourceDocument::from_file(&path).map_err(convert_err) {
                 Ok(s) => s,
                 Err(e) => {
@@ -1857,6 +1854,7 @@ fn run_pipeline(
     cfg: &ConvertConfig,
     strict: bool,
 ) -> Result<RawResult> {
+    let _trim = docling::memory::TrimOnDrop;
     let mut pipe = pipe.lock().map_err(|_| {
         Error::new(
             Status::GenericFailure,
@@ -1941,6 +1939,7 @@ fn stream_pipeline(
     strict: bool,
     callback: &ThreadsafeFunction<Option<String>, ErrorStrategy::CalleeHandled>,
 ) {
+    let _trim = docling::memory::TrimOnDrop;
     let fail = |e: Error| {
         callback.call(Err(e), ThreadsafeFunctionCallMode::NonBlocking);
     };
@@ -2203,6 +2202,7 @@ fn run_chunker_with(
 /// Convert a source and chunk the result. The chunk text is docling-flavoured
 /// Markdown (never strict), matching what docling's chunkers emit.
 fn convert_and_chunk(source: SourceDocument, cfg: &ChunkConfig) -> Result<Vec<Chunk>> {
+    let _trim = docling::memory::TrimOnDrop;
     let result = RsConverter::new().convert(source).map_err(convert_err)?;
     run_chunker(&result.document, cfg)
 }
@@ -2292,6 +2292,7 @@ fn stream_chunks(
     cfg: &ChunkConfig,
     callback: ThreadsafeFunction<Option<Chunk>, ErrorStrategy::CalleeHandled>,
 ) {
+    let _trim = docling::memory::TrimOnDrop;
     let result = match RsConverter::new().convert(source).map_err(convert_err) {
         Ok(r) => r,
         Err(e) => {
