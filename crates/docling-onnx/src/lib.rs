@@ -156,6 +156,12 @@ pub fn session_builder() -> Result<SessionBuilder, String> {
 pub fn environment() -> Result<&'static ort::environment::Environment, String> {
     static ENV: OnceLock<Result<ort::environment::Environment, String>> = OnceLock::new();
     ENV.get_or_init(|| {
+        // Before the first tensor: without the arena (`DOCLING_RS_NO_ARENA`,
+        // serve's default) every ONNX Runtime allocation is a `malloc`, and
+        // the TableFormer decoder's ever-longer KV caches left glibc's heap
+        // too fragmented to finish a long table on linux/arm64 (#871). The
+        // fixed threshold maps the large ones, so freeing them returns them.
+        docling_core::memory::pin_mmap_threshold();
         #[cfg(feature = "load-dynamic")]
         runtime_library()?;
         ort::init()
