@@ -230,21 +230,22 @@ transcript only; `DOCLING_RS_DEBUG=1` shows the message.
 ## Conformance with Microsoft MarkItDown
 
 [MarkItDown](https://github.com/microsoft/markitdown) converts the same kinds
-of documents to Markdown for LLMs. Measured side by side — MarkItDown 0.1.8
-(`markitdown[all]`) and docling.rs 2.33.0 (release build), 4 vCPU, no GPU —
-on this repository's test corpus and on MarkItDown's own OCR test set
+of documents to Markdown for LLMs. Measured side by side — MarkItDown 0.1.9
+(`markitdown[all]`) and docling.rs master after 2.51.3 (release build), 4 vCPU,
+no GPU, 2026-10-25 — on this repository's test corpus and on MarkItDown's own
+OCR test set
 ([`scripts/conformance/markitdown_compare.py`](./scripts/conformance/markitdown_compare.py)):
 
 | Corpus (files) | MarkItDown, warm | docling.rs, warm | Cold CLI call, MarkItDown / docling.rs | Word F1 | Table-cell recall | Heading recall |
 |---|---|---|---|---|---|---|
-| DOCX (38) | 4.22 s | **0.44 s** | 1102 / **14** ms | 0.93 / **1.00** | 0.81 / **1.00** | 0.78 / **1.00** |
-| PPTX (8) | 0.30 s | **0.02 s** | 974 / **6** ms | 0.81 / **0.97** | 0.62 / **1.00** | 0.86 / **1.00** |
-| XLSX (14) | 0.87 s | **0.15 s** | 849 / **7** ms | 0.60 / **0.95** | 0.78 / **0.98** | — ¹ |
-| HTML (32) | 0.34 s | **0.05 s** | 900 / **6** ms | 0.98 / **1.00** | 0.89 / **1.00** | 0.96 / **1.00** |
-| CSV (9) | 0.04 s | **0.01 s** | 900 / **4** ms | 1.00 / 1.00 | 0.78 / **1.00** | — |
-| EPUB (1) | 0.06 s | **0.01 s** | 897 / **10** ms | 0.99 / **1.00** | — | 1.00 / 1.00 |
-| PDF (18), full layout + tables + OCR | **7.6 s** | 38.4 s | 984 / **830** ms | 0.63 / **0.997** | 0.31 / **0.94** | 0.00 / **0.91** |
-| PDF (18), text layer only (`--text-layer-only`) | 7.6 s | **0.5 s** | — | 0.63 / **0.97** | 0.31 / 0.00 | 0.00 / 0.00 |
+| DOCX (38) | 9.32 s | **0.57 s** | 1360 / **31** ms | 0.93 / **1.00** | 0.81 / **1.00** | 0.78 / **1.00** |
+| PPTX (8) | 0.28 s | **0.04 s** | 1277 / **11** ms | 0.81 / **0.97** | 0.62 / **1.00** | 0.86 / **1.00** |
+| XLSX (14) | 2.44 s | **0.30 s** | 1472 / **14** ms | 0.60 / **0.95** | 0.78 / **0.98** | — ¹ |
+| HTML (32) | 0.53 s | **0.05 s** | 1248 / **11** ms | 0.98 / **1.00** | 0.88 / **1.00** | 0.96 / **1.00** |
+| CSV (9) | 0.07 s | **0.01 s** | 1250 / **6** ms | 1.00 / 1.00 | 0.78 / **1.00** | — |
+| EPUB (1) | 0.07 s | **0.02 s** | 1473 / **17** ms | 0.99 / **1.00** | — | 1.00 / 1.00 |
+| PDF (18), full layout + tables + OCR | **19.0 s** | 60.3 s | **1442** / 1652 ms | 0.63 / **0.997** | 0.31 / **0.94** | 0.00 / **0.91** |
+| PDF (18), text layer only (`--text-layer-only`) | 19.0 s | **0.8 s** | — | 0.63 / **0.97** | 0.31 / 0.00 | 0.00 / 0.00 |
 
 Accuracy is scored against Python docling's groundtruth, which favours
 docling.rs by construction; the timings do not depend on it. Text drawn into
@@ -347,25 +348,27 @@ scored against docling's groundtruth in
 
 One fixture per format through published Python docling and the Rust release
 binary (`scripts/test/performance.sh`); docling ÷ docling.rs, so bigger means
-Rust wins by more.
+Rust wins by more. Measured 2026-10-25: docling 2.142.1 (the default PyPI
+install, torch included) against docling.rs master after 2.51.3, 4 vCPU, no
+GPU.
 
 | File | Size | Peak-memory ratio | CPU ratio | Warm-conversion speedup |
 |---|---:|---:|---:|---:|
-| `picture_classification.pdf` (PDF) | 208 KB | **6.5× less** | 0.8× | 10.6× |
-| `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **39× less** | 1.2× | 19× |
-| `wiki_duck.html` (HTML) | 240 KB | **57× less** | 1.3× | 47× |
-| `elife-56337.nxml` (JATS XML) | 180 KB | **59× less** | 1.2× | 10× |
-| `xlsx_04_inflated.xlsx` (XLSX) | 168 KB | **51× less** | 0.9× | 18× |
-| `powerpoint_with_image.pptx` (PPTX) | 80 KB | **55× less** | 1.2× | 3.1× |
-| `wiki.md` (Markdown) | 8 KB | **57× less** | 1.2× | 1.2× |
-| `csv-comma.csv` (CSV) | 4 KB | **64× less** | 1.2× | 0.6× † |
+| `picture_classification.pdf` (PDF) | 208 KB | **4.8× less** | 0.7× | 11.6× |
+| `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **28× less** | 1.1× | 12× |
+| `wiki_duck.html` (HTML) | 240 KB | **33× less** | 1.1× | 27× |
+| `elife-56337.nxml` (JATS XML) | 180 KB | **39× less** | 1.2× | 11× |
+| `xlsx_04_inflated.xlsx` (XLSX) | 168 KB | **32× less** | 0.9× | 11× |
+| `powerpoint_with_image.pptx` (PPTX) | 80 KB | **36× less** | 1.1× | 2.7× |
+| `wiki.md` (Markdown) | 8 KB | **43× less** | 1.1× | 2.3× |
+| `csv-comma.csv` (CSV) | 4 KB | **44× less** | 1.3× | 0.4× † |
 
 † A 4 KB CSV converts in microseconds, so Rust's own process startup dominates
-its number; end to end it is 870× faster.
+its number; end to end it is 780× faster.
 
-Declarative formats hold a few MB against docling's ~750 MB (it imports torch
-even for them) and finish 300–870× sooner end to end; the PDF peaks at
-0.37 GB against 2.4 GB and converts 28.5× faster end to end. Where the time
+Declarative formats hold 17–28 MB against docling's 750–780 MB (it imports
+torch even for them) and finish 200–890× sooner end to end; the PDF peaks at
+0.46 GB against 2.2 GB and converts 19× faster end to end. Where the time
 goes, and what was measured not to help:
 [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md#where-the-time-goes).
 
