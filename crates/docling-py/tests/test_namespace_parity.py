@@ -19,14 +19,20 @@ def test_document_converter_module():
 
 def test_datamodel_base_models():
     from docling_rs.datamodel.base_models import (
+        ConfidenceReport,
         ConversionStatus,
         DocumentStream,
         InputFormat,
+        PageConfidenceScores,
+        QualityGrade,
     )
 
     assert InputFormat is docling_rs.InputFormat
     assert DocumentStream is docling_rs.DocumentStream
     assert ConversionStatus is docling_rs.ConversionStatus
+    assert ConfidenceReport is docling_rs.ConfidenceReport
+    assert PageConfidenceScores is docling_rs.PageConfidenceScores
+    assert QualityGrade is docling_rs.QualityGrade
 
 
 def test_datamodel_pipeline_options():

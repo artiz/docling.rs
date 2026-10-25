@@ -344,7 +344,7 @@ PY
 | `InputFormat`, `PdfPipelineOptions`, `PdfFormatOption`, `AcceleratorOptions`, `TableFormerMode`, `DocumentStream`, `ImageRefMode` | same modules | docling-shaped config re-exported from `docling_rs` (see below) |
 | `ConversionError` | `docling.exceptions.ConversionError` | raised on a failed conversion; caught by `convert_all(..., raises_on_error=False)` |
 | `EncryptionError`, `PasswordRequiredError`, `WrongPasswordError` | — (docling.rs extension, #636) | subclasses of `ConversionError` an encrypted document raises: no password given / the given one is wrong (prompt for one) / a scheme docling.rs cannot decrypt (`EncryptionError` itself); `from docling_rs.exceptions import …` |
-| `result.status` / `result.document` / `result.input.file` | same | `.status` is a `ConversionStatus` str-enum (`"success" / "partial_success" / "failure"`); `.document` is a genuine `docling_core` `DoclingDocument` |
+| `result.status` / `result.document` / `result.input.file` / `result.confidence` | same | `.status` is a `ConversionStatus` str-enum (`"success" / "partial_success" / "failure"`); `.document` is a genuine `docling_core` `DoclingDocument`; `.confidence` is a `ConfidenceReport` for PDF/image conversions (`None` otherwise), with real 1-based page-number keys as documented in the migration notes |
 | `document.export_to_markdown(...)` | same | docling-core's own method — all of docling's params (`image_placeholder`, `page_break_placeholder`, …) apply |
 | `document.export_to_dict()` / `export_to_json()` / `export_to_doctags()` | same | docling-core's own serializers over the wire format |
 | `document.save_as_markdown(p)` / `save_as_json(p)` / chunkers | same | anything `docling_core` offers on a `DoclingDocument` works, since it *is* one |

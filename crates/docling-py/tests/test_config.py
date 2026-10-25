@@ -2,6 +2,8 @@
 (declarative path only — no ML models required)."""
 
 import io
+import json
+import math
 import os
 from pathlib import Path
 
@@ -47,6 +49,30 @@ def test_metadata_reaches_the_result():
     assert m["properties"]["pages"] == "2"
     with pytest.raises(Exception, match="metadata"):
         DocumentConverter(metadata="yaml")
+
+
+def test_pdf_confidence_reaches_the_result():
+    """PDF confidence is a typed docling-shaped report on the result."""
+    from docling_rs import ConfidenceReport, DocumentConverter, PageConfidenceScores
+
+    pdf = REPO / "tests/data/pdf/sources/normal_4pages.pdf"
+    result = DocumentConverter(text_layer_only=True).convert(pdf, page_range=(1, 2))
+
+    assert isinstance(result.confidence, ConfidenceReport)
+    assert set(result.confidence.pages) == {1, 2}
+    page = result.confidence.pages[1]
+    assert isinstance(page, PageConfidenceScores)
+    assert 0.0 <= page.parse_score <= 1.0
+    assert 0.0 <= page.layout_score <= 1.0
+    assert math.isnan(page.ocr_score)
+    assert math.isnan(page.table_score)
+    dumped = json.loads(result.confidence.model_dump_json())
+    assert dumped["pages"]["1"]["table_score"] is None
+    assert dumped["pages"]["1"]["mean_grade"] in {
+        "poor", "fair", "good", "excellent", "unspecified"
+    }
+
+    assert DocumentConverter().convert(HTML).confidence is None
 
 
 def test_detect_format_reads_the_bytes():
@@ -124,6 +150,9 @@ def test_reexports_are_importable():
         "AcceleratorOptions",
         "AcceleratorDevice",
         "TableFormerMode",
+        "ConfidenceReport",
+        "PageConfidenceScores",
+        "QualityGrade",
     ):
         assert hasattr(d, name), name
 

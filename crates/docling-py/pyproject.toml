@@ -39,6 +39,7 @@ classifiers = [
 # validates into a genuine `docling_core.types.doc.DoclingDocument`.
 dependencies = [
     "docling-core>=2.0",
+    "pydantic>=2.6,<3",
 ]
 
 [project.optional-dependencies]
