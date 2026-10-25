@@ -31,23 +31,25 @@ pub(crate) fn read(source: &SourceDocument, password: Option<&str>) -> DocumentM
     let bytes = &source.bytes;
     match source.format {
         InputFormat::Docx | InputFormat::Pptx | InputFormat::Xlsx | InputFormat::Visio => {
-            Package::open(bytes)
+            Package::open_slice(bytes)
                 .map(|mut p| from_ooxml(&mut p))
                 .unwrap_or_default()
         }
-        InputFormat::Odt | InputFormat::Ods | InputFormat::Odp => match Package::open(bytes) {
-            Some(mut pkg) => pkg
-                .read("meta.xml")
-                .map(|xml| from_odf_xml(&xml))
-                .unwrap_or_default(),
-            // Flat ODF: the metadata is in the document's own DOM.
-            None => source
-                .text()
-                .ok()
-                .map(|xml| from_odf_xml(&xml))
-                .unwrap_or_default(),
-        },
-        InputFormat::Epub => Package::open(bytes)
+        InputFormat::Odt | InputFormat::Ods | InputFormat::Odp => {
+            match Package::open_slice(bytes) {
+                Some(mut pkg) => pkg
+                    .read("meta.xml")
+                    .map(|xml| from_odf_xml(&xml))
+                    .unwrap_or_default(),
+                // Flat ODF: the metadata is in the document's own DOM.
+                None => source
+                    .text()
+                    .ok()
+                    .map(|xml| from_odf_xml(&xml))
+                    .unwrap_or_default(),
+            }
+        }
+        InputFormat::Epub => Package::open_slice(bytes)
             .and_then(|mut pkg| {
                 let container = pkg.read("META-INF/container.xml")?;
                 let opf = pkg.read(&crate::backend::epub::rootfile_path(&container)?)?;
@@ -87,7 +89,7 @@ fn text_of(node: Node) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 /// The package's core and application properties.
-pub(crate) fn from_ooxml(pkg: &mut Package) -> DocumentMetadata {
+pub(crate) fn from_ooxml<B: AsRef<[u8]>>(pkg: &mut Package<B>) -> DocumentMetadata {
     let mut m = DocumentMetadata::default();
     if let Some(core) = pkg.read("docProps/core.xml") {
         if let Ok(dom) = Document::parse(&core) {

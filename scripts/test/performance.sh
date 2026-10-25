@@ -39,22 +39,13 @@ ensure_docling
 echo ">> building Rust release binary ..."
 RUST_BIN="$(build_rust_release)"
 
-# Point the Rust PDF pipeline at the fetched libs/models (scripts/install/pdf_setup.sh)
-# using absolute paths, so it runs the full pipeline no matter the caller's CWD.
-# Harmless for non-PDF inputs (the binary only reads these for PDFs/images).
-# Mirrors the pipeline's own default: the INT8 layout model + TableFormer
-# decoder when present (scripts/install/quantize_models.py; see docs/PDF_CONFORMANCE.md),
-# fp32 with DOCLING_RS_FP32=1.
-if [[ "${DOCLING_RS_FP32:-0}" != "1" && -e "$WORKSPACE_DIR/.models/layout_heron_int8.onnx" ]]; then
-  export DOCLING_LAYOUT_ONNX="${DOCLING_LAYOUT_ONNX:-$WORKSPACE_DIR/.models/layout_heron_int8.onnx}"
-  [[ -e "$WORKSPACE_DIR/.models/tableformer/decoder_int8.onnx" ]] && export DOCLING_TABLEFORMER_DECODER="${DOCLING_TABLEFORMER_DECODER:-$WORKSPACE_DIR/.models/tableformer/decoder_int8.onnx}"
-fi
-[[ -e "$WORKSPACE_DIR/.models/layout_heron.onnx" ]] && export DOCLING_LAYOUT_ONNX="${DOCLING_LAYOUT_ONNX:-$WORKSPACE_DIR/.models/layout_heron.onnx}"
-[[ -e "$WORKSPACE_DIR/.models/ocr_rec.onnx" ]] && export DOCLING_OCR_REC_ONNX="${DOCLING_OCR_REC_ONNX:-$WORKSPACE_DIR/.models/ocr_rec.onnx}"
-[[ -e "$WORKSPACE_DIR/.models/ppocr_keys_v1.txt" ]] && export DOCLING_OCR_DICT="${DOCLING_OCR_DICT:-$WORKSPACE_DIR/.models/ppocr_keys_v1.txt}"
-[[ -e "$WORKSPACE_DIR/.models/tableformer/encoder.onnx" ]] && export DOCLING_TABLEFORMER_ENCODER="${DOCLING_TABLEFORMER_ENCODER:-$WORKSPACE_DIR/.models/tableformer/encoder.onnx}"
-[[ -e "$WORKSPACE_DIR/.models/tableformer/decoder.onnx" ]] && export DOCLING_TABLEFORMER_DECODER="${DOCLING_TABLEFORMER_DECODER:-$WORKSPACE_DIR/.models/tableformer/decoder.onnx}"
-[[ -e "$WORKSPACE_DIR/.models/tableformer/bbox.onnx" ]] && export DOCLING_TABLEFORMER_BBOX="${DOCLING_TABLEFORMER_BBOX:-$WORKSPACE_DIR/.models/tableformer/bbox.onnx}"
+# Point the Rust PDF pipeline at the repo's models from any CWD with the
+# whole-dir override (#285), so the engine makes its own selection — what a
+# user gets: the INT8 layout model when present (DOCLING_RS_FP32=1: fp32),
+# TableFormer's `decoder_kv_layers.onnx` (#871), the PP-OCRv6 recognizer
+# (#570). Pinning individual files here measured the legacy decoder and the
+# PP-OCRv3 pair instead. Harmless for non-PDF inputs.
+export DOCLING_RS_MODELS_DIR="${DOCLING_RS_MODELS_DIR:-$WORKSPACE_DIR/.models}"
 
 # Run a command RUNS times under GNU time; echo "min avg peak_rss_kb cpu%".
 # GNU time format: %e elapsed seconds, %P CPU percent, %M max RSS in KB.
