@@ -1788,8 +1788,9 @@ mod json_tree_tests {
     use serde_json::Value;
 
     /// Drop what a conformance comparison never looks at: the file's
-    /// `origin` and schema `version`, and an image's bytes (PIL re-encodes
-    /// them; ours are the embedded file's).
+    /// `origin` and schema `version`, an image's bytes (PIL re-encodes
+    /// them; ours are the embedded file's), and the alt-text description a
+    /// picture carries here and not upstream (#676).
     fn normalize(v: &mut Value) {
         match v {
             Value::Object(m) => {
@@ -1797,6 +1798,15 @@ mod json_tree_tests {
                 m.remove("version");
                 if let Some(uri) = m.get_mut("uri") {
                     *uri = Value::Null;
+                }
+                if m.get("meta")
+                    .and_then(|meta| meta.pointer("/description/created_by"))
+                    == Some(&Value::from("alt_text"))
+                {
+                    m.remove("meta");
+                }
+                if let Some(Value::Array(notes)) = m.get_mut("annotations") {
+                    notes.retain(|a| a.get("provenance") != Some(&Value::from("alt_text")));
                 }
                 m.values_mut().for_each(normalize);
             }

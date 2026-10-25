@@ -2909,7 +2909,7 @@ pub(super) fn is_code_by_font(p: XmlNode, style_id: &str, ctx: &Ctx, prev_is_cod
         r"(?m)^[ \t]*(?:async\s+)?(?:def|class|if|elif|while|for|with|except|finally|try|catch|switch|function|func|fn|sub|proc)\s+\S[^\n]*:[ \t]*$"
     )
     .is_match(stripped);
-    let has_code_char = has_strong || call || def;
+    let has_code_char = has_strong || call || def || detect_code_language(stripped).is_some();
     let is_continuation = prev_is_code && raw.chars().next().is_some_and(|c| c.is_whitespace());
     if !has_code_char && !is_continuation {
         return false;
@@ -2953,22 +2953,9 @@ fn monospaced_char_counts(p: XmlNode, style_font: &str) -> (usize, usize) {
     (mono, total)
 }
 
-/// Best-effort code language for a fenced block (docling's `detect_code_language`,
-/// the conservative markers used for DOCX). Returns `None` (→ `unknown`) unless a
-/// distinctive marker is present.
+/// docling's `detect_code_language(text)` with no hint.
 pub(super) fn detect_code_language(text: &str) -> Option<String> {
-    let lang = |l: &str| Some(l.to_string());
-    if cached_regex!(r"(?m)^[ \t]*(?:def|elif)\b|\b__name__\b|^[ \t]*from\s+\S+\s+import\b")
-        .is_match(text)
-    {
-        return lang("Python");
-    }
-    if cached_regex!(r"(?i)^[ \t]*(select|insert|update|delete|create|alter|drop)\b").is_match(text)
-        && cached_regex!(r"(?i)\b(from|into|table|where|values|set)\b").is_match(text)
-    {
-        return lang("SQL");
-    }
-    None
+    super::code_language::detect_code_language(text, None)
 }
 
 /// From `styles.xml`: `styleId` → display name / list numbering `(numId, ilvl)` /

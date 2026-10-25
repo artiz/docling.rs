@@ -28,6 +28,7 @@ mod asciidoc;
 pub(crate) mod browser;
 pub(crate) mod cfb;
 mod chandra;
+mod code_language;
 mod csv;
 mod deepseek;
 pub(crate) mod doc;

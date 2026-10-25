@@ -31,7 +31,7 @@ use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind};
 use docling_core::{Table, TableCell};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
-use super::html_tree::{detect_code_language, docling_href};
+use super::html_tree::docling_href;
 use super::markdown::unescape_entities;
 
 /// marko's element classes, as docling's walk tells them apart.
@@ -972,11 +972,8 @@ impl Walker<'_> {
                 let snippet = text.trim().to_string();
                 // `detect_code_language(text, hint=lang)`: a known hint wins,
                 // else the content's own markers.
-                let language = lang
-                    .as_deref()
-                    .filter(|l| docling_core::code_language_label(l) != "unknown")
-                    .map(str::to_string)
-                    .or_else(|| detect_code_language(&snippet));
+                let language =
+                    super::code_language::detect_code_language(&snippet, lang.as_deref());
                 self.tree.add(
                     parent,
                     None,
