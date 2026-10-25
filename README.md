@@ -277,8 +277,9 @@ A failed file scores 0. ¹ Only one XLSX groundtruth carries a heading.
 ² The median HTML file needs OCR in Marker: a cold call starts its llama.cpp
 server and loads the 1.2 GB OCR model first.
 ³ The HTML row is the earlier run's (docling.rs 2.46.2, another host): its
-re-run here was still going after 90 minutes, Marker's OCR model looping on
-one render (5,000+ tokens for a single block).
+re-run here was stopped after 3 h 45 min — its warm pass done, the first cold
+`marker_single` call had spent 97 minutes on one 855-byte file, Marker's OCR model
+looping on one render (5,000+ tokens for a single block).
 
 Accuracy is scored against Python docling's groundtruth, which favours
 docling.rs by construction; the timings and memory do not depend on it.

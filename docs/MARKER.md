@@ -70,7 +70,9 @@ this corpus. With it, those pages are where the minutes go: the four PDFs
 account for most of the 23 minutes, and a cold `marker_single` on an HTML
 file that needs OCR took 29 minutes in the earlier run (server start, model
 load, OCR); on this host its OCR model looped on one HTML render for
-5,000+ tokens, and the HTML re-run was still going after 90 minutes.
+5,000+ tokens, and the HTML re-run was stopped after 3 h 45 min (one cold
+call on an 855-byte file had taken 97 minutes), so the HTML row is the earlier
+run's.
 
 ## How the comparison is scored
 
