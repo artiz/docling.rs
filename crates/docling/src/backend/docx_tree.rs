@@ -526,6 +526,20 @@ impl Walker {
         })
     }
 
+    /// `_sub_list_parent` (docling#4863): a sub-list belongs to the list
+    /// item above it — a new list group under a list group whose last child
+    /// is a list item goes under that item, as the HTML, Markdown, PPTX and
+    /// ODF trees nest it.
+    fn sub_list_parent(&self, parent: Option<usize>) -> Option<usize> {
+        let last = parent
+            .filter(|_| self.is_list_group(parent))
+            .and_then(|p| self.tree.items[p].children.last().copied());
+        match last.map(|c| &self.tree.items[c].kind) {
+            Some(TreeKind::Text { label, .. }) if label == "list_item" => last,
+            _ => parent,
+        }
+    }
+
     fn is_code(&self, id: Option<usize>) -> bool {
         id.is_some_and(|i| matches!(self.tree.items[i].kind, TreeKind::Code { .. }))
     }
@@ -1069,7 +1083,7 @@ impl Walker {
     /// `_get_numId_and_ilvl`: the paragraph's own `numPr`, else its style's
     /// (resolved through `basedOn`).
     fn num_id_and_ilvl(&self, p: XmlNode, ctx: &Ctx) -> (Option<String>, Option<i64>) {
-        if let Some(np) = p.descendants().find(|n| n.has_tag_name("numPr")) {
+        if let Some(np) = super::docx::own_num_pr(p) {
             let numid = np
                 .children()
                 .find(|n| n.has_tag_name("numId"))
@@ -2168,7 +2182,7 @@ impl Walker {
             self.level_at_new_list = Some(level);
             self.level_start_ilevel = ilevel;
             self.start_numid(numid);
-            let parent = self.parent_at(level - 1);
+            let parent = self.sub_list_parent(self.parent_at(level - 1));
             let g = self.get_or_create_list_group(numid, parent, &mut refs);
             self.set_parent(level, Some(g));
             use_level = level;
@@ -2181,7 +2195,7 @@ impl Walker {
             let pi = prev_indent.unwrap_or(0);
             for i in (self.slot_for(pi) + 1)..(self.slot_for(ilevel) + 1) {
                 let g = self.add(
-                    self.parent_at(i - 1),
+                    self.sub_list_parent(self.parent_at(i - 1)),
                     self.layer,
                     group_kind("list", "list"),
                 );
@@ -2213,7 +2227,7 @@ impl Walker {
                 }
             }
             self.start_numid(numid);
-            let parent = self.parent_at(use_level - 1);
+            let parent = self.sub_list_parent(self.parent_at(use_level - 1));
             let g = self.get_or_create_list_group(numid, parent, &mut refs);
             self.set_parent(use_level, Some(g));
             self.last_numid = Some(numid.to_string());
@@ -2727,14 +2741,15 @@ mod tests {
             );
         }
         // Lists: one group under the heading, the nested level its own group
-        // under it; the blank spacer paragraph's empty item is deleted when
-        // the list resumes, and numbering continues.
+        // under the item above it (docling#4863); the blank spacer
+        // paragraph's empty item is deleted when the list resumes, and
+        // numbering continues.
         let list = parent_of("one").expect("list group");
         assert_eq!(label_of(&items[list].kind), "list:list");
         assert_eq!(items[list].parent, Some(deep));
         let nested = parent_of("nested").expect("nested list group");
         assert_eq!(label_of(&items[nested].kind), "list:list");
-        assert_eq!(items[nested].parent, Some(list));
+        assert_eq!(items[nested].parent, Some(find("one")));
         assert_eq!(parent_of("two"), Some(list));
         assert_eq!(parent_of("three"), Some(list));
         let marker = |t: &str| match &items[find(t)].kind {

@@ -1020,26 +1020,45 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, ctx: &Ctx) {
         }
 
         let indent = "    ".repeat(level);
-        // docling-core's `case_already_valid`: a marker of digits and a dot
-        // prints verbatim — Python's `\d+\.` admits every Unicode decimal
-        // digit, so a DOCX `decimalFullWidth` marker (`１.`, docling#4336)
-        // is kept as it is rather than renumbered in ASCII.
-        let verbatim = orig_marker.as_deref().filter(|m| {
-            m.strip_suffix('.')
-                .is_some_and(|d| !d.is_empty() && d.chars().all(char::is_numeric))
-        });
-        let marker = match verbatim {
-            Some(m) if *ordered => m.to_string(),
-            _ if *ordered => format!("{number}."),
-            _ => "-".to_string(),
-        };
-        lines.push(format!("{indent}{marker} {}", list_item_text(text, ctx)));
+        lines.push(format!(
+            "{indent}{} {}",
+            list_item_marker(orig_marker.as_deref().unwrap_or(""), *ordered, *number),
+            list_item_text(text, ctx)
+        ));
     }
 
     // A run consisting only of furniture (content-layer-filtered) items yields no
     // lines; pushing an empty block here would surface as a stray blank line.
     if !lines.is_empty() {
         blocks.push(lines.join("\n"));
+    }
+}
+
+/// docling-core's list item marker (`orig_list_item_marker_mode=AUTO`,
+/// `ensure_valid_list_item_marker=True`; docling-core 2.100+): a marker that
+/// is already valid Markdown — `-`, `*`, `+`, or digits and a dot (Python's
+/// `\d+\.` admits every Unicode decimal digit, so a DOCX `decimalFullWidth`
+/// `１.` stays as it is, docling#4336) — prints verbatim; any other marker
+/// holding a letter or digit is informative (`a)`, `①`, `第九条`) and prints
+/// after a `-`; a markerless item of an enumerated list is numbered by its
+/// position, and every other item gets a `-`.
+fn list_item_marker(marker: &str, ordered: bool, number: u64) -> String {
+    let already_valid = matches!(marker, "-" | "*" | "+")
+        || marker
+            .strip_suffix('.')
+            .is_some_and(|d| !d.is_empty() && d.chars().all(char::is_numeric));
+    if already_valid {
+        return marker.to_string();
+    }
+    let outer = if ordered && marker.is_empty() {
+        format!("{number}.")
+    } else {
+        "-".to_string()
+    };
+    if marker.chars().any(char::is_alphanumeric) {
+        format!("{outer} {marker}")
+    } else {
+        outer
     }
 }
 

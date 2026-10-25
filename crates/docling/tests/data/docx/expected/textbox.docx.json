@@ -33,16 +33,13 @@
         "$ref": "#/pictures/0"
       },
       {
-        "$ref": "#/groups/2"
-      },
-      {
         "$ref": "#/pictures/1"
       },
       {
         "$ref": "#/texts/6"
       },
       {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/2"
       },
       {
         "$ref": "#/pictures/2"
@@ -57,7 +54,7 @@
         "$ref": "#/texts/10"
       },
       {
-        "$ref": "#/groups/4"
+        "$ref": "#/groups/3"
       },
       {
         "$ref": "#/pictures/3"
@@ -66,13 +63,10 @@
         "$ref": "#/texts/12"
       },
       {
-        "$ref": "#/groups/5"
+        "$ref": "#/groups/4"
       },
       {
         "$ref": "#/pictures/4"
-      },
-      {
-        "$ref": "#/groups/7"
       },
       {
         "$ref": "#/texts/16"
@@ -90,19 +84,16 @@
         "$ref": "#/texts/20"
       },
       {
-        "$ref": "#/groups/8"
+        "$ref": "#/groups/6"
       },
       {
         "$ref": "#/pictures/5"
       },
       {
-        "$ref": "#/groups/10"
-      },
-      {
         "$ref": "#/texts/26"
       },
       {
-        "$ref": "#/groups/11"
+        "$ref": "#/groups/8"
       },
       {
         "$ref": "#/pictures/6"
@@ -126,7 +117,7 @@
         "$ref": "#/pictures/7"
       },
       {
-        "$ref": "#/groups/12"
+        "$ref": "#/groups/9"
       },
       {
         "$ref": "#/pictures/8"
@@ -138,13 +129,13 @@
         "$ref": "#/pictures/9"
       },
       {
-        "$ref": "#/groups/14"
+        "$ref": "#/groups/11"
       },
       {
         "$ref": "#/pictures/10"
       },
       {
-        "$ref": "#/groups/15"
+        "$ref": "#/groups/12"
       },
       {
         "$ref": "#/pictures/11"
@@ -153,13 +144,13 @@
         "$ref": "#/pictures/12"
       },
       {
-        "$ref": "#/groups/16"
+        "$ref": "#/groups/13"
       },
       {
         "$ref": "#/pictures/13"
       },
       {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/14"
       },
       {
         "$ref": "#/pictures/14"
@@ -168,13 +159,13 @@
         "$ref": "#/texts/44"
       },
       {
-        "$ref": "#/groups/18"
+        "$ref": "#/groups/15"
       },
       {
         "$ref": "#/pictures/15"
       },
       {
-        "$ref": "#/groups/19"
+        "$ref": "#/groups/16"
       },
       {
         "$ref": "#/pictures/16"
@@ -186,7 +177,7 @@
         "$ref": "#/texts/49"
       },
       {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/17"
       },
       {
         "$ref": "#/pictures/18"
@@ -266,16 +257,6 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
-      "content_layer": "body",
-      "name": "list",
-      "label": "list"
-    },
-    {
-      "self_ref": "#/groups/3",
-      "parent": {
-        "$ref": "#/body"
-      },
       "children": [
         {
           "$ref": "#/texts/7"
@@ -286,7 +267,7 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/4",
+      "self_ref": "#/groups/3",
       "parent": {
         "$ref": "#/body"
       },
@@ -300,13 +281,13 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/5",
+      "self_ref": "#/groups/4",
       "parent": {
         "$ref": "#/body"
       },
       "children": [
         {
-          "$ref": "#/groups/6"
+          "$ref": "#/groups/5"
         },
         {
           "$ref": "#/texts/15"
@@ -317,9 +298,9 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/6",
+      "self_ref": "#/groups/5",
       "parent": {
-        "$ref": "#/groups/5"
+        "$ref": "#/groups/4"
       },
       "children": [
         {
@@ -334,17 +315,7 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/7",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "name": "list",
-      "label": "list"
-    },
-    {
-      "self_ref": "#/groups/8",
+      "self_ref": "#/groups/6",
       "parent": {
         "$ref": "#/body"
       },
@@ -356,7 +327,7 @@
           "$ref": "#/texts/22"
         },
         {
-          "$ref": "#/groups/9"
+          "$ref": "#/groups/7"
         },
         {
           "$ref": "#/texts/25"
@@ -367,9 +338,9 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/9",
+      "self_ref": "#/groups/7",
       "parent": {
-        "$ref": "#/groups/8"
+        "$ref": "#/groups/6"
       },
       "children": [
         {
@@ -384,17 +355,7 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/10",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "name": "list",
-      "label": "list"
-    },
-    {
-      "self_ref": "#/groups/11",
+      "self_ref": "#/groups/8",
       "parent": {
         "$ref": "#/body"
       },
@@ -408,13 +369,13 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/12",
+      "self_ref": "#/groups/9",
       "parent": {
         "$ref": "#/body"
       },
       "children": [
         {
-          "$ref": "#/groups/13"
+          "$ref": "#/groups/10"
         },
         {
           "$ref": "#/texts/36"
@@ -425,9 +386,9 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/13",
+      "self_ref": "#/groups/10",
       "parent": {
-        "$ref": "#/groups/12"
+        "$ref": "#/groups/9"
       },
       "children": [
         {
@@ -445,7 +406,7 @@
       "label": "inline"
     },
     {
-      "self_ref": "#/groups/14",
+      "self_ref": "#/groups/11",
       "parent": {
         "$ref": "#/body"
       },
@@ -462,7 +423,7 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/15",
+      "self_ref": "#/groups/12",
       "parent": {
         "$ref": "#/body"
       },
@@ -479,7 +440,7 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/16",
+      "self_ref": "#/groups/13",
       "parent": {
         "$ref": "#/body"
       },
@@ -493,7 +454,7 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/17",
+      "self_ref": "#/groups/14",
       "parent": {
         "$ref": "#/body"
       },
@@ -507,7 +468,7 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/18",
+      "self_ref": "#/groups/15",
       "parent": {
         "$ref": "#/body"
       },
@@ -527,7 +488,7 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/19",
+      "self_ref": "#/groups/16",
       "parent": {
         "$ref": "#/body"
       },
@@ -541,7 +502,7 @@
       "label": "section"
     },
     {
-      "self_ref": "#/groups/20",
+      "self_ref": "#/groups/17",
       "parent": {
         "$ref": "#/body"
       },
@@ -679,7 +640,7 @@
     {
       "self_ref": "#/texts/7",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -734,7 +695,7 @@
     {
       "self_ref": "#/texts/11",
       "parent": {
-        "$ref": "#/groups/4"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
@@ -765,7 +726,7 @@
     {
       "self_ref": "#/texts/13",
       "parent": {
-        "$ref": "#/groups/6"
+        "$ref": "#/groups/5"
       },
       "children": [],
       "content_layer": "body",
@@ -786,7 +747,7 @@
     {
       "self_ref": "#/texts/14",
       "parent": {
-        "$ref": "#/groups/6"
+        "$ref": "#/groups/5"
       },
       "children": [],
       "content_layer": "body",
@@ -807,7 +768,7 @@
     {
       "self_ref": "#/texts/15",
       "parent": {
-        "$ref": "#/groups/5"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
@@ -879,7 +840,7 @@
     {
       "self_ref": "#/texts/21",
       "parent": {
-        "$ref": "#/groups/8"
+        "$ref": "#/groups/6"
       },
       "children": [],
       "content_layer": "body",
@@ -898,7 +859,7 @@
     {
       "self_ref": "#/texts/22",
       "parent": {
-        "$ref": "#/groups/8"
+        "$ref": "#/groups/6"
       },
       "children": [],
       "content_layer": "body",
@@ -917,7 +878,7 @@
     {
       "self_ref": "#/texts/23",
       "parent": {
-        "$ref": "#/groups/9"
+        "$ref": "#/groups/7"
       },
       "children": [],
       "content_layer": "body",
@@ -938,7 +899,7 @@
     {
       "self_ref": "#/texts/24",
       "parent": {
-        "$ref": "#/groups/9"
+        "$ref": "#/groups/7"
       },
       "children": [],
       "content_layer": "body",
@@ -959,7 +920,7 @@
     {
       "self_ref": "#/texts/25",
       "parent": {
-        "$ref": "#/groups/8"
+        "$ref": "#/groups/6"
       },
       "children": [],
       "content_layer": "body",
@@ -983,7 +944,7 @@
     {
       "self_ref": "#/texts/27",
       "parent": {
-        "$ref": "#/groups/11"
+        "$ref": "#/groups/8"
       },
       "children": [],
       "content_layer": "body",
@@ -1062,7 +1023,7 @@
     {
       "self_ref": "#/texts/33",
       "parent": {
-        "$ref": "#/groups/13"
+        "$ref": "#/groups/10"
       },
       "children": [],
       "content_layer": "body",
@@ -1081,7 +1042,7 @@
     {
       "self_ref": "#/texts/34",
       "parent": {
-        "$ref": "#/groups/13"
+        "$ref": "#/groups/10"
       },
       "children": [],
       "content_layer": "body",
@@ -1100,7 +1061,7 @@
     {
       "self_ref": "#/texts/35",
       "parent": {
-        "$ref": "#/groups/13"
+        "$ref": "#/groups/10"
       },
       "children": [],
       "content_layer": "body",
@@ -1119,7 +1080,7 @@
     {
       "self_ref": "#/texts/36",
       "parent": {
-        "$ref": "#/groups/12"
+        "$ref": "#/groups/9"
       },
       "children": [],
       "content_layer": "body",
@@ -1143,7 +1104,7 @@
     {
       "self_ref": "#/texts/38",
       "parent": {
-        "$ref": "#/groups/14"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1162,7 +1123,7 @@
     {
       "self_ref": "#/texts/39",
       "parent": {
-        "$ref": "#/groups/14"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1174,7 +1135,7 @@
     {
       "self_ref": "#/texts/40",
       "parent": {
-        "$ref": "#/groups/15"
+        "$ref": "#/groups/12"
       },
       "children": [],
       "content_layer": "body",
@@ -1193,7 +1154,7 @@
     {
       "self_ref": "#/texts/41",
       "parent": {
-        "$ref": "#/groups/15"
+        "$ref": "#/groups/12"
       },
       "children": [],
       "content_layer": "body",
@@ -1212,7 +1173,7 @@
     {
       "self_ref": "#/texts/42",
       "parent": {
-        "$ref": "#/groups/16"
+        "$ref": "#/groups/13"
       },
       "children": [],
       "content_layer": "body",
@@ -1231,7 +1192,7 @@
     {
       "self_ref": "#/texts/43",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/14"
       },
       "children": [],
       "content_layer": "body",
@@ -1262,7 +1223,7 @@
     {
       "self_ref": "#/texts/45",
       "parent": {
-        "$ref": "#/groups/18"
+        "$ref": "#/groups/15"
       },
       "children": [],
       "content_layer": "body",
@@ -1281,7 +1242,7 @@
     {
       "self_ref": "#/texts/46",
       "parent": {
-        "$ref": "#/groups/18"
+        "$ref": "#/groups/15"
       },
       "children": [],
       "content_layer": "body",
@@ -1293,7 +1254,7 @@
     {
       "self_ref": "#/texts/47",
       "parent": {
-        "$ref": "#/groups/18"
+        "$ref": "#/groups/15"
       },
       "children": [],
       "content_layer": "body",
@@ -1312,7 +1273,7 @@
     {
       "self_ref": "#/texts/48",
       "parent": {
-        "$ref": "#/groups/19"
+        "$ref": "#/groups/16"
       },
       "children": [],
       "content_layer": "body",
@@ -1343,7 +1304,7 @@
     {
       "self_ref": "#/texts/50",
       "parent": {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/17"
       },
       "children": [],
       "content_layer": "body",
@@ -1362,7 +1323,7 @@
     {
       "self_ref": "#/texts/51",
       "parent": {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/17"
       },
       "children": [],
       "content_layer": "body",
@@ -1381,7 +1342,7 @@
     {
       "self_ref": "#/texts/52",
       "parent": {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/17"
       },
       "children": [],
       "content_layer": "body",
@@ -1568,6 +1529,15 @@
       "captions": [],
       "references": [],
       "footnotes": [],
+      "image": {
+        "mimetype": "image/svg+xml",
+        "dpi": 96,
+        "size": {
+          "width": 259.0,
+          "height": 50.0
+        },
+        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNTguOTMiIGhlaWdodD0iNTAuNDYiIHZpZXdCb3g9IjAgMCAyNTguOTMgNTAuNDYiPgogIDxnPgogICAgPHBhdGggZD0iTTUuNzMgMTQuNDYgTDUuNzMgNTAuNDYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwMDAwMCIgc3Ryb2tlLXdpZHRoPSIxIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KICAgIDxwYXRoIGQ9Ik01LjczIDUwLjQ2IEwzLjAzIDQ0LjQ2IEw4LjQzIDQ0LjQ2IFoiIGZpbGw9IiMwMDAwMDAiIHN0cm9rZT0ibm9uZSIvPgogIDwvZz4KICA8Zz4KICAgIDxwYXRoIGQ9Ik02Ni45MyAwLjczIEwyNTguOTMgMC43MyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwMDAwIiBzdHJva2Utd2lkdGg9IjEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDwvZz4KPC9zdmc+Cg=="
+      },
       "annotations": []
     },
     {
@@ -1697,6 +1667,15 @@
       "captions": [],
       "references": [],
       "footnotes": [],
+      "image": {
+        "mimetype": "image/svg+xml",
+        "dpi": 96,
+        "size": {
+          "width": 12.0,
+          "height": 24.0
+        },
+        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDEyIDI0Ij4KICA8Zz4KICAgIDxwYXRoIGQ9Ik01LjczIDAgTDUuNzMgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwMDAwMCIgc3Ryb2tlLXdpZHRoPSIxIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KICAgIDxwYXRoIGQ9Ik01LjczIDI0IEwzLjAzIDE4IEw4LjQzIDE4IFoiIGZpbGw9IiMwMDAwMDAiIHN0cm9rZT0ibm9uZSIvPgogIDwvZz4KPC9zdmc+Cg=="
+      },
       "annotations": []
     },
     {
@@ -1734,6 +1713,15 @@
       "captions": [],
       "references": [],
       "footnotes": [],
+      "image": {
+        "mimetype": "image/svg+xml",
+        "dpi": 96,
+        "size": {
+          "width": 9.0,
+          "height": 40.0
+        },
+        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI5LjMzIiBoZWlnaHQ9IjQwLjExIiB2aWV3Qm94PSIwIDAgOS4zMyA0MC4xMSI+CiAgPGc+CiAgICA8cGF0aCBkPSJNNS4zMyAwIEw1LjMzIDQwLjExIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAwMDAiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNNS4zMyA0MC4xMSBMMi42MyAzNC4xMSBMOC4wMyAzNC4xMSBaIiBmaWxsPSIjMDAwMDAwIiBzdHJva2U9Im5vbmUiLz4KICA8L2c+Cjwvc3ZnPgo="
+      },
       "annotations": []
     },
     {
@@ -1775,10 +1763,10 @@
         "mimetype": "image/svg+xml",
         "dpi": 96,
         "size": {
-          "width": 408.0,
-          "height": 70.0
+          "width": 644.0,
+          "height": 124.0
         },
-        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MDcuNjYiIGhlaWdodD0iNzAuNDgiIHZpZXdCb3g9IjAgMCA0MDcuNjYgNzAuNDgiPgogIDxnPgogICAgPHBhdGggZD0iTTAgMCBMMzM4LjY3IDAgTDMzOC42NyA3MC40OCBMMCA3MC40OCBaIiBmaWxsPSIjRkZGRkZGIiBzdHJva2U9IiMwMDAwMDAiIHN0cm9rZS13aWR0aD0iMSIvPgogICAgPHRleHQgeD0iOS42IiB5PSIxNy40NyIgZm9udC1mYW1pbHk9IkNhbGlicmksIEFyaWFsLCBIZWx2ZXRpY2EsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTMuMzMiIHRleHQtYW5jaG9yPSJzdGFydCIgZmlsbD0iIzAwMDAwMCIgZm9udC13ZWlnaHQ9ImJvbGQiPldoZXRoZXIgdGhlIHRlc3QgcmVzdWx0cyBhcmUgcG9zaXRpdmUgZm9yIGEgbGVnYWxseTwvdGV4dD4KICAgIDx0ZXh0IHg9IjkuNiIgeT0iMzMuNDciIGZvbnQtZmFtaWx5PSJDYWxpYnJpLCBBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzLjMzIiB0ZXh0LWFuY2hvcj0ic3RhcnQiIGZpbGw9IiMwMDAwMDAiIGZvbnQtd2VpZ2h0PSJib2xkIj5kZXNpZ25hdGVkIGluZmVjdGlvdXMgZGlzZWFzZS48L3RleHQ+CiAgPC9nPgogIDxnPgogICAgPHBhdGggZD0iTTM1Ni4wMSAwLjk4IEw0MDcuNjYgMC45OCBMNDA3LjY2IDM2Ljk4IEwzNTYuMDEgMzYuOTggWiIgZmlsbD0iI0ZGRkZGRiIgc3Ryb2tlPSIjRkZGRkZGIiBzdHJva2Utd2lkdGg9IjEiLz4KICAgIDx0ZXh0IHg9IjM2NS42MSIgeT0iMTguNDUiIGZvbnQtZmFtaWx5PSJDYWxpYnJpLCBBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzLjMzIiB0ZXh0LWFuY2hvcj0ic3RhcnQiIGZpbGw9IiMwMDAwMDAiPk5vPC90ZXh0PgogIDwvZz4KPC9zdmc+Cg=="
+        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDQuMzciIGhlaWdodD0iMTIzLjg5IiB2aWV3Qm94PSIwIDAgNjQ0LjM3IDEyMy44OSI+CiAgPGc+CiAgICA8cGF0aCBkPSJNMCAwIEwzMzguNjcgMCBMMzM4LjY3IDcwLjQ4IEwwIDcwLjQ4IFoiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iIzAwMDAwMCIgc3Ryb2tlLXdpZHRoPSIxIi8+CiAgICA8dGV4dCB4PSI5LjYiIHk9IjE3LjQ3IiBmb250LWZhbWlseT0iQ2FsaWJyaSwgQXJpYWwsIEhlbHZldGljYSwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMy4zMyIgdGV4dC1hbmNob3I9InN0YXJ0IiBmaWxsPSIjMDAwMDAwIiBmb250LXdlaWdodD0iYm9sZCI+V2hldGhlciB0aGUgdGVzdCByZXN1bHRzIGFyZSBwb3NpdGl2ZSBmb3IgYSBsZWdhbGx5PC90ZXh0PgogICAgPHRleHQgeD0iOS42IiB5PSIzMy40NyIgZm9udC1mYW1pbHk9IkNhbGlicmksIEFyaWFsLCBIZWx2ZXRpY2EsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTMuMzMiIHRleHQtYW5jaG9yPSJzdGFydCIgZmlsbD0iIzAwMDAwMCIgZm9udC13ZWlnaHQ9ImJvbGQiPmRlc2lnbmF0ZWQgaW5mZWN0aW91cyBkaXNlYXNlLjwvdGV4dD4KICA8L2c+CiAgPGc+CiAgICA8cGF0aCBkPSJNNjM3LjcxIDExLjgxIEw2MzcuNzEgMTIzLjg5IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAwMDAiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNNjM3LjcxIDEyMy44OSBMNjM1LjAxIDExNy44OSBMNjQwLjQxIDExNy44OSBaIiBmaWxsPSIjMDAwMDAwIiBzdHJva2U9Im5vbmUiLz4KICA8L2c+CiAgPGc+CiAgICA8cGF0aCBkPSJNMzU2LjAxIDAuOTggTDQwNy42NiAwLjk4IEw0MDcuNjYgMzYuOTggTDM1Ni4wMSAzNi45OCBaIiBmaWxsPSIjRkZGRkZGIiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMSIvPgogICAgPHRleHQgeD0iMzY1LjYxIiB5PSIxOC40NSIgZm9udC1mYW1pbHk9IkNhbGlicmksIEFyaWFsLCBIZWx2ZXRpY2EsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTMuMzMiIHRleHQtYW5jaG9yPSJzdGFydCIgZmlsbD0iIzAwMDAwMCI+Tm88L3RleHQ+CiAgPC9nPgo8L3N2Zz4K"
       },
       "annotations": []
     },
@@ -1798,10 +1786,10 @@
         "mimetype": "image/svg+xml",
         "dpi": 96,
         "size": {
-          "width": 84.0,
-          "height": 1.0
+          "width": 145.0,
+          "height": 144.0
         },
-        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4NCIgaGVpZ2h0PSIwLjA3IiB2aWV3Qm94PSIwIDAgODQgMC4wNyI+CiAgPGc+CiAgICA8cGF0aCBkPSJNMCAwIEw4NCAwLjA3IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAwMDAiIHN0cm9rZS13aWR0aD0iMC4zMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNODQgMC4wNyBMNzggMi43NiBMNzggLTIuNjQgWiIgZmlsbD0iIzAwMDAwMCIgc3Ryb2tlPSJub25lIi8+CiAgPC9nPgo8L3N2Zz4K"
+        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDQuOTMiIGhlaWdodD0iMTQzLjc1IiB2aWV3Qm94PSIwIDAgMTQ0LjkzIDE0My43NSI+CiAgPGc+CiAgICA8cGF0aCBkPSJNMTQzLjU5IDE4LjU3IEwxNDMuNTkgMTQzLjc1IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAwMDAiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPC9nPgogIDxnPgogICAgPHBhdGggZD0iTTAgMCBMODQgMC4wNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwMDAwIiBzdHJva2Utd2lkdGg9IjAuMzMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogICAgPHBhdGggZD0iTTg0IDAuMDcgTDc4IDIuNzYgTDc4IC0yLjY0IFoiIGZpbGw9IiMwMDAwMDAiIHN0cm9rZT0ibm9uZSIvPgogIDwvZz4KPC9zdmc+Cg=="
       },
       "annotations": []
     },
@@ -1821,10 +1809,10 @@
         "mimetype": "image/svg+xml",
         "dpi": 96,
         "size": {
-          "width": 52.0,
-          "height": 36.0
+          "width": 443.0,
+          "height": 94.0
         },
-        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1Mi4yIiBoZWlnaHQ9IjM2IiB2aWV3Qm94PSIwIDAgNTIuMiAzNiI+CiAgPGc+CiAgICA8cGF0aCBkPSJNMCAwIEw1Mi4yIDAgTDUyLjIgMzYgTDAgMzYgWiIgZmlsbD0iI0ZGRkZGRiIgc3Ryb2tlPSIjRkZGRkZGIiBzdHJva2Utd2lkdGg9IjEiLz4KICAgIDx0ZXh0IHg9IjkuNiIgeT0iMTcuNDciIGZvbnQtZmFtaWx5PSJDYWxpYnJpLCBBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzLjMzIiB0ZXh0LWFuY2hvcj0ic3RhcnQiIGZpbGw9IiMwMDAwMDAiPlllczwvdGV4dD4KICA8L2c+Cjwvc3ZnPgo="
+        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NDIuOTciIGhlaWdodD0iOTQuMTIiIHZpZXdCb3g9IjAgMCA0NDIuOTcgOTQuMTIiPgogIDxnPgogICAgPHBhdGggZD0iTTM5MC43NyAwIEw0NDIuOTcgMCBMNDQyLjk3IDM2IEwzOTAuNzcgMzYgWiIgZmlsbD0iI0ZGRkZGRiIgc3Ryb2tlPSIjRkZGRkZGIiBzdHJva2Utd2lkdGg9IjEiLz4KICAgIDx0ZXh0IHg9IjQwMC4zNyIgeT0iMTcuNDciIGZvbnQtZmFtaWx5PSJDYWxpYnJpLCBBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzLjMzIiB0ZXh0LWFuY2hvcj0ic3RhcnQiIGZpbGw9IiMwMDAwMDAiPlllczwvdGV4dD4KICA8L2c+CiAgPGc+CiAgICA8cGF0aCBkPSJNNi42NyA5Ljg0IEw2LjY3IDk0LjEyIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAwMDAiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNNi42NyA5NC4xMiBMMy45NyA4OC4xMiBMOS4zNyA4OC4xMiBaIiBmaWxsPSIjMDAwMDAwIiBzdHJva2U9Im5vbmUiLz4KICA8L2c+Cjwvc3ZnPgo="
       },
       "annotations": []
     },
@@ -1909,6 +1897,15 @@
       "captions": [],
       "references": [],
       "footnotes": [],
+      "image": {
+        "mimetype": "image/svg+xml",
+        "dpi": 96,
+        "size": {
+          "width": 144.0,
+          "height": 12.0
+        },
+        "uri": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDQiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxNDQgMTIiPgogIDxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDcyIDUuNzMpIHNjYWxlKC0xIDEpIHRyYW5zbGF0ZSgtNzIgLTUuNzMpIj4KICAgIDxwYXRoIGQ9Ik0wIDUuNzMgTDE0NCA1LjczIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAwMDAiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8cGF0aCBkPSJNMTQ0IDUuNzMgTDEzOCA4LjQzIEwxMzggMy4wMyBaIiBmaWxsPSIjMDAwMDAwIiBzdHJva2U9Im5vbmUiLz4KICA8L2c+Cjwvc3ZnPgo="
+      },
       "annotations": []
     },
     {

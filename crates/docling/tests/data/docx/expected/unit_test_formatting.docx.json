@@ -135,9 +135,6 @@
         },
         {
           "$ref": "#/texts/16"
-        },
-        {
-          "$ref": "#/groups/3"
         }
       ],
       "content_layer": "body",
@@ -170,7 +167,7 @@
     {
       "self_ref": "#/groups/3",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/texts/16"
       },
       "children": [
         {
@@ -625,6 +622,9 @@
       "children": [
         {
           "$ref": "#/groups/2"
+        },
+        {
+          "$ref": "#/groups/3"
         }
       ],
       "content_layer": "body",

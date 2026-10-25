@@ -1986,6 +1986,18 @@ fn push_odf_list_item(
             });
             (false, None, format!("{item_marker} {text}"), dclx)
         }
+        // The model's marker is `item_marker` (`1.`), what the Markdown
+        // prints; DocLang's stays `{prefix}{n}{suffix}` (an OOo 1.x list has
+        // no suffix: `1`), carried in `dclx` when the two differ.
+        Some(m) if m != item_marker => {
+            let dclx = Some(ListItemDclx {
+                ordered: true,
+                marker: Some(m),
+                text: text.clone(),
+                runs: Vec::new(),
+            });
+            (ordered, Some(item_marker), text, dclx)
+        }
         marker => (ordered, marker, text, None),
     };
     doc.push(Node::ListItem {

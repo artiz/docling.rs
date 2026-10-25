@@ -981,7 +981,7 @@ fn handle_paragraph_inner(
 
     // Numbering can come from the paragraph (a direct `numId` of 0 turns it off
     // and overrides the style) or be inherited from the paragraph's style.
-    let numbering = if p.descendants().any(|n| n.has_tag_name("numPr")) {
+    let numbering = if own_num_pr(p).is_some() {
         num_pr(p)
     } else {
         style_numbering(style_id, ctx)
@@ -1154,10 +1154,11 @@ fn handle_paragraph_inner(
                 // docling-core's rules (`ensure_valid_list_item_marker` with
                 // `orig_list_item_marker_mode=AUTO`): a marker of Unicode
                 // digits and a dot (`１.`, docling#4336) is already valid and
-                // prints verbatim; one holding an ASCII letter or digit
-                // (`1.1.`, `a)`) is kept as a text prefix behind the bullet
-                // (`- 1.1. text`); one without any (`第九条`, `甲.`, `①`) is
-                // dropped and the item is a plain bullet.
+                // prints verbatim; one holding a letter or digit — any
+                // Unicode one since docling-core 2.100 (`1.1.`, `a)`, `第九条`,
+                // `甲.`, `①`) — is kept as a text prefix behind the bullet
+                // (`- 1.1. text`); one without any (`•`) is dropped and the
+                // item is a plain bullet.
                 let dclx = Some(ListItemDclx {
                     ordered: true,
                     marker: Some(marker.clone()),
@@ -1165,10 +1166,10 @@ fn handle_paragraph_inner(
                     runs: Vec::new(),
                 });
                 let already_valid = cached_regex!(r"^\d+\.$").is_match(&marker);
-                let ascii_alnum = marker.bytes().any(|b| b.is_ascii_alphanumeric());
+                let informative = marker.chars().any(char::is_alphanumeric);
                 let (ordered, marker, text) = if already_valid {
                     (true, Some(marker), text)
-                } else if ascii_alnum {
+                } else if informative {
                     (false, None, format!("{marker} {text}"))
                 } else {
                     (false, None, text)
@@ -1731,8 +1732,19 @@ pub(super) fn style_numbering(style_id: &str, ctx: &Ctx) -> Option<(String, i64)
 
 /// `(numId, ilvl)` for an element carrying explicit list numbering. A `numId`
 /// of 0 means "no list" in OOXML and yields `None`.
+/// The paragraph's own `w:pPr/w:numPr` — the only place it is valid
+/// (docling#4456): a descendant search reaches the paragraphs of a textbox
+/// anchored in this one and takes their numbering as its own, which made an
+/// empty list item and a stray list group after every numbered textbox.
+pub(super) fn own_num_pr<'a, 'i>(p: XmlNode<'a, 'i>) -> Option<XmlNode<'a, 'i>> {
+    p.children()
+        .find(|n| n.has_tag_name("pPr"))?
+        .children()
+        .find(|n| n.has_tag_name("numPr"))
+}
+
 pub(super) fn num_pr(p: XmlNode) -> Option<(String, i64)> {
-    let num_pr = p.descendants().find(|n| n.has_tag_name("numPr"))?;
+    let num_pr = own_num_pr(p)?;
     let num_id_node = num_pr.children().find(|n| n.has_tag_name("numId"))?;
     let num_id = attr(num_id_node, "val")?.to_string();
     if num_id == "0" {
