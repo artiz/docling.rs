@@ -38,7 +38,7 @@ use roxmltree::{Document, Node as XmlNode, NodeId};
 
 use super::docx::{
     attr, build_enum_marker, caption_numbering_marker, chart_rels, child_elements,
-    clean_checkbox_symbols, detect_code_language, footnote_texts, get_list_counter,
+    clean_checkbox_symbols, detect_code_language, footnote_texts, get_list_counter, grid_span,
     header_footer_parts, heading_labels, hyperlink_target, in_textbox, inherited_outline,
     is_code_by_font, is_code_style, is_title_style, numbered_heading_text, on_off,
     paragraph_anchors, part_rels, revision_of, row_cells, row_grid_offsets, row_kept,
@@ -1578,15 +1578,30 @@ impl Walker {
             .filter(|n| n.has_tag_name("tr") && row_kept(*n, ctx))
             .collect();
         let num_rows = rows.len();
-        // python-docx's `len(table.columns)` is the `w:tblGrid` column count;
-        // a table without a grid fails to load upstream and is dropped.
-        let Some(grid) = tbl.children().find(|n| n.has_tag_name("tblGrid")) else {
+        // python-docx's `len(table.columns)` is the `w:tblGrid` column count.
+        // Upstream drops a table without a grid (it fails to load) and cuts
+        // every cell past the declared grid (docling#5006); we keep them (a
+        // deliberate divergence, docs/MIGRATION.md): the grid is at least as wide as
+        // the widest row — `w:gridBefore` + the cells' `w:gridSpan`s +
+        // `w:gridAfter`, the flat walk's width — so nothing the document
+        // holds is lost, and a grid that covers every cell is upstream's.
+        let grid = tbl.children().find(|n| n.has_tag_name("tblGrid"));
+        let grid_cols = grid.map_or(0, |g| {
+            g.children().filter(|n| n.has_tag_name("gridCol")).count()
+        });
+        let row_cols = rows
+            .iter()
+            .map(|r| {
+                let (before, after) = row_grid_offsets(*r);
+                before + after + row_cells(*r).into_iter().map(grid_span).sum::<usize>()
+            })
+            .max()
+            .unwrap_or(0);
+        if grid.is_none() && row_cols == 0 {
+            // No grid and no cell: nothing to keep, dropped as upstream does.
             return Vec::new();
-        };
-        let num_cols = grid
-            .children()
-            .filter(|n| n.has_tag_name("gridCol"))
-            .count();
+        }
+        let num_cols = grid_cols.max(row_cols);
         if num_rows == 1 && num_cols == 1 {
             // A 1×1 table is furniture: its cell is walked as body content.
             if let Some(cell) = row_cells(rows[0]).first() {
