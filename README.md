@@ -259,22 +259,26 @@ OCR comparison: [`docs/MARKITDOWN.md`](./docs/MARKITDOWN.md#how-the-comparison-i
 converts PDFs and, through a PDF render, Office files to Markdown for LLMs
 with a layout model and OCR. Measured side by side — Marker 2.0.0
 (`marker-pdf[full]`, its CPU default `fast` mode, llama.cpp for its OCR) and
-docling.rs 2.46.2 (release build), 4 vCPU, no GPU — on this repository's test corpus
+docling.rs master after 2.51.3 (release build), 4 vCPU, no GPU, 2026-10-25 ³ —
+on this repository's test corpus
 ([`scripts/conformance/marker_compare.py`](./scripts/conformance/marker_compare.py)):
 
 | Corpus (files) | Marker, warm | docling.rs, warm | Cold CLI call, Marker / docling.rs | Peak RSS, Marker (client + servers) / docling.rs | Word F1 | Table-cell recall | Heading recall |
 |---|---|---|---|---|---|---|---|
-| PDF (18), full layout + tables + OCR | 1312 s | **41 s** | 22.0 s / **1.0 s** | 10.5 GB / **3.1 GB** | 0.93 / **0.997** | 0.41 / **0.94** | 0.66 / **0.91** |
-| PDF (18), text layer only (`--text-layer-only`) | 1312 s | **0.44 s** | — | — / 79 MB | 0.93 / **0.97** | 0.41 / 0.00 | 0.66 / 0.00 |
-| DOCX (38) | 654 s (1 failed) | **0.56 s** | 23.4 s / **15 ms** | 8.6 GB / **41 MB** | 0.89 / **1.00** | 0.57 / **1.00** | 0.73 / **1.00** |
-| PPTX (8) | 3.4 s (3 failed) | **0.02 s** | 21.8 s / **9 ms** | 2.6 GB / **20 MB** | 0.49 / **0.97** | 0.41 / **1.00** | 0.43 / **1.00** |
-| XLSX (14) | 164 s (2 failed) | **0.24 s** | 22.8 s / **10 ms** | 12.9 GB / **53 MB** | 0.64 / **0.95** | 0.57 / **0.98** | — ¹ |
-| HTML (32) | 1514 s | **0.06 s** | 29 min ² / **8 ms** | 8.8 GB / **21 MB** | 0.94 / **1.00** | 0.50 / **1.00** | 0.84 / **1.00** |
-| EPUB (1) | 10.5 s | **0.02 s** | 60.7 s / **13 ms** | 6.8 GB / **19 MB** | 0.98 / **1.00** | — | 1.00 / 1.00 |
+| PDF (18), full layout + tables + OCR | 1356 s | **64 s** | 32.6 s / **1.5 s** | 10.3 GB / **2.8 GB** | 0.93 / **0.997** | 0.41 / **0.94** | 0.66 / **0.91** |
+| PDF (18), text layer only (`--text-layer-only`) | 1356 s | **0.75 s** | — | — / 74 MB | 0.93 / **0.97** | 0.41 / 0.00 | 0.66 / 0.00 |
+| DOCX (38) | 707 s (1 failed) | **0.54 s** | 36.3 s / **23 ms** | 7.7 GB / **41 MB** | 0.89 / **1.00** | 0.57 / **1.00** | 0.73 / **1.00** |
+| PPTX (8) | 4.6 s (3 failed) | **0.03 s** | 33.7 s / **13 ms** | 2.7 GB / **20 MB** | 0.49 / **0.97** | 0.41 / **1.00** | 0.43 / **1.00** |
+| XLSX (14) | 379 s (2 failed) | **0.33 s** | 34.4 s / **12 ms** | 17.2 GB / **53 MB** | 0.66 / **0.95** | 0.58 / **0.98** | — ¹ |
+| HTML (32) ³ | 1514 s | **0.06 s** | 29 min ² / **8 ms** | 8.8 GB / **21 MB** | 0.94 / **1.00** | 0.50 / **1.00** | 0.84 / **1.00** |
+| EPUB (1) | 13.5 s | **0.08 s** | 69.9 s / **21 ms** | 6.0 GB / **19 MB** | 0.98 / **1.00** | — | 1.00 / 1.00 |
 
 A failed file scores 0. ¹ Only one XLSX groundtruth carries a heading.
 ² The median HTML file needs OCR in Marker: a cold call starts its llama.cpp
 server and loads the 1.2 GB OCR model first.
+³ The HTML row is the earlier run's (docling.rs 2.46.2, another host): its
+re-run here was still going after 90 minutes, Marker's OCR model looping on
+one render (5,000+ tokens for a single block).
 
 Accuracy is scored against Python docling's groundtruth, which favours
 docling.rs by construction; the timings and memory do not depend on it.

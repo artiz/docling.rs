@@ -32,7 +32,8 @@ output shapes below, not the same Markdown byte for byte.
 ## Why switch — measured side by side
 
 Marker 2.0.0 (`marker-pdf[full]`, CPU, its default `fast` mode, a llama.cpp
-build for its OCR server) vs docling.rs 2.46.2 on 4 vCPU, no GPU, with
+build for its OCR server) vs docling.rs master after 2.51.3 on 4 vCPU, no GPU
+(2026-10-25), with
 [`scripts/conformance/marker_compare.py`](../scripts/conformance/marker_compare.py);
 the per-format table is in the README's
 [Marker comparison](../README.md#conformance-with-marker), the scoring
@@ -42,11 +43,11 @@ and memory do not depend on it.
 
 | | Marker | docling.rs |
 |---|---|---|
-| PDF (18 files), warm, full pipeline | 1312 s (21.9 min) | **41 s** |
-| PDF, peak RSS (client + inference server) | 10.5 GB (1.2 + 9.3) | **3.1 GB** |
-| One CLI call, cold (median PDF) | 22.0 s | **1.0 s** |
+| PDF (18 files), warm, full pipeline | 1356 s (22.6 min) | **64 s** |
+| PDF, peak RSS (client + inference server) | 10.3 GB (1.3 + 9.0) | **2.8 GB** |
+| One CLI call, cold (median PDF) | 32.6 s | **1.5 s** |
 | PDF word F1 / table-cell recall / heading recall | 0.93 / 0.41 / 0.66 | **0.997 / 0.94 / 0.91** |
-| DOCX (38 files), warm | 654 s (1 of 38 failed) | **0.56 s** |
+| DOCX (38 files), warm | 707 s (1 of 38 failed) | **0.54 s** |
 | DOCX table-cell / heading recall | 0.57 / 0.73 | **1.00 / 1.00** |
 | Install | `marker-pdf` + PyTorch + Surya (~2 GB of wheels, models from Hugging Face on first run) | one wheel, ~90 MB; models ~700 MB once |
 | Runtime | Python, PyTorch, a resident Surya inference server per model | one process, ONNX Runtime; no server |
@@ -66,8 +67,10 @@ served by llama.cpp, which `pip install marker-pdf` does not install;
 without a `llama-server` binary every page its text check flags fails with
 a `SpawnError` — 4 of the 18 PDFs, 9 DOCX, 10 HTML files and the EPUB in
 this corpus. With it, those pages are where the minutes go: the four PDFs
-account for most of the 22 minutes, and a cold `marker_single` on an HTML
-file that needs OCR takes 29 minutes (server start, model load, OCR).
+account for most of the 23 minutes, and a cold `marker_single` on an HTML
+file that needs OCR took 29 minutes in the earlier run (server start, model
+load, OCR); on this host its OCR model looped on one HTML render for
+5,000+ tokens, and the HTML re-run was still going after 90 minutes.
 
 ## How the comparison is scored
 
