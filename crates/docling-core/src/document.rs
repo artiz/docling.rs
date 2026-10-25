@@ -1520,6 +1520,19 @@ impl DoclingDocument {
         crate::json::write_json(self, writer, true).map_err(std::io::Error::from)
     }
 
+    /// [`Self::write_json_pretty`] with `extras` appended to the top-level
+    /// object after `pages` — byte for byte `serde_json::to_writer_pretty`
+    /// of [`Self::export_to_json_value`] with each `value[key] = v` set (a
+    /// key the document JSON does not have), without building that `Value`:
+    /// docling-serve's response adds its `confidence` report this way.
+    pub fn write_json_pretty_with<W: std::io::Write>(
+        &self,
+        writer: W,
+        extras: &[(&str, &serde_json::Value)],
+    ) -> std::io::Result<()> {
+        crate::json::write_json_with(self, writer, true, extras).map_err(std::io::Error::from)
+    }
+
     /// Serialize to a complete LaTeX document — the Rust counterpart of
     /// docling-core's `LaTeXDocSerializer` with default parameters (docling
     /// 2.124's `--to latex`, #317). No trailing newline, like the upstream

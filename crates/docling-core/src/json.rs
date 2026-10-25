@@ -245,7 +245,27 @@ fn image_ref_json(img: &crate::PictureImage) -> Value {
 
 /// Build the docling-core JSON object for `doc`.
 pub fn to_json(doc: &DoclingDocument) -> Value {
-    build_json(doc, false)
+    build_parts(doc, false).into_value(None)
+}
+
+/// The key a table's `data` is replaced by in [`to_json_typed_tables`]'s
+/// `Value`: the index of its [`TableData`] beside it.
+pub(crate) const TYPED_TABLE: &str = "_typed_table";
+
+/// [`to_json`] for the serializers that walk the `Value` (HTML, Pandoc,
+/// WebVTT), with each table's `data` left typed (#875): the item carries
+/// `{"_typed_table": i}` and the cells are `tables[i]`, read through
+/// [`table_view`]. As a `Value` a table cost two maps of eleven owned keys
+/// per cell (its `table_cells` record and its `grid` copy) — 2.6 GB of an
+/// HTML export's peak on a 640,000-cell CSV. `note_keys` adds the Pandoc
+/// writer's keys ([`to_json_with_notes`]).
+pub(crate) fn to_json_typed_tables(
+    doc: &DoclingDocument,
+    note_keys: bool,
+) -> (Value, Vec<TableData>) {
+    let mut tables = Vec::new();
+    let value = build_parts(doc, note_keys).into_value(Some(&mut tables));
+    (value, tables)
 }
 
 /// [`to_json`] plus the note calls docling's model cannot express: a text
@@ -258,9 +278,10 @@ pub fn to_json(doc: &DoclingDocument) -> Value {
 /// a picture's image its displayed size `"_display": [width, height]` in
 /// inches (#834), and the document's `metadata` whether or not the JSON
 /// export was asked for it (#836). The Pandoc writer reads these; nothing
-/// is ever exported with them.
-pub(crate) fn to_json_with_notes(doc: &DoclingDocument) -> Value {
-    build_json(doc, true)
+/// is ever exported with them. The tables stay typed, as in
+/// [`to_json_typed_tables`].
+pub(crate) fn to_json_with_notes(doc: &DoclingDocument) -> (Value, Vec<TableData>) {
+    to_json_typed_tables(doc, true)
 }
 
 fn build_parts(doc: &DoclingDocument, note_keys: bool) -> Parts {
@@ -357,10 +378,6 @@ fn build_parts(doc: &DoclingDocument, note_keys: bool) -> Parts {
     }
 }
 
-fn build_json(doc: &DoclingDocument, note_keys: bool) -> Value {
-    build_parts(doc, note_keys).into_value()
-}
-
 /// The finished document, before it is a `Value`: one representation
 /// behind both [`to_json`] (a `Value`) and [`write_json`] (bytes, with no
 /// `Value` ever built — the text items stay compact [`Item`]s throughout).
@@ -386,7 +403,9 @@ struct Parts {
 }
 
 impl Parts {
-    fn into_value(self) -> Value {
+    /// The document `Value`; with `typed`, the tables' `data` goes there
+    /// instead (see [`to_json_typed_tables`]).
+    fn into_value(self, mut typed: Option<&mut Vec<TableData>>) -> Value {
         // Moved in, never through `json!`, which would deep-copy each array.
         let mut out = serde_json::Map::with_capacity(15);
         out.insert("schema_name".into(), "DoclingDocument".into());
@@ -424,7 +443,22 @@ impl Parts {
         out.insert("pictures".into(), Value::Array(self.pictures));
         out.insert(
             "tables".into(),
-            Value::Array(self.tables.into_iter().map(TableItem::into_value).collect()),
+            Value::Array(
+                self.tables
+                    .into_iter()
+                    .map(|t| match typed.as_deref_mut() {
+                        Some(store) => {
+                            let TableItem { mut item, data } = t;
+                            if let Some(slot) = item.get_mut("data") {
+                                *slot = object([(TYPED_TABLE, store.len().into())]);
+                            }
+                            store.push(data);
+                            item
+                        }
+                        None => t.into_value(),
+                    })
+                    .collect(),
+            ),
         );
         out.insert("key_value_items".into(), Value::Array(self.key_value_items));
         out.insert("form_items".into(), Value::Array(Vec::new()));
@@ -437,32 +471,42 @@ impl Parts {
     }
 }
 
-impl serde::Serialize for Parts {
+/// [`Parts`] with `extras` — top-level keys a caller appends after
+/// `pages`, as inserting them into [`to_json`]'s `Value` would.
+struct PartsWith<'a>(&'a Parts, &'a [(&'a str, &'a Value)]);
+
+impl serde::Serialize for PartsWith<'_> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
+        let PartsWith(parts, extras) = *self;
         let mut m = s.serialize_map(Some(
-            13 + 2 * usize::from(self.fields.is_some()) + usize::from(self.metadata.is_some()),
+            13 + 2 * usize::from(parts.fields.is_some())
+                + usize::from(parts.metadata.is_some())
+                + extras.len(),
         ))?;
         m.serialize_entry("schema_name", "DoclingDocument")?;
         m.serialize_entry("version", SCHEMA_VERSION)?;
-        m.serialize_entry("name", &self.name)?;
-        m.serialize_entry("origin", &self.origin)?;
-        if let Some(meta) = &self.metadata {
+        m.serialize_entry("name", &parts.name)?;
+        m.serialize_entry("origin", &parts.origin)?;
+        if let Some(meta) = &parts.metadata {
             m.serialize_entry("metadata", meta)?;
         }
-        m.serialize_entry("furniture", &self.furniture)?;
-        m.serialize_entry("body", &Body(&self.body))?;
-        m.serialize_entry("groups", &self.groups)?;
-        m.serialize_entry("texts", &Texts(&self.texts))?;
-        m.serialize_entry("pictures", &self.pictures)?;
-        m.serialize_entry("tables", &self.tables)?;
-        m.serialize_entry("key_value_items", &self.key_value_items)?;
+        m.serialize_entry("furniture", &parts.furniture)?;
+        m.serialize_entry("body", &Body(&parts.body))?;
+        m.serialize_entry("groups", &parts.groups)?;
+        m.serialize_entry("texts", &Texts(&parts.texts))?;
+        m.serialize_entry("pictures", &parts.pictures)?;
+        m.serialize_entry("tables", &parts.tables)?;
+        m.serialize_entry("key_value_items", &parts.key_value_items)?;
         m.serialize_entry("form_items", &[(); 0])?;
-        if let Some((regions, items)) = &self.fields {
+        if let Some((regions, items)) = &parts.fields {
             m.serialize_entry("field_regions", regions)?;
             m.serialize_entry("field_items", items)?;
         }
-        m.serialize_entry("pages", &self.pages)?;
+        m.serialize_entry("pages", &parts.pages)?;
+        for (k, v) in extras {
+            m.serialize_entry(k, v)?;
+        }
         m.end()
     }
 }
@@ -494,8 +538,21 @@ pub fn write_json<W: std::io::Write>(
     w: W,
     pretty: bool,
 ) -> serde_json::Result<()> {
+    write_json_with(doc, w, pretty, &[])
+}
+
+/// [`write_json`] with `extras` appended after `pages` — byte for byte
+/// serializing [`to_json`]'s `Value` with each `value[k] = v` inserted (the
+/// keys must be new to it, as docling-serve's `confidence` is).
+pub fn write_json_with<W: std::io::Write>(
+    doc: &DoclingDocument,
+    w: W,
+    pretty: bool,
+    extras: &[(&str, &Value)],
+) -> serde_json::Result<()> {
     use serde::Serialize;
     let parts = build_parts(doc, false);
+    let parts = PartsWith(&parts, extras);
     if pretty {
         parts.serialize(&mut serde_json::Serializer::pretty(w))
     } else {
@@ -584,7 +641,7 @@ fn picture_meta(
 /// slot the cell covers. As maps a short numeric CSV cell cost ~7.5 KB of
 /// export peak; typed it is this struct plus its text.
 #[derive(Clone)]
-struct GridCell {
+pub(crate) struct GridCell {
     row_span: usize,
     col_span: usize,
     start_row: usize,
@@ -716,7 +773,7 @@ enum GridSlot {
 /// typed (#875), each cell stored once and the grid as slots pointing at
 /// it, so a table costs its cells rather than a map per cell and per slot.
 /// Shared by table items and a chart picture's `meta.tabular_chart.chart_data`.
-struct TableData {
+pub(crate) struct TableData {
     cells: Vec<GridCell>,
     num_rows: usize,
     num_cols: usize,
@@ -740,7 +797,12 @@ impl TableData {
 
     fn into_value(self) -> Value {
         let cells = Value::Array(self.cells.iter().map(|c| c.to_value(true)).collect());
-        let mut grid = Vec::with_capacity(self.num_rows);
+        let mut data = serde_json::Map::with_capacity(5);
+        data.insert("table_cells".into(), cells);
+        data.insert("num_rows".into(), self.num_rows.into());
+        data.insert("num_cols".into(), self.num_cols.into());
+        data.insert("orientation".into(), "rot_0".into());
+        let mut rows = Vec::with_capacity(self.num_rows);
         for r in 0..self.num_rows {
             let mut row = Vec::with_capacity(self.num_cols);
             for c in 0..self.num_cols {
@@ -750,15 +812,10 @@ impl TableData {
                     None => Value::Null,
                 });
             }
-            grid.push(Value::Array(row));
+            rows.push(Value::Array(row));
         }
-        object([
-            ("table_cells", cells),
-            ("num_rows", self.num_rows.into()),
-            ("num_cols", self.num_cols.into()),
-            ("orientation", "rot_0".into()),
-            ("grid", Value::Array(grid)),
-        ])
+        data.insert("grid".into(), Value::Array(rows));
+        Value::Object(data)
     }
 
     /// docling's page clamp ([`clamp_boxes_to_pages`]) on every cell box —
@@ -820,6 +877,92 @@ impl serde::Serialize for TableData {
         m.serialize_entry("orientation", "rot_0")?;
         m.serialize_entry("grid", &Grid(self))?;
         m.end()
+    }
+}
+
+/// A table cell as the `Value`-walking serializers read it — from a typed
+/// [`GridCell`] or from a `table_cells` entry of docling JSON (a document
+/// Python docling wrote, read by [`crate::pandoc::from_docling_json`]): a
+/// missing field reads as `0` / `""` / `false`, like the `Value` getters
+/// those serializers used.
+pub(crate) struct CellView<'a> {
+    pub start_row: usize,
+    pub end_row: usize,
+    pub start_col: usize,
+    pub end_col: usize,
+    pub row_span: usize,
+    pub col_span: usize,
+    pub text: &'a str,
+    pub column_header: bool,
+    pub row_header: bool,
+    pub row_section: bool,
+    /// A rich cell's `ref.$ref`.
+    pub cell_ref: Option<&'a str>,
+}
+
+/// A table's `data` as [`CellView`]s: `num_rows`, `num_cols` and the
+/// `table_cells` (the derived `grid` is not read).
+pub(crate) struct TableView<'a> {
+    pub num_rows: usize,
+    pub num_cols: usize,
+    pub cells: Vec<CellView<'a>>,
+}
+
+/// The [`TableView`] of a table item's `data`: the typed table it names
+/// ([`TYPED_TABLE`], an index into `typed`), or the JSON's own fields.
+pub(crate) fn table_view<'a>(data: &'a Value, typed: &'a [TableData]) -> TableView<'a> {
+    let ref_of = |r: Option<&'a Value>| r.and_then(|r| r.get("$ref")).and_then(Value::as_str);
+    if let Some(t) = data
+        .get(TYPED_TABLE)
+        .and_then(Value::as_u64)
+        .and_then(|i| typed.get(i as usize))
+    {
+        return TableView {
+            num_rows: t.num_rows,
+            num_cols: t.num_cols,
+            cells: t
+                .cells
+                .iter()
+                .map(|c| CellView {
+                    start_row: c.start_row,
+                    end_row: c.end_row,
+                    start_col: c.start_col,
+                    end_col: c.end_col,
+                    row_span: c.row_span,
+                    col_span: c.col_span,
+                    text: &c.text,
+                    column_header: c.column_header,
+                    row_header: c.row_header,
+                    row_section: c.row_section,
+                    cell_ref: ref_of(c.cell_ref.as_deref()),
+                })
+                .collect(),
+        };
+    }
+    let num = |v: &Value, k: &str| v.get(k).and_then(Value::as_u64).unwrap_or(0) as usize;
+    let flag = |v: &Value, k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
+    TableView {
+        num_rows: num(data, "num_rows"),
+        num_cols: num(data, "num_cols"),
+        cells: data
+            .get("table_cells")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|c| CellView {
+                start_row: num(c, "start_row_offset_idx"),
+                end_row: num(c, "end_row_offset_idx"),
+                start_col: num(c, "start_col_offset_idx"),
+                end_col: num(c, "end_col_offset_idx"),
+                row_span: num(c, "row_span"),
+                col_span: num(c, "col_span"),
+                text: c.get("text").and_then(Value::as_str).unwrap_or(""),
+                column_header: flag(c, "column_header"),
+                row_header: flag(c, "row_header"),
+                row_section: flag(c, "row_section"),
+                cell_ref: ref_of(c.get("ref")),
+            })
+            .collect(),
     }
 }
 

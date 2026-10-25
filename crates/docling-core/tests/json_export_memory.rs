@@ -343,3 +343,20 @@ fn write_json_keeps_table_cells_typed() {
         "write_json peaked at {peak} B; the Value it avoids is {value_size} B"
     );
 }
+
+/// docling-serve appends its confidence report to the document JSON: the
+/// typed writer with `extras` is byte for byte the `Value` with the key set.
+#[test]
+fn write_json_pretty_with_appends_extras_like_the_value() {
+    let doc = long_document(2, 3);
+    let report = serde_json::json!({ "mean_grade": "good", "pages": { "1": 0.9 } });
+    let mut value = doc.export_to_json_value();
+    value["confidence"] = report.clone();
+    let mut out = Vec::new();
+    doc.write_json_pretty_with(&mut out, &[("confidence", &report)])
+        .unwrap();
+    assert!(out == serde_json::to_vec_pretty(&value).unwrap());
+    let mut plain = Vec::new();
+    doc.write_json_pretty_with(&mut plain, &[]).unwrap();
+    assert_eq!(String::from_utf8(plain).unwrap(), doc.export_to_json());
+}

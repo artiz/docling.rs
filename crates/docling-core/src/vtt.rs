@@ -49,7 +49,8 @@ impl Default for VttExportOptions {
 }
 
 pub(crate) fn to_vtt(doc: &DoclingDocument, options: &VttExportOptions) -> String {
-    let json = crate::json::to_json(doc);
+    // Tables stay typed (#875): cues never come from them.
+    let (json, _tables) = crate::json::to_json_typed_tables(doc, false);
     let mut parts = Vec::new();
     let mut inline_done = std::collections::HashSet::new();
     walk(&json, &json["body"], &mut parts, &mut inline_done);

@@ -2203,17 +2203,24 @@ fn render_stored(
             body: markdown_string(state, document, image_mode, options).into_bytes(),
         },
         "json" => {
-            let mut value = document.export_to_json_value();
-            if let Some(report) = &document.confidence {
-                value["confidence"] = report.to_json();
-            }
+            // Written straight from the typed export with the confidence
+            // report appended (#875): `export_to_json_value` would hold the
+            // whole document as a `Value` — ~3.4 KB per table cell — beside
+            // the bytes.
+            let report = document.confidence.as_ref().map(|r| r.to_json());
+            let extras: Vec<(&str, &serde_json::Value)> =
+                report.iter().map(|r| ("confidence", r)).collect();
+            let mut body = Vec::new();
+            document
+                .write_json_pretty_with(&mut body, &extras)
+                .expect("document JSON serializes");
             StoredResponse {
                 errors: Vec::new(),
                 content_type: "application/json",
                 disposition: None,
                 confidence,
                 redaction: None,
-                body: serde_json::to_vec_pretty(&value).expect("document JSON serializes"),
+                body,
             }
         }
         "chunks" => {
