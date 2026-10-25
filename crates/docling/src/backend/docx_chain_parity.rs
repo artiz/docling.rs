@@ -469,6 +469,50 @@ fn inline_custom_xml_is_in_both_chains() {
     );
 }
 
+/// A table without `w:tblGrid`, and one whose grid declares fewer columns
+/// than its rows hold: upstream drops the first and cuts the second at the
+/// grid (python-docx reads the column count from the grid); both chains
+/// keep every cell — nothing the document holds is lost.
+#[test]
+fn tables_outside_their_grid_are_in_both_chains() {
+    let row = |a: &str, b: &str, c: &str| {
+        format!(
+            "<w:tr><w:tc>{}</w:tc><w:tc>{}</w:tc><w:tc>{}</w:tc></w:tr>",
+            para(&run(a)),
+            para(&run(b)),
+            para(&run(c))
+        )
+    };
+    for (name, grid) in [
+        ("no grid", String::new()),
+        (
+            "short grid",
+            "<w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid>".to_string(),
+        ),
+    ] {
+        let body = format!(
+            "<w:tbl>{grid}{}{}</w:tbl>",
+            row("ant", "bee", "cat"),
+            row("dog", "eel", "fox")
+        );
+        let (flat_only, tree_only) = chain_divergence(docx_with_body(&body), name);
+        assert!(
+            flat_only.is_empty() && tree_only.is_empty(),
+            "{name}: {flat_only:?} / {tree_only:?}"
+        );
+        let src = SourceDocument::from_bytes(name, InputFormat::Docx, docx_with_body(&body));
+        let doc = super::DocxBackend::default().convert(&src).unwrap();
+        let json = doc.export_to_json_value();
+        let data = &json["tables"][0]["data"];
+        assert_eq!(data["num_cols"], 3, "{name}");
+        assert_eq!(
+            data["table_cells"].as_array().map(Vec::len),
+            Some(6),
+            "{name}"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The fixture corpus.
 
