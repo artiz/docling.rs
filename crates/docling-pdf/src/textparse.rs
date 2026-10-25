@@ -3001,6 +3001,8 @@ mod page_box_frame {
 
     #[test]
     fn leading_comment_content_stream_does_not_hide_later_text() {
+        // The comment has its own EOL; lopdf inserts another while assembling
+        // the streams, which is the boundary its 0.44 parser stopped at.
         let (_, glyphs) = only_page(&pdf_content_streams(&[
             b"% CANON_PFINF_TYPE2_TEXTOFF\n",
             b"BT /F1 14 Tf 40 300 Td (Second stream text) Tj ET",
