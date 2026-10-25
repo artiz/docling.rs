@@ -471,7 +471,7 @@ fn inline_custom_xml_is_in_both_chains() {
 
 /// A table without `w:tblGrid`, and one whose grid declares fewer columns
 /// than its rows hold: upstream drops the first and cuts the second at the
-/// grid (python-docx reads the column count from the grid); both chains
+/// grid (python-docx reads the column count from the grid, docling#5006); both chains
 /// keep every cell — nothing the document holds is lost.
 #[test]
 fn tables_outside_their_grid_are_in_both_chains() {

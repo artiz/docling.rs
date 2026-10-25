@@ -1580,8 +1580,8 @@ impl Walker {
         let num_rows = rows.len();
         // python-docx's `len(table.columns)` is the `w:tblGrid` column count.
         // Upstream drops a table without a grid (it fails to load) and cuts
-        // every cell past the declared grid; we keep them (a deliberate
-        // divergence, docs/MIGRATION.md): the grid is at least as wide as
+        // every cell past the declared grid (docling#5006); we keep them (a
+        // deliberate divergence, docs/MIGRATION.md): the grid is at least as wide as
         // the widest row — `w:gridBefore` + the cells' `w:gridSpan`s +
         // `w:gridAfter`, the flat walk's width — so nothing the document
         // holds is lost, and a grid that covers every cell is upstream's.
