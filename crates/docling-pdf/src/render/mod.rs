@@ -444,6 +444,23 @@ mod synthetic {
         )
     }
 
+    fn page_with_contents(contents: &[&[u8]]) -> Vec<u8> {
+        let mut doc = Document::with_version("1.5");
+        let streams = contents
+            .iter()
+            .map(|content| {
+                Object::Reference(doc.add_object(Stream::new(Dictionary::new(), content.to_vec())))
+            })
+            .collect::<Vec<_>>();
+        synth(
+            &mut doc,
+            [0.0, 0.0, 200.0, 100.0],
+            dictionary! { "Contents" => streams },
+            Dictionary::new(),
+            "",
+        )
+    }
+
     fn render(bytes: &[u8]) -> RgbImage {
         let meta = PdfMeta::open(bytes).expect("object model");
         render_page(&meta, 0, 1.0).expect("render")
@@ -486,6 +503,16 @@ mod synthetic {
         assert_eq!(px(&img, 80, 55), WHITE);
         assert_eq!(px(&img, 105, 75), WHITE);
         assert_eq!(px(&img, 5, 5), WHITE);
+    }
+
+    #[test]
+    fn leading_comment_content_stream_does_not_hide_later_streams() {
+        let bytes = page_with_contents(&[
+            b"% CANON_PFINF_TYPE2_TEXTOFF\n",
+            b"1 0 0 rg 60 10 40 30 re f",
+        ]);
+        let img = render(&bytes);
+        assert_eq!(px(&img, 80, 75), RED);
     }
 
     #[test]

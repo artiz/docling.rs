@@ -3044,10 +3044,9 @@ mod xref_repair {
     }
 
     /// A 19-byte cross-reference entry (a bare LF where the spec wants a
-    /// two-byte EOL) makes lopdf reject the whole file, so a readable text
-    /// layer used to look exactly like a scan — in the browser that meant ten
-    /// seconds of OCR for nothing. The repair must recover *the same* parse the
-    /// well-formed file gives.
+    /// two-byte EOL) used to make lopdf reject the whole file. Lopdf 0.45
+    /// accepts it directly; our fallback repair must continue to produce the
+    /// same parse as the well-formed file.
     #[test]
     fn short_xref_entries_still_parse() {
         let good = pdf_with_xref(true);
@@ -3061,8 +3060,8 @@ mod xref_repair {
             "the control file must load unaided"
         );
         assert!(
-            lopdf::Document::load_mem(&broken).is_err(),
-            "lopdf rejects 19-byte entries — if this ever passes, drop the repair"
+            lopdf::Document::load_mem(&broken).is_ok(),
+            "lopdf 0.45 should accept 19-byte entries"
         );
 
         let cells = |b: &[u8]| -> Vec<String> {
@@ -3083,10 +3082,9 @@ mod xref_repair {
         );
     }
 
-    /// The same generator overstates `/Length`, so lopdf reads past the data,
-    /// misses `endstream` and drops the stream — the object comes back as a
-    /// bare dictionary and the page has no content at all. Trust `endstream`
-    /// instead, and do it without moving a single byte.
+    /// The same generator overstates `/Length`. Lopdf 0.45 recovers at
+    /// `endstream`; keep matching the well-formed document when this defect is
+    /// encountered.
     #[test]
     fn overstated_stream_length_still_yields_content() {
         let good = pdf_with_xref(true);
@@ -3110,13 +3108,13 @@ mod xref_repair {
             b
         };
         assert_eq!(broken.len(), good.len(), "the defect must not move bytes");
-        // lopdf alone loses the stream: the page parses but carries no content.
+        // Lopdf 0.45 keeps the stream despite the overstated length.
         let raw = lopdf::Document::load_mem(&broken).expect("still loads");
         assert!(
             raw.get_pages()
                 .into_values()
-                .all(|p| raw.get_page_content(p).is_empty()),
-            "lopdf should drop the stream — if it stops, drop this repair"
+                .any(|p| !raw.get_page_content(p).is_empty()),
+            "lopdf 0.45 should recover content at endstream"
         );
         // Ours recovers the same text the well-formed file gives.
         let text = |b: &[u8]| -> Vec<String> {
