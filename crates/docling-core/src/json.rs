@@ -147,20 +147,24 @@ fn clamp_boxes_to_pages(b: &mut Builder) {
     for item in &mut b.texts {
         match item {
             Item::Text(t) => t.prov.clamp(&sizes),
-            Item::Json(v) => clamp_item(v, &sizes),
+            Item::Json(v) => {
+                clamp_item(v, &sizes);
+            }
         }
     }
-    for item in b
-        .pictures
-        .iter_mut()
-        .chain(b.tables.iter_mut())
-        .chain(b.key_value_items.iter_mut())
-    {
+    for item in b.pictures.iter_mut().chain(b.key_value_items.iter_mut()) {
         clamp_item(item, &sizes);
+    }
+    for t in &mut b.tables {
+        if let Some(size) = clamp_item(&mut t.item, &sizes) {
+            t.data.clamp(size);
+        }
     }
 }
 
-fn clamp_item(item: &mut Value, sizes: &PageSizes) {
+/// Clamp `item`'s `prov` boxes; returns the size of the page when the item
+/// sits on exactly one known page — a table's cells are clamped to it.
+fn clamp_item(item: &mut Value, sizes: &PageSizes) -> Option<(f64, f64)> {
     let size = |page_no: &Value| -> Option<(f64, f64)> {
         let n = page_no.as_u64()? as usize;
         sizes.get(&n).copied()
@@ -192,25 +196,7 @@ fn clamp_item(item: &mut Value, sizes: &PageSizes) {
             table_page = Some(size(&json!(only)));
         }
     }
-    // A table's cells (and the `grid` docling derives from them).
-    if let (Some(Some(sz)), Some(data)) = (table_page, item.get_mut("data")) {
-        for key in ["table_cells", "grid"] {
-            let Some(rows) = data.get_mut(key).and_then(Value::as_array_mut) else {
-                continue;
-            };
-            for entry in rows.iter_mut() {
-                let cells: Vec<&mut Value> = match entry {
-                    Value::Array(row) => row.iter_mut().collect(),
-                    other => vec![other],
-                };
-                for cell in cells {
-                    if let Some(bbox) = cell.get_mut("bbox").filter(|b| b.is_object()) {
-                        clamp_bbox(bbox, sz);
-                    }
-                }
-            }
-        }
-    }
+    table_page.flatten()
 }
 
 /// docling-core's `Formatting` model, every field written.
@@ -391,7 +377,7 @@ struct Parts {
     groups: Vec<Value>,
     texts: Vec<Item>,
     pictures: Vec<Value>,
-    tables: Vec<Value>,
+    tables: Vec<TableItem>,
     key_value_items: Vec<Value>,
     /// `field_regions` and `field_items`, present only for a document with
     /// form fields (non-form documents' JSON has neither key).
@@ -436,7 +422,10 @@ impl Parts {
             ),
         );
         out.insert("pictures".into(), Value::Array(self.pictures));
-        out.insert("tables".into(), Value::Array(self.tables));
+        out.insert(
+            "tables".into(),
+            Value::Array(self.tables.into_iter().map(TableItem::into_value).collect()),
+        );
         out.insert("key_value_items".into(), Value::Array(self.key_value_items));
         out.insert("form_items".into(), Value::Array(Vec::new()));
         if let Some((regions, items)) = self.fields {
@@ -589,70 +578,306 @@ fn picture_meta(
     Some(Value::Object(meta))
 }
 
-/// docling's `TableData` for a table: `table_cells`, `num_rows`/`num_cols`
-/// and the `grid` that repeats each cell at every position it covers. Shared
-/// by table items and a chart picture's `meta.tabular_chart.chart_data`.
-/// One table cell as docling's `TableCell` JSON: the eleven fields in
-/// pydantic order, `bbox` appended when the cell carries one. Built straight
-/// into a `Map` sized for the entries — the table grid repeats every cell
-/// object once per spanned slot, so on a table-heavy document (a patent's
-/// claims tables, an EBCDIC dump) this constructor and its clones *are* the
-/// JSON export's cost; the `json!` macro built the same object through a
-/// growing map with a rehash per doubling.
-#[allow(clippy::too_many_arguments)]
-fn cell_value(
+/// One table cell of docling's `TableCell`, typed (#875): the table's cells
+/// stay these until the export writes them, rather than a `serde_json` map
+/// of eleven owned keys each — and a second copy of that map in every grid
+/// slot the cell covers. As maps a short numeric CSV cell cost ~7.5 KB of
+/// export peak; typed it is this struct plus its text.
+#[derive(Clone)]
+struct GridCell {
     row_span: usize,
     col_span: usize,
     start_row: usize,
     end_row: usize,
     start_col: usize,
     end_col: usize,
-    text: String,
+    text: Box<str>,
     column_header: bool,
     row_header: bool,
     row_section: bool,
-    bbox: Option<[f32; 4]>,
-) -> Value {
-    let mut m = serde_json::Map::with_capacity(12);
-    m.insert("row_span".into(), row_span.into());
-    m.insert("col_span".into(), col_span.into());
-    m.insert("start_row_offset_idx".into(), start_row.into());
-    m.insert("end_row_offset_idx".into(), end_row.into());
-    m.insert("start_col_offset_idx".into(), start_col.into());
-    m.insert("end_col_offset_idx".into(), end_col.into());
-    m.insert("text".into(), Value::String(text));
-    m.insert("column_header".into(), column_header.into());
-    m.insert("row_header".into(), row_header.into());
-    m.insert("row_section".into(), row_section.into());
-    m.insert("fillable".into(), false.into());
-    if let Some(b) = bbox {
-        m.insert(
-            "bbox".into(),
-            json!({
-                "l": b[0], "t": b[1], "r": b[2], "b": b[3],
-                "coord_origin": "TOPLEFT",
-            }),
-        );
+    /// `l t r b`, top-left origin — the backend's `f32` box widened to the
+    /// `f64` a `Value` would hold it as, so both paths print the same digits.
+    bbox: Option<[f64; 4]>,
+    /// A `RichTableCell`'s `ref` to the group holding its content — written
+    /// on `table_cells` only; the `grid` shows the plain cell.
+    cell_ref: Option<Box<Value>>,
+}
+
+impl GridCell {
+    /// docling's empty filler for a grid position no cell covers.
+    fn filler(r: usize, c: usize) -> Self {
+        GridCell {
+            row_span: 1,
+            col_span: 1,
+            start_row: r,
+            end_row: r + 1,
+            start_col: c,
+            end_col: c + 1,
+            text: "".into(),
+            column_header: false,
+            row_header: false,
+            row_section: false,
+            bbox: None,
+            cell_ref: None,
+        }
     }
-    Value::Object(m)
+
+    /// The cell as a `Value`: the eleven fields in pydantic order, `bbox`
+    /// appended when the cell carries one, then the rich cell's `ref`
+    /// (`with_ref`, the `table_cells` copy). Built straight into a `Map`
+    /// sized for its entries rather than through `json!`'s doubling map.
+    fn to_value(&self, with_ref: bool) -> Value {
+        let mut m = serde_json::Map::with_capacity(13);
+        m.insert("row_span".into(), self.row_span.into());
+        m.insert("col_span".into(), self.col_span.into());
+        m.insert("start_row_offset_idx".into(), self.start_row.into());
+        m.insert("end_row_offset_idx".into(), self.end_row.into());
+        m.insert("start_col_offset_idx".into(), self.start_col.into());
+        m.insert("end_col_offset_idx".into(), self.end_col.into());
+        m.insert("text".into(), Value::String(self.text.to_string()));
+        m.insert("column_header".into(), self.column_header.into());
+        m.insert("row_header".into(), self.row_header.into());
+        m.insert("row_section".into(), self.row_section.into());
+        m.insert("fillable".into(), false.into());
+        if let Some([l, t, r, b]) = self.bbox {
+            m.insert(
+                "bbox".into(),
+                object([
+                    ("l", l.into()),
+                    ("t", t.into()),
+                    ("r", r.into()),
+                    ("b", b.into()),
+                    ("coord_origin", "TOPLEFT".into()),
+                ]),
+            );
+        }
+        if let Some(r) = self.cell_ref.as_deref().filter(|_| with_ref) {
+            m.insert("ref".into(), r.clone());
+        }
+        Value::Object(m)
+    }
+}
+
+/// [`GridCell::to_value`] written in place: the same keys in the same order.
+struct CellOut<'a>(&'a GridCell, bool);
+
+impl serde::Serialize for CellOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let CellOut(c, with_ref) = *self;
+        let cell_ref = c.cell_ref.as_deref().filter(|_| with_ref);
+        let mut m = s.serialize_map(Some(
+            11 + usize::from(c.bbox.is_some()) + usize::from(cell_ref.is_some()),
+        ))?;
+        m.serialize_entry("row_span", &c.row_span)?;
+        m.serialize_entry("col_span", &c.col_span)?;
+        m.serialize_entry("start_row_offset_idx", &c.start_row)?;
+        m.serialize_entry("end_row_offset_idx", &c.end_row)?;
+        m.serialize_entry("start_col_offset_idx", &c.start_col)?;
+        m.serialize_entry("end_col_offset_idx", &c.end_col)?;
+        m.serialize_entry("text", &c.text)?;
+        m.serialize_entry("column_header", &c.column_header)?;
+        m.serialize_entry("row_header", &c.row_header)?;
+        m.serialize_entry("row_section", &c.row_section)?;
+        m.serialize_entry("fillable", &false)?;
+        if let Some(b) = c.bbox {
+            struct Bbox([f64; 4]);
+            impl serde::Serialize for Bbox {
+                fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                    let mut m = s.serialize_map(Some(5))?;
+                    for (k, v) in ["l", "t", "r", "b"].iter().zip(self.0) {
+                        m.serialize_entry(k, &v)?;
+                    }
+                    m.serialize_entry("coord_origin", "TOPLEFT")?;
+                    m.end()
+                }
+            }
+            m.serialize_entry("bbox", &Bbox(b))?;
+        }
+        if let Some(r) = cell_ref {
+            m.serialize_entry("ref", r)?;
+        }
+        m.end()
+    }
+}
+
+/// What a `grid` position shows: the cell covering it (an index into
+/// [`TableData::cells`] — docling repeats the whole cell at every position
+/// it spans), docling's empty filler cell, or `null`.
+#[derive(Clone, Copy)]
+enum GridSlot {
+    Cell(usize),
+    Filler,
+    Null,
+}
+
+/// docling's `TableData` for a table: `table_cells`, `num_rows`/`num_cols`
+/// and the `grid` that repeats each cell at every position it covers —
+/// typed (#875), each cell stored once and the grid as slots pointing at
+/// it, so a table costs its cells rather than a map per cell and per slot.
+/// Shared by table items and a chart picture's `meta.tabular_chart.chart_data`.
+struct TableData {
+    cells: Vec<GridCell>,
+    num_rows: usize,
+    num_cols: usize,
+    /// Row-major, `num_rows × num_cols`.
+    grid: Vec<GridSlot>,
+}
+
+impl TableData {
+    fn slot_cell(
+        &self,
+        slot: GridSlot,
+        r: usize,
+        c: usize,
+    ) -> Option<std::borrow::Cow<'_, GridCell>> {
+        match slot {
+            GridSlot::Cell(i) => Some(std::borrow::Cow::Borrowed(&self.cells[i])),
+            GridSlot::Filler => Some(std::borrow::Cow::Owned(GridCell::filler(r, c))),
+            GridSlot::Null => None,
+        }
+    }
+
+    fn into_value(self) -> Value {
+        let cells = Value::Array(self.cells.iter().map(|c| c.to_value(true)).collect());
+        let mut grid = Vec::with_capacity(self.num_rows);
+        for r in 0..self.num_rows {
+            let mut row = Vec::with_capacity(self.num_cols);
+            for c in 0..self.num_cols {
+                let slot = self.grid[r * self.num_cols + c];
+                row.push(match self.slot_cell(slot, r, c) {
+                    Some(cell) => cell.to_value(false),
+                    None => Value::Null,
+                });
+            }
+            grid.push(Value::Array(row));
+        }
+        object([
+            ("table_cells", cells),
+            ("num_rows", self.num_rows.into()),
+            ("num_cols", self.num_cols.into()),
+            ("orientation", "rot_0".into()),
+            ("grid", Value::Array(grid)),
+        ])
+    }
+
+    /// docling's page clamp ([`clamp_boxes_to_pages`]) on every cell box —
+    /// once per cell: the grid's copies are the same cells.
+    fn clamp(&mut self, (w, h): (f64, f64)) {
+        for bbox in self.cells.iter_mut().filter_map(|c| c.bbox.as_mut()) {
+            for (v, hi) in bbox.iter_mut().zip([w, h, w, h]) {
+                // A non-finite coordinate is `null` in the JSON, which the
+                // clamp leaves alone.
+                if v.is_finite() {
+                    *v = round2(v.clamp(0.0, hi.max(0.0)));
+                }
+            }
+        }
+    }
+}
+
+impl serde::Serialize for TableData {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        struct Cells<'a>(&'a [GridCell]);
+        impl serde::Serialize for Cells<'_> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                let mut seq = s.serialize_seq(Some(self.0.len()))?;
+                for c in self.0 {
+                    seq.serialize_element(&CellOut(c, true))?;
+                }
+                seq.end()
+            }
+        }
+        struct Row<'a>(&'a TableData, usize);
+        impl serde::Serialize for Row<'_> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                let Row(t, r) = *self;
+                let mut seq = s.serialize_seq(Some(t.num_cols))?;
+                for c in 0..t.num_cols {
+                    match t.slot_cell(t.grid[r * t.num_cols + c], r, c) {
+                        Some(cell) => seq.serialize_element(&CellOut(&cell, false))?,
+                        None => seq.serialize_element(&())?,
+                    }
+                }
+                seq.end()
+            }
+        }
+        struct Grid<'a>(&'a TableData);
+        impl serde::Serialize for Grid<'_> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                let mut seq = s.serialize_seq(Some(self.0.num_rows))?;
+                for r in 0..self.0.num_rows {
+                    seq.serialize_element(&Row(self.0, r))?;
+                }
+                seq.end()
+            }
+        }
+        let mut m = s.serialize_map(Some(5))?;
+        m.serialize_entry("table_cells", &Cells(&self.cells))?;
+        m.serialize_entry("num_rows", &self.num_rows)?;
+        m.serialize_entry("num_cols", &self.num_cols)?;
+        m.serialize_entry("orientation", "rot_0")?;
+        m.serialize_entry("grid", &Grid(self))?;
+        m.end()
+    }
+}
+
+/// A `tables` entry: the item's JSON with a `null` stand-in under `data`
+/// — so every edit of the item (children, content layer, comment
+/// back-refs) works on the `Value` as before and keeps its key order —
+/// and the typed [`TableData`] that takes the stand-in's place when the
+/// item is written or turned into a `Value`.
+struct TableItem {
+    item: Value,
+    data: TableData,
+}
+
+impl TableItem {
+    fn into_value(self) -> Value {
+        let TableItem { mut item, data } = self;
+        if let Some(slot) = item.get_mut("data") {
+            *slot = data.into_value();
+        }
+        item
+    }
+}
+
+impl serde::Serialize for TableItem {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let Value::Object(obj) = &self.item else {
+            return self.item.serialize(s);
+        };
+        let mut m = s.serialize_map(Some(obj.len()))?;
+        for (k, v) in obj {
+            if k == "data" {
+                m.serialize_entry(k, &self.data)?;
+            } else {
+                m.serialize_entry(k, v)?;
+            }
+        }
+        m.end()
+    }
 }
 
 /// `TableData` from a table whose cell text is Markdown-flavoured (the flat
 /// nodes: escapes to undo, GFM hard-break markers to strip).
-fn table_data(t: &Table) -> Value {
+fn table_data(t: &Table) -> TableData {
     table_data_with(t, false)
 }
 
 /// `TableData`; with `raw` the cell text is docling's own raw cell text (a
 /// backend-built tree) and is written verbatim.
-fn table_data_with(t: &Table, raw: bool) -> Value {
-    let cell_text = |s: &str| {
+fn table_data_with(t: &Table, raw: bool) -> TableData {
+    let cell_text = |s: &str| -> Box<str> {
         if raw {
-            s.to_string()
+            s.into()
         } else {
-            unescape_text(&crate::markdown::strip_hard_breaks(s))
+            unescape_text(&crate::markdown::strip_hard_breaks(s)).into()
         }
     };
+    let widen = |b: [f32; 4]| b.map(f64::from);
     let mut num_rows = t.rows.len();
     let mut num_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
     // Rectangular `rows` are the grid, and cells reaching past it are
@@ -677,57 +902,38 @@ fn table_data_with(t: &Table, raw: bool) -> Value {
             num_cols = cols;
         }
     }
-    let mut grid = Vec::with_capacity(num_rows);
     let mut cells = Vec::new();
-    // Grid slot → index into `cells` (the anchor cell covering it). A flat
-    // row-major table instead of a `HashMap<(r, c), Value>` of clones: the
-    // grid is filled from it with one clone per slot, and nothing is hashed.
-    let mut slot: Vec<Option<usize>> = vec![None; num_rows * num_cols];
+    // Grid slot → the cell covering it, row-major — no per-slot copy and
+    // nothing hashed.
+    let mut grid: Vec<GridSlot>;
     if let Some(first_class) = t.cells.as_ref().filter(|c| !c.is_empty()) {
+        // A position no cell covers is docling's empty filler cell.
+        grid = vec![GridSlot::Filler; num_rows * num_cols];
+        cells.reserve(first_class.len());
         for c in first_class {
             let idx = cells.len();
-            cells.push(cell_value(
-                c.row_span,
-                c.col_span,
-                c.start_row,
-                c.start_row + c.row_span,
-                c.start_col,
-                c.start_col + c.col_span,
-                cell_text(&c.text),
-                c.column_header,
-                c.row_header,
-                c.row_section,
-                c.bbox,
-            ));
+            cells.push(GridCell {
+                row_span: c.row_span,
+                col_span: c.col_span,
+                start_row: c.start_row,
+                end_row: c.start_row + c.row_span,
+                start_col: c.start_col,
+                end_col: c.start_col + c.col_span,
+                text: cell_text(&c.text),
+                column_header: c.column_header,
+                row_header: c.row_header,
+                row_section: c.row_section,
+                bbox: c.bbox.map(widen),
+                cell_ref: None,
+            });
             for r in c.start_row..(c.start_row + c.row_span).min(num_rows) {
                 for k in c.start_col..(c.start_col + c.col_span).min(num_cols) {
-                    slot[r * num_cols + k] = Some(idx);
+                    grid[r * num_cols + k] = GridSlot::Cell(idx);
                 }
             }
         }
-        for r in 0..num_rows {
-            let mut grid_row = Vec::with_capacity(num_cols);
-            for c in 0..num_cols {
-                grid_row.push(match slot[r * num_cols + c] {
-                    Some(i) => cells[i].clone(),
-                    None => cell_value(
-                        1,
-                        1,
-                        r,
-                        r + 1,
-                        c,
-                        c + 1,
-                        String::new(),
-                        false,
-                        false,
-                        false,
-                        None,
-                    ),
-                });
-            }
-            grid.push(grid_row);
-        }
     } else {
+        grid = vec![GridSlot::Null; num_rows * num_cols];
         let s = t.structure.as_ref();
         let flag = |grid: Option<&Vec<Vec<bool>>>, r: usize, c: usize| -> bool {
             grid.and_then(|g| g.get(r))
@@ -760,8 +966,10 @@ fn table_data_with(t: &Table, raw: bool) -> Value {
             e.0 = e.0.max(r);
             e.1 = e.1.max(c);
         }
+        // An anchor's cell, by slot, once it is created (anchors precede
+        // the slots they cover in row-major order).
+        let mut anchor_cell: Vec<Option<usize>> = vec![None; num_rows * num_cols];
         for (r, row) in t.rows.iter().enumerate() {
-            let mut grid_row = Vec::with_capacity(num_cols);
             for c in 0..num_cols {
                 let (ar, ac) = anchors[r * num_cols + c];
                 if (ar, ac) == (r, c) {
@@ -771,36 +979,34 @@ fn table_data_with(t: &Table, raw: bool) -> Value {
                         Some(s) => flag(Some(&s.col_header), r, c),
                         None => r == 0,
                     };
-                    slot[r * num_cols + c] = Some(cells.len());
-                    cells.push(cell_value(
-                        er - r + 1,
-                        ec - c + 1,
-                        r,
-                        er + 1,
-                        c,
-                        ec + 1,
+                    anchor_cell[r * num_cols + c] = Some(cells.len());
+                    cells.push(GridCell {
+                        row_span: er - r + 1,
+                        col_span: ec - c + 1,
+                        start_row: r,
+                        end_row: er + 1,
+                        start_col: c,
+                        end_col: ec + 1,
                         text,
                         column_header,
-                        flag(s.map(|s| &s.row_header), r, c),
-                        false,
-                        None,
-                    ));
+                        row_header: flag(s.map(|s| &s.row_header), r, c),
+                        row_section: false,
+                        bbox: None,
+                        cell_ref: None,
+                    });
                 }
-                grid_row.push(match slot[ar * num_cols + ac] {
-                    Some(i) => cells[i].clone(),
-                    None => Value::Null,
-                });
+                if let Some(i) = anchor_cell[ar * num_cols + ac] {
+                    grid[r * num_cols + c] = GridSlot::Cell(i);
+                }
             }
-            grid.push(grid_row);
         }
     }
-    json!({
-        "table_cells": cells,
-        "num_rows": num_rows,
-        "num_cols": num_cols,
-        "orientation": "rot_0",
-        "grid": grid,
-    })
+    TableData {
+        cells,
+        num_rows,
+        num_cols,
+        grid,
+    }
 }
 
 /// An item's `prov` array as the builder holds it: empty, or docling's one
@@ -1064,7 +1270,7 @@ struct Builder {
     note_keys: bool,
     texts: Vec<Item>,
     groups: Vec<Value>,
-    tables: Vec<Value>,
+    tables: Vec<TableItem>,
     pictures: Vec<Value>,
     field_regions: Vec<Value>,
     field_items: Vec<Value>,
@@ -1245,9 +1451,10 @@ impl Builder {
         if self_ref.starts_with("#/texts/") {
             return self.texts.get_mut(idx).map(|item| item.value_mut(idx));
         }
-        let bucket = if self_ref.starts_with("#/tables/") {
-            &mut self.tables
-        } else if self_ref.starts_with("#/pictures/") {
+        if self_ref.starts_with("#/tables/") {
+            return self.tables.get_mut(idx).map(|t| &mut t.item);
+        }
+        let bucket = if self_ref.starts_with("#/pictures/") {
             &mut self.pictures
         } else if self_ref.starts_with("#/groups/") {
             &mut self.groups
@@ -1486,21 +1693,18 @@ impl Builder {
                     let r = self.add_table_with(table, parent, true);
                     let idx = ref_index(&r).expect("table ref");
                     let t = &mut self.tables[idx];
-                    t["children"] = Value::Array(children);
-                    t["content_layer"] = json!(layer);
-                    t["captions"] = Value::Array(captions.iter().map(|&c| ref_of(c)).collect());
+                    t.item["children"] = Value::Array(children);
+                    t.item["content_layer"] = json!(layer);
+                    t.item["captions"] =
+                        Value::Array(captions.iter().map(|&c| ref_of(c)).collect());
                     // A `RichTableCell` is the plain cell plus a `ref` to the
                     // group holding its content — on `table_cells` only; the
                     // derived `grid` shows plain cells.
                     for &(row, col, group) in rich_cells {
                         let cell_ref = ref_of(group);
-                        let hit = |c: &Value| {
-                            c["start_row_offset_idx"] == json!(row)
-                                && c["start_col_offset_idx"] == json!(col)
-                        };
-                        if let Some(cells) = t["data"]["table_cells"].as_array_mut() {
-                            for c in cells.iter_mut().filter(|c| hit(c)) {
-                                c["ref"] = cell_ref.clone();
+                        for c in t.data.cells.iter_mut() {
+                            if c.start_row == row && c.start_col == col {
+                                c.cell_ref = Some(Box::new(cell_ref.clone()));
                             }
                         }
                     }
@@ -1532,7 +1736,8 @@ impl Builder {
                     });
                     if let (Some(m), Some(t)) = (meta.as_mut(), chart) {
                         if !t.rows.is_empty() {
-                            m["tabular_chart"] = json!({ "chart_data": table_data(t) });
+                            m["tabular_chart"] =
+                                object([("chart_data", table_data(t).into_value())]);
                         }
                     }
                     // The OCR description (#645) goes first in the meta —
@@ -1761,7 +1966,8 @@ impl Builder {
                     "classification": { "predictions": [{ "class_name": kind }] },
                 });
                 if !table.rows.is_empty() {
-                    meta["tabular_chart"] = json!({ "chart_data": table_data(table) });
+                    meta["tabular_chart"] =
+                        object([("chart_data", table_data(table).into_value())]);
                 }
                 // docling's office backends add the chart's title as a caption
                 // item of the *container* (the sheet group, the slide), listed
@@ -2254,7 +2460,7 @@ impl Builder {
             None => (Vec::new(), Vec::new()),
         };
         let data = table_data_with(t, raw);
-        self.tables.push(json!({
+        let item = json!({
             "self_ref": self_ref,
             "parent": { "$ref": parent },
             "children": children,
@@ -2264,9 +2470,11 @@ impl Builder {
             "captions": captions,
             "references": [],
             "footnotes": [],
-            "data": data,
+            // The typed `data` takes this stand-in's place on output.
+            "data": null,
             "annotations": [],
-        }));
+        });
+        self.tables.push(TableItem { item, data });
         self_ref
     }
 
@@ -2464,7 +2672,7 @@ impl Builder {
                 .iter_mut()
                 .enumerate()
                 .map(|(k, item)| item.value_mut(t + k))
-                .chain(self.tables[tb..].iter_mut())
+                .chain(self.tables[tb..].iter_mut().map(|t| &mut t.item))
                 .chain(self.pictures[p..].iter_mut())
                 .chain(self.groups[g..].iter_mut())
             {

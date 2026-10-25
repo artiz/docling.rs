@@ -11,7 +11,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use docling_core::{DoclingDocument, Node};
+use docling_core::{DoclingDocument, Node, Table, TableCell, TableStructure};
 
 struct PerThread;
 
@@ -191,4 +191,155 @@ fn write_json_matches_the_value_off_the_compact_path() {
         ]
     );
     assert_eq!(first["prov"][0]["bbox"]["r"], 612.0);
+}
+
+fn cell(
+    text: &str,
+    r: usize,
+    c: usize,
+    spans: (usize, usize),
+    bbox: Option<[f32; 4]>,
+) -> TableCell {
+    TableCell {
+        text: text.into(),
+        bbox,
+        start_row: r,
+        start_col: c,
+        row_span: spans.0,
+        col_span: spans.1,
+        column_header: r == 0,
+        row_header: false,
+        row_section: false,
+    }
+}
+
+/// Tables are written typed (#875) — each cell once, the grid as slots
+/// pointing at it — and come out of `write_json` exactly as from the
+/// `Value`: spans repeated over the grid, docling's filler cells, boxes
+/// with digits an `f32` does not hold, the page clamp, a non-finite box.
+#[test]
+fn write_json_matches_the_value_for_tables() {
+    let mut doc = DoclingDocument::new("tables");
+    doc.nodes.push(Node::PageInfo {
+        page_no: 1,
+        width: 612.0,
+        height: 792.0,
+    });
+    let first_class = Table {
+        // Ragged: the grid comes from the cells, and (2, 1) is a filler.
+        rows: vec![
+            vec!["Head".into(), "Head".into()],
+            vec!["a".into(), "b".into()],
+            vec!["c".into()],
+        ],
+        cells: Some(vec![
+            cell("Head", 0, 0, (1, 2), Some([10.1, 20.3, 700.7, 30.9])),
+            cell("a", 1, 0, (1, 1), Some([1.0 / 3.0, 40.0, 50.0, 50.0])),
+            cell(
+                "b \\_x &amp; y",
+                1,
+                1,
+                (1, 1),
+                Some([60.0, f32::NAN, 90.0, 50.0]),
+            ),
+            cell("c", 2, 0, (1, 1), None),
+        ]),
+        ..Table::default()
+    };
+    doc.nodes.push(Node::Prov {
+        page_no: 1,
+        bbox: [10.0, 20.0, 700.0, 60.0],
+        charspan: [0, 0],
+        seq: None,
+        inner: Box::new(Node::Table(first_class)),
+    });
+    // The dense-rows path: a horizontal span through the OTSL overlay.
+    doc.nodes.push(Node::Table(Table {
+        rows: vec![
+            vec!["x".into(), "x".into(), "y".into()],
+            vec!["1".into(), "2".into(), "3".into()],
+        ],
+        structure: Some(TableStructure {
+            col_continuation: vec![vec![false, true, false], vec![false; 3]],
+            ..TableStructure::default()
+        }),
+        ..Table::default()
+    }));
+
+    let value = doc.export_to_json_value();
+    let mut out = Vec::new();
+    doc.write_json(&mut out).unwrap();
+    assert!(out == serde_json::to_vec(&value).unwrap());
+    let mut out = Vec::new();
+    doc.write_json_pretty(&mut out).unwrap();
+    assert!(out == serde_json::to_vec_pretty(&value).unwrap());
+
+    let data = &value["tables"][0]["data"];
+    assert_eq!(
+        (data["num_rows"].as_u64(), data["num_cols"].as_u64()),
+        (Some(3), Some(2))
+    );
+    // The spanning header fills both of its grid positions, clamped to the
+    // page like its `table_cells` record; the f32 box keeps its f64 digits.
+    let head = &data["table_cells"][0];
+    assert_eq!(data["grid"][0][0], *head);
+    assert_eq!(data["grid"][0][1], *head);
+    assert_eq!(head["bbox"]["r"], 612.0);
+    assert_eq!(head["bbox"]["l"], 10.1);
+    assert_eq!(data["table_cells"][2]["text"], "b _x & y");
+    assert!(data["table_cells"][2]["bbox"]["t"].is_null());
+    assert_eq!(
+        data["grid"][2][1],
+        serde_json::json!({
+            "row_span": 1, "col_span": 1,
+            "start_row_offset_idx": 2, "end_row_offset_idx": 3,
+            "start_col_offset_idx": 1, "end_col_offset_idx": 2,
+            "text": "", "column_header": false, "row_header": false,
+            "row_section": false, "fillable": false,
+        })
+    );
+    let dense = &value["tables"][1]["data"];
+    assert_eq!(dense["table_cells"].as_array().map(Vec::len), Some(5));
+    assert_eq!(dense["grid"][0][1]["col_span"], 2);
+    assert_eq!(dense["grid"][0][0], dense["grid"][0][1]);
+}
+
+/// A CSV-shaped table — short cells, no boxes — as docling JSON: as maps,
+/// a cell cost two `serde_json` objects of eleven owned keys (its
+/// `table_cells` record and its grid copy, ~7.5 KB of export peak per cell
+/// on #875's 640,000-cell CSV); typed, `write_json` holds the cells once.
+#[test]
+fn write_json_keeps_table_cells_typed() {
+    let (rows, cols) = (2_000, 16);
+    let mut doc = DoclingDocument::new("sheet");
+    doc.nodes.push(Node::Table(Table {
+        rows: (0..rows)
+            .map(|r| (0..cols).map(|c| format!("{}", r * cols + c)).collect())
+            .collect(),
+        ..Table::default()
+    }));
+    let start = CUR.with(Cell::get);
+    let value = doc.export_to_json_value();
+    let value_size = (CUR.with(Cell::get) - start) as usize;
+    let expected = serde_json::to_vec(&value).unwrap();
+    drop(value);
+
+    let mut out = Vec::with_capacity(expected.len());
+    let start = CUR.with(Cell::get);
+    PEAK.with(|p| p.set(start));
+    doc.write_json(&mut out).unwrap();
+    let peak = (PEAK.with(Cell::get) - start) as usize;
+    eprintln!(
+        "write_json peak {peak} B ({} B/cell); the Value is {value_size} B ({} B/cell)",
+        peak / (rows * cols),
+        value_size / (rows * cols)
+    );
+    assert!(
+        out == expected,
+        "write_json differs from serializing the Value"
+    );
+    assert!(
+        peak * 8 < value_size,
+        "write_json peaked at {peak} B; the Value it avoids is {value_size} B"
+    );
 }
