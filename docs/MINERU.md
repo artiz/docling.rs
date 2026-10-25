@@ -32,7 +32,8 @@ byte for byte.
 ## Why switch — measured side by side
 
 MinerU 4.0.12 (`mineru`, CPU: its `flash` tier without models and its
-`basic` tier with its ONNX models) vs docling.rs 2.46.2 on 4 vCPU, no GPU,
+`basic` tier with its ONNX models) vs docling.rs master after 2.51.3 on 4
+vCPU, no GPU (2026-10-25),
 with [`scripts/conformance/mineru_compare.py`](../scripts/conformance/mineru_compare.py);
 the per-format table is in the README's
 [MinerU comparison](../README.md#conformance-with-mineru), the scoring
@@ -42,11 +43,11 @@ and memory do not depend on it.
 
 | | MinerU `flash` | MinerU `basic` | docling.rs |
 |---|---|---|---|
-| PDF (18 files), warm | 22.3 s | 123 s (+ 67 s model load) | **44.0 s** (`--text-layer-only`: 0.69 s) |
-| PDF, peak RSS | 1.4 GB | 4.6 GB | **3.1 GB** |
-| One CLI call, cold (median PDF) | 3.6 s | 6.5 s | **1.2 s** |
+| PDF (18 files), warm | 38.8 s | 190 s (+ 78 s model load) | **62.7 s** (`--text-layer-only`: 0.82 s) |
+| PDF, peak RSS | 1.4 GB | 4.4 GB | **2.9 GB** |
+| One CLI call, cold (median PDF) | 5.7 s | 11.1 s | **1.7 s** |
 | PDF word F1 / table-cell recall / heading recall | 0.87 / 0.28 / 0.57 | 0.74 / 0.44 / 0.58 | **0.997 / 0.94 / 0.91** |
-| DOCX (38 files), warm | 6.36 s | — (flash only) | **0.59 s** |
+| DOCX (38 files), warm | 4.36 s | — (flash only) | **0.70 s** |
 | DOCX table-cell / heading recall | 0.82 / 0.96 | — | **1.00 / 1.00** |
 | Install | `mineru` + DocVortex + Gradio + ONNX Runtime + a llama.cpp build (~1 GB of wheels); `basic` models and the `standard` VLM from Hugging Face / ModelScope on first use | one wheel, ~90 MB; models ~700 MB once |
 | Runtime | Python, DocVortex render workers, a llama.cpp VLM server for `standard` / `advanced` | one process, ONNX Runtime; no server |
@@ -62,7 +63,7 @@ MinerU's `flash` tier reads the text layer with no model, as docling.rs's
 layout, tables and OCR, as docling.rs's default pipeline does; its
 `standard` and `advanced` tiers add a 1.2 B vision-language model through
 llama.cpp, which on CPU is a different speed class altogether
-(138 s for one page of the DocLayNet paper on this 4 vCPU host, so it is not in the table). Office files, HTML and EPUB are `flash`-only in MinerU
+(138 s for one page of the DocLayNet paper on a 4 vCPU host in the earlier run — not re-measured — so it is not in the table). Office files, HTML and EPUB are `flash`-only in MinerU
 (parsed natively, no models); docling.rs parses them natively at any tier.
 
 ## How the comparison is scored
