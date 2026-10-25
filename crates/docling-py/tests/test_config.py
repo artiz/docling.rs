@@ -53,7 +53,12 @@ def test_metadata_reaches_the_result():
 
 def test_pdf_confidence_reaches_the_result():
     """PDF confidence is a typed docling-shaped report on the result."""
-    from docling_rs import ConfidenceReport, DocumentConverter, PageConfidenceScores
+    from docling_rs import (
+        ConfidenceReport,
+        DocumentConverter,
+        PageConfidenceScores,
+        QualityGrade,
+    )
 
     pdf = REPO / "tests/data/pdf/sources/normal_4pages.pdf"
     result = DocumentConverter(text_layer_only=True).convert(pdf, page_range=(1, 2))
@@ -72,7 +77,23 @@ def test_pdf_confidence_reaches_the_result():
         "poor", "fair", "good", "excellent", "unspecified"
     }
 
-    assert DocumentConverter().convert(HTML).confidence is None
+    empty = DocumentConverter().convert(HTML).confidence
+    assert isinstance(empty, ConfidenceReport) and not empty.pages
+    assert math.isnan(empty.mean_score)
+    assert empty.mean_grade == QualityGrade.UNSPECIFIED
+
+
+def test_warm_pdf_pipeline_confidence_reaches_the_result():
+    """The warm pipeline's separate native result path keeps confidence."""
+    from docling_rs import ConfidenceReport, DocumentConverter, InputFormat
+
+    pdf = REPO / "tests/data/pdf/sources/normal_4pages.pdf"
+    converter = DocumentConverter(text_layer_only=True)
+    converter.initialize_pipeline(InputFormat.PDF)
+    result = converter.convert(pdf, page_range=(2, 2))
+
+    assert isinstance(result.confidence, ConfidenceReport)
+    assert set(result.confidence.pages) == {2}
 
 
 def test_detect_format_reads_the_bytes():
@@ -234,13 +255,16 @@ def test_convert_all_yields_results():
 
 
 def test_convert_all_raises_on_error_false():
-    from docling_rs import DocumentConverter
+    from docling_rs import ConfidenceReport, DocumentConverter, QualityGrade
 
     missing = REPO / "tests/data/html/sources/__does_not_exist__.html"
     out = list(DocumentConverter().convert_all([HTML, missing], raises_on_error=False))
     assert len(out) == 2
     assert out[0].status == "success"
     assert out[1].status == "failure"
+    assert isinstance(out[1].confidence, ConfidenceReport) and not out[1].confidence.pages
+    assert math.isnan(out[1].confidence.mean_score)
+    assert out[1].confidence.mean_grade == QualityGrade.UNSPECIFIED
 
 
 def test_conversion_error_type():

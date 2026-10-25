@@ -35,7 +35,6 @@ from __future__ import annotations
 import enum
 import io
 import json
-import math
 import os
 import warnings
 from dataclasses import dataclass
@@ -43,7 +42,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, NamedTuple, Optional, Tuple, Union
 
 from docling_core.types.doc import DoclingDocument, ImageRefMode
-from pydantic import BaseModel, Field, PrivateAttr, computed_field, field_validator, model_validator
 
 from . import models
 from .models import IntegrityError, cache_dir, download_models, ensure_env
@@ -165,142 +163,6 @@ class ConversionStatus(str, enum.Enum):
     FAILURE = "failure"
 
 
-ScoreValue = float
-
-
-class QualityGrade(str, enum.Enum):
-    """docling's score buckets for conversion confidence."""
-
-    POOR = "poor"
-    FAIR = "fair"
-    GOOD = "good"
-    EXCELLENT = "excellent"
-    UNSPECIFIED = "unspecified"
-
-
-def _nanmean(values: Iterable[float]) -> float:
-    known = [value for value in values if not math.isnan(value)]
-    return sum(known) / len(known) if known else math.nan
-
-
-def _nanquantile(values: Iterable[float], q: float) -> float:
-    known = sorted(value for value in values if not math.isnan(value))
-    if not known:
-        return math.nan
-    pos = q * (len(known) - 1)
-    lo = math.floor(pos)
-    hi = math.ceil(pos)
-    if lo == hi:
-        return known[lo]
-    fraction = pos - lo
-    return known[lo] * (1.0 - fraction) + known[hi] * fraction
-
-
-class PageConfidenceScores(BaseModel):
-    """docling's per-page conversion-confidence scores."""
-
-    parse_score: ScoreValue = math.nan
-    layout_score: ScoreValue = math.nan
-    table_score: ScoreValue = math.nan
-    ocr_score: ScoreValue = math.nan
-
-    @field_validator("parse_score", "layout_score", "table_score", "ocr_score", mode="before")
-    @classmethod
-    def _coerce_none_or_nan_str(cls, value):
-        if value is None:
-            return math.nan
-        if isinstance(value, str) and value.strip().lower() in {"nan", "null", "none", ""}:
-            return math.nan
-        return value
-
-    @staticmethod
-    def _score_to_grade(score: ScoreValue) -> QualityGrade:
-        if score < 0.5:
-            return QualityGrade.POOR
-        if score < 0.8:
-            return QualityGrade.FAIR
-        if score < 0.9:
-            return QualityGrade.GOOD
-        if score >= 0.9:
-            return QualityGrade.EXCELLENT
-        return QualityGrade.UNSPECIFIED
-
-    @computed_field
-    @property
-    def mean_grade(self) -> QualityGrade:
-        return self._score_to_grade(self.mean_score)
-
-    @computed_field
-    @property
-    def low_grade(self) -> QualityGrade:
-        return self._score_to_grade(self.low_score)
-
-    @computed_field
-    @property
-    def mean_score(self) -> ScoreValue:
-        return _nanmean([self.ocr_score, self.table_score, self.layout_score, self.parse_score])
-
-    @computed_field
-    @property
-    def low_score(self) -> ScoreValue:
-        return _nanquantile(
-            [self.ocr_score, self.table_score, self.layout_score, self.parse_score], 0.05
-        )
-
-
-class ConfidenceReport(PageConfidenceScores):
-    """Document scores plus per-page confidence, keyed by 1-based page number."""
-
-    pages: Dict[int, PageConfidenceScores] = Field(default_factory=dict)
-    _mean_score_override: ScoreValue = PrivateAttr(default=math.nan)
-    _low_score_override: ScoreValue = PrivateAttr(default=math.nan)
-
-    @staticmethod
-    def _coerce_override_score(value: Any) -> ScoreValue:
-        if value is None:
-            return math.nan
-        if isinstance(value, str) and value.strip().lower() in {"nan", "null", "none", ""}:
-            return math.nan
-        return float(value)
-
-    @model_validator(mode="wrap")
-    @classmethod
-    def _accept_flat_confidence_scores(cls, value, handler):
-        mean_override = math.nan
-        low_override = math.nan
-        if isinstance(value, dict):
-            mean_override = cls._coerce_override_score(value.get("mean_score"))
-            low_override = cls._coerce_override_score(value.get("low_score"))
-            value = dict(value)
-            value.pop("mean_score", None)
-            value.pop("low_score", None)
-            value.pop("mean_grade", None)
-            value.pop("low_grade", None)
-        model = handler(value)
-        if not model.pages:
-            model._mean_score_override = mean_override
-            model._low_score_override = low_override
-        return model
-
-    @computed_field
-    @property
-    def mean_score(self) -> ScoreValue:
-        if not math.isnan(self._mean_score_override):
-            return self._mean_score_override
-        if not self.pages:
-            return super().mean_score
-        return _nanmean(page.mean_score for page in self.pages.values())
-
-    @computed_field
-    @property
-    def low_score(self) -> ScoreValue:
-        if not math.isnan(self._low_score_override):
-            return self._low_score_override
-        if not self.pages:
-            return super().low_score
-        return _nanmean(page.low_score for page in self.pages.values())
-
-
 @dataclass(frozen=True)
 class ArchiveItem:
     """One entry of a ZIP archive converted with
@@ -350,8 +212,8 @@ class ConversionResult:
     — when the converter was built with ``metadata="json"`` or
     ``"frontmatter"`` and the file carries any, else ``None``.
     ``.confidence`` is the PDF/image pipeline's :class:`ConfidenceReport`,
-    keyed by the real 1-based page number; declarative conversions set it to
-    ``None``."""
+    keyed by the real 1-based page number; conversions without scores carry
+    an empty report."""
 
     def __init__(
         self,
@@ -369,7 +231,15 @@ class ConversionResult:
         self.errors = list(errors)
         self.redaction = dict(redaction) if redaction is not None else None
         self.metadata = dict(metadata) if metadata is not None else None
-        self.confidence = confidence
+        self.confidence = confidence if confidence is not None else ConfidenceReport()
+
+
+# Imported here because datamodel re-exports ConversionResult from this module.
+from .datamodel.base_models import (  # noqa: E402
+    ConfidenceReport,
+    PageConfidenceScores,
+    QualityGrade,
+)
 
 
 def _is_api_options(pd: Any) -> bool:
@@ -1473,5 +1343,9 @@ def _wrap(native) -> ConversionResult:
         errors,
         getattr(native, "redaction", None),
         json.loads(metadata_json) if metadata_json else None,
-        ConfidenceReport.model_validate_json(confidence_json) if confidence_json else None,
+        (
+            ConfidenceReport.model_validate_json(confidence_json)
+            if confidence_json
+            else ConfidenceReport()
+        ),
     )
