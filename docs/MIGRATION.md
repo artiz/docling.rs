@@ -244,7 +244,7 @@ escaped text (§ Markdown) — the sweep runs with the lock:
 |---|---|---|---|---|
 | DOCX | 38 | **38** | **38** | — (#527: a JPEG picture is stored as docling's `ImageRef.from_pil` PNG, re-encoded from libjpeg-exact pixels) |
 | HTML | 32 | 30 | **32** | `html_nested_block_in_list_item`: a table inside a `<li>` is blank-line separated from its item (a divergence, § HTML); `wiki_duck`: two link destinations percent-escaped as docling-core 2.104 writes them (`%28`/`%29`, #860) |
-| PPTX | 8 | **8** | **8** | — |
+| PPTX | 8 | 7 | 7 | `pptx_chart`: slide 2's 3-D column chart is a `bar_chart` with its data table, as docling `main` reads it since docling#4811 (after 2.142.1; the mirrored groundtruth is `main`'s), where the 2.142.1 release still prints "Other chart" |
 | XLSX | 14 | 13 | 13 | `xlsx_02_sample_sales_data`: 20 date cells print `2024-01-01 0:00:00` by docling PR #4628's rules (#634, `h` unpadded), where the released docling still writes `str(value)` — exact again once that PR merges |
 | CSV | 9 | **9** | **9** | — |
 | Markdown | 11 | **11** | 10 | `escaped_characters`: its code spans keep their literal `&amp; &lt;`, which upstream's HTML detour decodes (a divergence, § Markdown) |

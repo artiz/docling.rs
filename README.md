@@ -332,7 +332,7 @@ docling-core 2.103.1 it locks, over its mirrored test corpus
 |---|---|---|---|---|---|---|---|
 | DOCX | 38 | ✅ all | ✅ all | iWork Pages | 1 | ✅ all | ✅ all |
 | HTML | 32 | 30 ³ | ✅ all | iWork Keynote | 5 | ✅ all | ✅ all |
-| PPTX | 8 | ✅ all | ✅ all | EBCDIC | 3 | ✅ all | ✅ all |
+| PPTX | 8 | 7 ⁶ | 7 ⁶ | EBCDIC | 3 | ✅ all | ✅ all |
 | XLSX | 14 | 13 ² | 13 ² | JATS | 7 | 4 ⁴ | ✅ all |
 | ODF | 7 | ✅ all | ✅ all | DocLang | 15 | ✅ all | ✅ all |
 | CSV | 9 | ✅ all | ✅ all | AsciiDoc | 5 | ✅ all | ✅ all |
@@ -350,6 +350,8 @@ docling-core 2.103.1 it locks, over its mirrored test corpus
 ⁴ Whitespace only: a one-run footnote prints on its bullet, where docling 2.142 leaves the bullet empty and puts the text on the next line.
 
 ⁵ Deliberate: a code span keeps its literal text (`&amp;`), which upstream decodes when a raw HTML block sends the file through its HTML backend.
+
+⁶ Ahead of the release: `pptx_chart`'s 3-D column chart is read as a bar chart with its data, as docling `main` reads it since docling#4811 (after 2.142.1).
 
 The residuals, with the exact files: [`docs/MIGRATION.md`](./docs/MIGRATION.md).
 The PDF/image pipeline is pinned by a deterministic snapshot baseline and
