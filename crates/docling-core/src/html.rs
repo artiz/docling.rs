@@ -767,6 +767,15 @@ impl<'a> Serializer<'a> {
             }
         };
 
+        // docling-core 2.103: a plain item's formatting and hyperlink wrap
+        // its text inside the tag (`<p><strong>bold</strong></p>`, the
+        // groundtruth of `docx_rich_cells`); 2.99 wrapped the tag. Code,
+        // formulas and list items keep their own order below.
+        if !has_inline_repr && !is_code && !is_formula && label != "list_item" {
+            text = Self::post_process(text, fmt, hyperlink);
+            post_processed = true;
+        }
+
         if label == "title" {
             text = format!("<h1>{text}</h1>");
         } else if label == "section_header" {

@@ -870,7 +870,7 @@ fn walk_linear(
     let mut segments: Vec<Seg> = Vec::new();
     if node_tag != "term" {
         if let Some(t) = node.text() {
-            append_run(&mut segments, &t, current, current_link);
+            append_run(&mut segments, t, current, current_link);
         }
     }
 
@@ -994,7 +994,7 @@ fn walk_linear(
         }
 
         if let Some(tail) = child.tail() {
-            append_run(&mut segments, &tail, current, current_link);
+            append_run(&mut segments, tail, current, current_link);
         }
     }
 
@@ -1013,7 +1013,7 @@ fn walk_inline_formula(node: XmlNode, fmt: Fmt, hyperlink: Option<&str>) -> Vec<
     let current = fmt.with_tag(node.tag_name().name());
     let mut segments = Vec::new();
     if let Some(t) = node.text() {
-        append_run(&mut segments, &t, current, hyperlink);
+        append_run(&mut segments, t, current, hyperlink);
     }
     for child in node.children().filter(XmlNode::is_element) {
         if child.tag_name().name() == "tex-math" {
@@ -1032,7 +1032,7 @@ fn walk_inline_formula(node: XmlNode, fmt: Fmt, hyperlink: Option<&str>) -> Vec<
             );
         }
         if let Some(tail) = child.tail() {
-            append_run(&mut segments, &tail, current, hyperlink);
+            append_run(&mut segments, tail, current, hyperlink);
         }
     }
     segments

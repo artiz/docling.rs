@@ -98,4 +98,44 @@
           [ Str "Last" , Space , Str "list" , Space , Str "item" ]
       ]
     ]
+, Para
+    [ Str "A"
+    , Space
+    , Str "nested"
+    , Space
+    , Str "ordered"
+    , Space
+    , Str "list:"
+    ]
+, OrderedList
+    ( 1 , Decimal , Period )
+    [ [ Plain
+          [ Str "First" , Space , Str "main" , Space , Str "item" ]
+      ]
+    , [ Plain
+          [ Str "Second" , Space , Str "main" , Space , Str "item" ]
+      , OrderedList
+          ( 1 , Decimal , Period )
+          [ [ Plain
+                [ Str "First"
+                , Space
+                , Str "nested"
+                , Space
+                , Str "sub-item"
+                ]
+            ]
+          , [ Plain
+                [ Str "Second"
+                , Space
+                , Str "nested"
+                , Space
+                , Str "sub-item"
+                ]
+            ]
+          ]
+      ]
+    , [ Plain
+          [ Str "Third" , Space , Str "main" , Space , Str "item" ]
+      ]
+    ]
 ]
