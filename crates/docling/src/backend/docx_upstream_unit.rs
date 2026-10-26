@@ -596,3 +596,196 @@ fn pages_sub_list_belongs_to_the_item_above_it() {
     assert_eq!(parent("inner b"), inner);
     assert_eq!(group_parent(&parent("inner a.1")), self_ref("inner a"));
 }
+
+// ---------------------------------------------------------------------------
+// docling#4958 (after 2.142.1): hidden text (`w:vanish`) leaves the default
+// export — `test_backend_msword_hidden.py`.
+
+const M: &str = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+
+/// A package around `body`, with the list and heading styles of
+/// [`list_styles`] plus `extra_styles`.
+fn hidden_docx(body: &str, extra_styles: &str) -> DoclingDocument {
+    convert(package(&[
+        (
+            "word/document.xml",
+            format!(
+                r#"<w:document xmlns:w="{W}" xmlns:m="{M}"><w:body>{body}<w:sectPr/></w:body></w:document>"#
+            ),
+        ),
+        ("word/styles.xml", list_styles(extra_styles)),
+        ("word/numbering.xml", list_numbering(STOCK_INDENTS)),
+    ]))
+}
+
+fn run(text: &str) -> String {
+    format!(r#"<w:r><w:t xml:space="preserve">{text}</w:t></w:r>"#)
+}
+
+fn hidden_run(text: &str) -> String {
+    format!(r#"<w:r><w:rPr><w:vanish/></w:rPr><w:t xml:space="preserve">{text}</w:t></w:r>"#)
+}
+
+/// Each live text item's layer (`body` when unset), by text.
+fn layers(doc: &DoclingDocument) -> std::collections::HashMap<String, String> {
+    tree(doc)
+        .items
+        .iter()
+        .filter(|it| !it.deleted)
+        .filter_map(|it| match &it.kind {
+            TreeKind::Text { text, .. } if !text.is_empty() => Some((
+                text.clone(),
+                it.layer
+                    .map(|l| format!("{l:?}").to_lowercase())
+                    .unwrap_or_else(|| "body".into()),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The JSON's table cells (`tables[i]`), row-major.
+fn table_cells(doc: &DoclingDocument, i: usize) -> Vec<String> {
+    doc.export_to_json_value()["tables"][i]["data"]["table_cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["text"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// `test_docx_hidden_text_is_left_out_of_the_default_export`.
+#[test]
+fn hidden_text_is_left_out_of_the_default_export() {
+    let body = format!(
+        "<w:p>{}{}{}</w:p><w:p>{}</w:p>\
+         <w:tbl><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid><w:tr>\
+         <w:tc><w:p>{}</w:p></w:tc><w:tc><w:p>{}</w:p></w:tc></w:tr></w:tbl>",
+        run("Shown start. "),
+        hidden_run("Hidden run. "),
+        run("Shown end."),
+        hidden_run("Hidden paragraph."),
+        run("Shown cell"),
+        hidden_run("Hidden cell"),
+    );
+    let doc = hidden_docx(&body, "");
+    let l = layers(&doc);
+    assert_eq!(l["Shown start. Shown end."], "body");
+    assert_eq!(l["Hidden paragraph."], "invisible");
+    assert_eq!(table_cells(&doc, 0), ["Shown cell", ""]);
+    assert!(!md(&doc).contains("Hidden"), "{}", md(&doc));
+    assert!(md(&doc).starts_with("Shown start. Shown end."));
+}
+
+/// `test_docx_hidden_text_follows_style_inheritance`: hidden by a character
+/// or paragraph style, and an explicit `w:vanish w:val="0"` on a run wins
+/// over a hidden style.
+#[test]
+fn hidden_text_follows_style_inheritance() {
+    let styles = r#"<w:style w:type="character" w:styleId="HiddenChars"><w:name w:val="Hidden Chars"/><w:rPr><w:vanish/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="HiddenPara"><w:name w:val="Hidden Para"/><w:rPr><w:vanish/></w:rPr></w:style>"#;
+    let body = format!(
+        r#"<w:p>{}<w:r><w:rPr><w:rStyle w:val="HiddenChars"/></w:rPr><w:t>Hidden by character style.</w:t></w:r></w:p>{}<w:p><w:pPr><w:pStyle w:val="HiddenPara"/></w:pPr>{}<w:r><w:rPr><w:vanish w:val="0"/></w:rPr><w:t>Shown by override.</w:t></w:r></w:p>"#,
+        run("Shown. "),
+        styled("Hidden by paragraph style.", "HiddenPara"),
+        run("Hidden by paragraph style too. "),
+    );
+    let doc = hidden_docx(&body, styles);
+    let l = layers(&doc);
+    assert_eq!(l["Shown."], "body");
+    assert_eq!(l["Hidden by paragraph style."], "invisible");
+    assert_eq!(l["Shown by override."], "body");
+    assert!(!md(&doc).contains("Hidden"), "{}", md(&doc));
+}
+
+/// `test_docx_hidden_heading_and_list_item`: a hidden heading or list item
+/// is invisible; its list stays on the body layer, one tight list.
+#[test]
+fn hidden_heading_and_list_item() {
+    let body = format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>{}</w:p><w:p><w:pPr><w:pStyle w:val="ListBullet"/></w:pPr>{}</w:p>{}{}"#,
+        hidden_run("Hidden heading"),
+        hidden_run("Hidden item"),
+        styled("Shown item 1", "ListBullet"),
+        styled("Shown item 2", "ListBullet"),
+    );
+    let doc = hidden_docx(&body, "");
+    let l = layers(&doc);
+    assert_eq!(l["Hidden heading"], "invisible");
+    assert_eq!(l["Hidden item"], "invisible");
+    assert_eq!(l["Shown item 1"], "body");
+    let t = tree(&doc);
+    let lists: Vec<_> = t
+        .items
+        .iter()
+        .filter(|it| matches!(&it.kind, TreeKind::Group { label, .. } if label == "list"))
+        .map(|it| it.layer)
+        .collect();
+    assert_eq!(lists, [None]);
+    assert_eq!(md(&doc), "- Shown item 1\n- Shown item 2");
+}
+
+/// `test_docx_hidden_text_next_to_equations`: hidden runs beside an
+/// equation are dropped and the equation kept — in a paragraph, a list
+/// item and a table cell; an equation with only hidden text beside it is a
+/// standalone formula.
+#[test]
+fn hidden_text_next_to_equations() {
+    let math = r#"<m:oMath><m:r><m:t>x=1</m:t></m:r></m:oMath>"#;
+    let secret = hidden_run(" secret");
+    let body = format!(
+        r#"<w:p>{}{math}{secret}</w:p><w:p><w:pPr><w:pStyle w:val="ListBullet"/></w:pPr>{}{math}{secret}</w:p><w:p>{math}{secret}</w:p><w:tbl><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p>{}{math}{secret}</w:p></w:tc><w:tc><w:p>{}</w:p></w:tc></w:tr></w:tbl>"#,
+        run("Value "),
+        run("Item "),
+        run("Cell "),
+        run("Other"),
+    );
+    let doc = hidden_docx(&body, "");
+    assert_eq!(
+        md(&doc),
+        "Value  $x=1$\n\n- Item  $x=1$\n\n$$x=1$$\n\n| Cell $x=1$   | Other   |\n|--------------|---------|"
+    );
+    assert!(!format!("{:?}", doc.nodes).contains("secret"));
+    assert!(!doc.export_to_json().contains("secret"));
+}
+
+/// `test_docx_hidden_runs_in_links_and_content_controls`: hidden runs in a
+/// hyperlink or a content control are dropped; a fully hidden hyperlink
+/// adds nothing to its paragraph.
+#[test]
+fn hidden_runs_in_links_and_content_controls() {
+    let body = format!(
+        r#"<w:p>{}<w:hyperlink w:anchor="target">{}</w:hyperlink><w:sdt><w:sdtContent>{}{}</w:sdtContent></w:sdt></w:p>"#,
+        run("Shown start."),
+        hidden_run("Hidden link."),
+        hidden_run("Hidden field."),
+        run(" Shown field."),
+    );
+    let doc = hidden_docx(&body, "");
+    assert_eq!(md(&doc), "Shown start. Shown field.");
+    assert!(!doc.export_to_json().contains("Hidden"));
+}
+
+/// `test_hidden_footnote_paragraph_is_left_out`: a note has no layer per
+/// paragraph, so a hidden one is left out of the note's text — found in the
+/// notes part even when the body has no `w:vanish`.
+#[test]
+fn hidden_footnote_paragraph_is_left_out() {
+    let footnotes = format!(
+        r#"<w:footnotes xmlns:w="{W}"><w:footnote w:id="2"><w:p><w:r><w:t>Shown note.</w:t></w:r></w:p><w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>Hidden note.</w:t></w:r></w:p></w:footnote></w:footnotes>"#
+    );
+    let doc = body_docx(
+        r#"<w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="2"/></w:r></w:p>"#,
+        r#"<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>"#,
+        &[("word/footnotes.xml", footnotes)],
+    );
+    let notes: Vec<&str> = tree(&doc)
+        .items
+        .iter()
+        .filter_map(|it| match &it.kind {
+            TreeKind::Text { label, text, .. } if label == "footnote" => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(notes, ["Shown note."]);
+    assert!(!format!("{:?}", doc.nodes).contains("Hidden"));
+}
