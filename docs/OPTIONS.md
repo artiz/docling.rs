@@ -213,10 +213,12 @@ codec or copybook when the conversion runs.
   stdout, no bindings — so any of its 100+ languages reads through the same
   pipeline (regions, orphan recovery, TableFormer word matching); orientation
   comes from Tesseract's own OSD (needs the `osd` traineddata). Install
-  `tesseract-ocr` plus language packs (`tesseract --list-langs`; the serve
-  image ships `eng`). `DOCLING_TESSERACT` names the binary,
-  `DOCLING_RS_TESSERACT_PSM` a page segmentation mode (unset = Tesseract's
-  automatic 3; 6 = one uniform block, 11 = sparse text),
+  `tesseract-ocr` plus language packs (`tesseract --list-langs`; the
+  container images build Tesseract 5.5.3 and ship tessdata_fast's `eng`,
+  `osd` and `rus`, `TESSDATA_LANGS` adds more — docs/DEPLOYMENT.md).
+  `DOCLING_TESSERACT` names the binary, `DOCLING_RS_TESSERACT_PSM` a page
+  segmentation mode (unset = Tesseract's automatic 3; 6 = one uniform block,
+  11 = sparse text),
   `DOCLING_RS_TESSDATA_DIR` the data directory (`TESSDATA_PREFIX` is honoured
   by Tesseract itself). A missing binary or traineddata warns and degrades
   to no OCR, like a missing model; under `force_full_page_ocr` it is an
@@ -236,6 +238,12 @@ codec or copybook when the conversion runs.
   warns and defaults). Under Tesseract: tessdata stems (`deu`, `eng+fra`,
   `script/Cyrillic`, a traineddata of your own) or BCP-47 tags mapped onto
   them (`de` → `deu`, `zh-Hant` → `chi_tra`); `en` and `ch` keep working.
+  Without a request `ocr_lang`, `DOCLING_RS_OCR_LANG` is Tesseract's list
+  too (`DOCLING_RS_OCR_ENGINE=tesseract DOCLING_RS_OCR_LANG=rus+eng` in a
+  container's environment, #889 — it used to reach only the PP-OCR model
+  choice, warn, and leave Tesseract on `eng`). The list is Tesseract's preference
+  order: for mostly-Latin pages with some Cyrillic write `eng+rus` — under
+  `rus+eng` Tesseract reads look-alike Latin words as Cyrillic (`My` → `Му`).
 - **Regions and scale** (#254). `ocr_mode` is docling's `OcrMode`: the
   default (= `pdf_aware_layout_regions`) keeps the text layer and OCRs what
   lacks one; `full_page` and `layout_regions` both discard the text layer,

@@ -219,7 +219,7 @@ PDF/image models have loaded (and stays 503, with the error, if loading fails).
 | `DOCLING_RS_ORT_PROFILE` | unset | A directory: every ONNX session writes ORT's per-operator profile there (`<model>_<timestamp>.json`, Chrome-trace format); `scripts/dev/ort_profile_summary.py` summarizes one |
 | `DOCLING_RS_MAX_RASTER_PAGES` | `100` | Max page count for `to=images` PDF page rasterization |
 | `DOCLING_RS_MAX_FETCH_BYTES` | `268435456` (256MB) | Max response size for remote URL fetching |
-| `DOCLING_RS_OCR_LANG` | `en` | Default OCR language (`en` or `ch` multilingual) |
+| `DOCLING_RS_OCR_LANG` | `en` | Default OCR language: under PP-OCR `en` or `ch` (multilingual); under `DOCLING_RS_OCR_ENGINE=tesseract` Tesseract's language list — tessdata stems joined by `+` (`rus+eng`) or BCP-47 tags — whose `.traineddata` must be in the tessdata dir (`DOCLING_RS_TESSDATA_DIR`). A request's `ocr_lang` overrides it |
 | `DOCLING_RS_OCR_MODE` | `default` | OCR region selection (`default`, `full_page`, `layout_regions`) |
 | `DOCLING_RS_FP32` | `0` | Force FP32 model precision instead of INT8 |
 | `DOCLING_RS_MODELS_DIR` | `.models` | Directory override for ONNX model weights |
@@ -272,6 +272,34 @@ curl -F files=@interview_de.mp3 -F asr_model=parakeet_tdt_0.6b_v3 \
 
 Parakeet TDT 0.6B v3 adds ~670 MB (int8 encoder + decoder-joint + the Silero
 VAD).
+
+### Tesseract and its languages (`TESSERACT_VERSION`, `TESSDATA_LANGS`)
+
+The images carry Tesseract 5.5.3, built from source by
+`scripts/install/build_tesseract.sh` (the CLI alone, against the distro's
+Leptonica; cross-compiled for s390x) — the distro packages are older
+(Debian trixie 5.5.0, Ubuntu 24.04 5.3.4). Its language models come from
+[tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) 4.1.0, the
+same LSTM models Debian's `tesseract-ocr-*` packages ship: `eng`, `osd`
+(orientation detection) and `rus` by default. The `TESSDATA_LANGS` build arg
+takes other tessdata stems (space- or comma-separated, `script/Cyrillic` for a
+script model) or `all` — every language and script, ~670 MB:
+
+```bash
+docker build -f crates/docling-serve/Dockerfile \
+  --build-arg TESSDATA_LANGS="eng osd rus ukr deu" -t docling-serve-ocr .
+curl -F files=@scan_ru.pdf -F ocr_engine=tesseract -F ocr_lang=rus+eng \
+  http://localhost:5001/v1/convert
+```
+
+A running container takes more models as files in
+`/usr/local/share/tessdata` (`-v ./ukr.traineddata:/usr/local/share/tessdata/ukr.traineddata:ro`,
+or a derived image) — not a mount over the directory, which also holds the
+`configs/` the CLI reads its `tsv` output format from — and
+`--build-arg TESSERACT_VERSION=<tag>` builds another upstream release.
+List the first language whose text dominates: Tesseract reads mixed text in
+that script first (`rus+eng` for Russian with some English, `eng+rus` for
+the reverse).
 
 ### Running with Mounted Assets
 
