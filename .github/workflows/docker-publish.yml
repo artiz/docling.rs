@@ -186,6 +186,8 @@ jobs:
         run: |
           echo "Converting a Markdown fixture (no models involved)..."
           docker run --rm -v "$PWD/tests/data/md/sources:/data:ro" docling-rs:test wiki.md --to md | head -n 3
+          echo "Tesseract (built from source, tessdata_fast eng/osd/rus baked in)..."
+          docker run --rm --entrypoint tesseract docling-rs:test --list-langs 2>&1 | tee /dev/stderr | grep -qx rus
           if [ "${{ matrix.platform }}" = "linux/s390x" ]; then
             echo "s390x under QEMU: the ONNX Runtime must be in the image, the PDF run is skipped (emulated inference)"
             docker run --rm --entrypoint ls docling-rs:test -la /app/.models/onnxruntime/ | grep -q libonnxruntime.so
@@ -195,6 +197,10 @@ jobs:
           out=$(docker run --rm -v "$PWD/tests/data/pdf/sources:/data:ro" docling-rs:test base14_fonts.pdf --to latex)
           echo "$out" | head -n 20
           echo "$out" | grep -q '\\begin{document}' || { echo "CLI smoke test failed: no LaTeX document produced"; exit 1; }
+          echo "OCR through Tesseract (ocr_engine=tesseract) on a bitmap-only page..."
+          out=$(docker run --rm -v "$PWD/tests/data/scanned/sources:/data:ro" docling-rs:test ocr_test_raster.pdf --ocr-engine tesseract --to md)
+          echo "$out" | head -n 5
+          echo "$out" | grep -q 'Docling bundles PDF document conversion' || { echo "CLI smoke test failed: Tesseract OCR read nothing"; exit 1; }
 
       - name: Run container smoke test
         # The s390x serve image warms the models under QEMU — minutes per
@@ -590,6 +596,8 @@ jobs:
           out=$(docker run --rm -v "$PWD/tests/data/pdf/sources:/data:ro" docling-rs-cuda:test base14_fonts.pdf --to latex)
           echo "$out" | head -n 20
           echo "$out" | grep -q '\\begin{document}' || { echo "CUDA CLI smoke test failed: no LaTeX document produced"; exit 1; }
+          echo "Tesseract (built from source for Ubuntu 24.04)..."
+          docker run --rm --entrypoint tesseract docling-rs-cuda:test --list-langs 2>&1 | tee /dev/stderr | grep -qx rus
       - name: Run CUDA serve smoke test (auto fallback to CPU on GPU-less runner)
         run: |
           echo "Starting docling-rs-serve-cuda container..."

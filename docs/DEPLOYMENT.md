@@ -273,6 +273,34 @@ curl -F files=@interview_de.mp3 -F asr_model=parakeet_tdt_0.6b_v3 \
 Parakeet TDT 0.6B v3 adds ~670 MB (int8 encoder + decoder-joint + the Silero
 VAD).
 
+### Tesseract and its languages (`TESSERACT_VERSION`, `TESSDATA_LANGS`)
+
+The images carry Tesseract 5.5.3, built from source by
+`scripts/install/build_tesseract.sh` (the CLI alone, against the distro's
+Leptonica; cross-compiled for s390x) — the distro packages are older
+(Debian trixie 5.5.0, Ubuntu 24.04 5.3.4). Its language models come from
+[tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) 4.1.0, the
+same LSTM models Debian's `tesseract-ocr-*` packages ship: `eng`, `osd`
+(orientation detection) and `rus` by default. The `TESSDATA_LANGS` build arg
+takes other tessdata stems (space- or comma-separated, `script/Cyrillic` for a
+script model) or `all` — every language and script, ~670 MB:
+
+```bash
+docker build -f crates/docling-serve/Dockerfile \
+  --build-arg TESSDATA_LANGS="eng osd rus ukr deu" -t docling-serve-ocr .
+curl -F files=@scan_ru.pdf -F ocr_engine=tesseract -F ocr_lang=rus+eng \
+  http://localhost:5001/v1/convert
+```
+
+A running container takes more models as files in
+`/usr/local/share/tessdata` (`-v ./ukr.traineddata:/usr/local/share/tessdata/ukr.traineddata:ro`,
+or a derived image) — not a mount over the directory, which also holds the
+`configs/` the CLI reads its `tsv` output format from — and
+`--build-arg TESSERACT_VERSION=<tag>` builds another upstream release.
+List the first language whose text dominates: Tesseract reads mixed text in
+that script first (`rus+eng` for Russian with some English, `eng+rus` for
+the reverse).
+
 ### Running with Mounted Assets
 
 ```bash
