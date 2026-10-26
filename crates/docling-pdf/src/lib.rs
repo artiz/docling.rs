@@ -140,7 +140,9 @@ pub use ocr::{OcrEngine, OcrLang, OcrMode};
 pub use pdfium_backend::PdfDocument;
 pub use pdfium_backend::{PdfPage, TextCell};
 #[cfg(feature = "ml")]
-pub use tesseract::{lang_arg as tesseract_lang_arg, TesseractOptions};
+pub use tesseract::{
+    installed_languages as tesseract_languages, lang_arg as tesseract_lang_arg, TesseractOptions,
+};
 // Plain page rasterization (#243) — pdfium only, no models.
 #[cfg(feature = "ml")]
 pub use pdfium_backend::{render_pages, RenderedPage};

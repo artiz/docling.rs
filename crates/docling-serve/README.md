@@ -60,7 +60,7 @@ last counts.
 | `POST /v1/convert` | one `file` part, several (a batch), a ZIP, or a JSON body with `url` / `sources` / `target`; options as query parameters, multipart fields or JSON keys |
 | `POST /v1/convert/async` · `GET /v1/status/{id}` · `GET /v1/result/{id}` | the same request as a job: a task id now, the result when done (kept `--result-ttl` seconds) |
 | `POST /v1/convert/file` · `POST /v1/convert/source` (+ `/async`, `/v1alpha/…`) | Python docling-serve's routes and response shape (`ConvertDocumentResponse`), for its clients |
-| `GET /v1/config` | the server's policies (`allow_url_fetch`, limits) |
+| `GET /v1/config` | the server's policies (`allow_url_fetch`, limits), resolved models and Tesseract's installed languages (`tesseract_languages`, the web UI's `ocr_lang` hints) |
 | `GET /` · `GET /openapi.yaml` · `GET /health` · `GET /ready` · `GET /metrics` | docs and test form · OpenAPI · liveness · readiness (503 until `--warmup` finishes) · Prometheus |
 
 ## Request options
