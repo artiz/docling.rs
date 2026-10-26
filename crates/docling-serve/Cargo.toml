@@ -78,4 +78,7 @@ opentelemetry-otlp = { version = "0.32.0", default-features = false, features = 
 
 [dev-dependencies]
 http-body-util = "0.1"
+# Parses `openapi.yaml` as YAML in the tests: a text search cannot tell a
+# spec that no longer parses (#851 left one) from a valid one.
+serde_norway = "0.9"
 tower = { version = "0.5", features = ["util"] }

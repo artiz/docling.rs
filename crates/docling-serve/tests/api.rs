@@ -165,6 +165,62 @@ async fn serves_its_logo_and_openapi_description() {
     }
 }
 
+/// `openapi.yaml` parses as YAML and every local `$ref` in it resolves. The
+/// text checks above and `options_inventory` pass on a spec no YAML reader
+/// accepts — two mis-indented lines and an unquoted `: ` in a description
+/// went unnoticed for several releases — so the spec is read as a client
+/// generator reads it.
+#[test]
+fn openapi_spec_parses_and_every_ref_resolves() {
+    use serde_norway::Value;
+    let spec: Value = serde_norway::from_str(include_str!("../src/openapi.yaml"))
+        .unwrap_or_else(|e| panic!("openapi.yaml is not valid YAML: {e}"));
+    assert!(spec["openapi"]
+        .as_str()
+        .is_some_and(|v| v.starts_with("3.")));
+    assert!(spec["paths"].as_mapping().is_some_and(|p| !p.is_empty()));
+
+    fn refs<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
+        match v {
+            Value::Mapping(m) => {
+                for (k, v) in m {
+                    match (k.as_str(), v.as_str()) {
+                        (Some("$ref"), Some(r)) => out.push(r),
+                        _ => refs(v, out),
+                    }
+                }
+            }
+            Value::Sequence(s) => s.iter().for_each(|v| refs(v, out)),
+            Value::Tagged(t) => refs(&t.value, out),
+            _ => {}
+        }
+    }
+    let mut all = Vec::new();
+    refs(&spec, &mut all);
+    assert!(!all.is_empty());
+    let dangling: Vec<&str> = all
+        .into_iter()
+        .filter(|r| {
+            let Some(pointer) = r.strip_prefix("#/") else {
+                return true; // only local references are written
+            };
+            let mut node = &spec;
+            for part in pointer.split('/') {
+                let part = part.replace("~1", "/").replace("~0", "~");
+                match node.get(part.as_str()) {
+                    Some(next) => node = next,
+                    None => return true,
+                }
+            }
+            false
+        })
+        .collect();
+    assert!(
+        dangling.is_empty(),
+        "unresolved $ref in openapi.yaml: {dangling:?}"
+    );
+}
+
 #[tokio::test]
 async fn ready_without_warmup_is_immediate() {
     let response = app()

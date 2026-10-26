@@ -143,7 +143,7 @@ fn check_strict_quoting(text: &str, delimiter: u8) -> Result<(), String> {
 /// widening the sample unconditionally would change the delimiter picked for
 /// ragged files.
 fn detect_delimiter(text: &str) -> u8 {
-    const CANDIDATES: [u8; 5] = [b',', b';', b'\t', b'|', b':'];
+    const CANDIDATES: [u8; 5] = *b",;\t|:";
     let count_best = |sample: &[u8]| {
         let mut best = b',';
         let mut best_count = 0usize;

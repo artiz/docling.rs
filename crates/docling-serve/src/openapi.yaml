@@ -1658,6 +1658,8 @@ components:
       { name: md_page_break_placeholder, in: query, schema: { type: string }, description: "Alias of page_break_placeholder." }
     pandoc_api_version:
       { name: pandoc_api_version, in: query, schema: { type: string } }
+    pandoc_heading_depth:
+      { name: pandoc_heading_depth, in: query, schema: { type: string, enum: [docling, source] } }
     list_attachments:
       { name: list_attachments, in: query, schema: { type: boolean } }
     ebcdic_layout:
