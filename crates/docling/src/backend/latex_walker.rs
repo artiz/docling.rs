@@ -9,9 +9,11 @@
 //! source (`latexwalker/__init__.py`, `macrospec/_argparsers.py`,
 //! `latexwalker/_defaultspecs.py`), quirks included, so the handler port in
 //! [`super::latex`] sees the same nodes upstream sees. Offsets are byte
-//! offsets into the source; a node's `latex_verbatim()` is its slice of it.
+//! offsets into the source; a node's `latex_verbatim()` is its `pos..pos + len`
+//! slice of it.
 
 use std::cell::Cell;
+use std::collections::HashSet;
 
 /// A parsed node: pylatexenc's `LatexNode` subclasses.
 #[derive(Debug, Clone, PartialEq)]
@@ -63,44 +65,6 @@ pub(crate) enum Kind {
 pub(crate) struct Args {
     pub argspec: String,
     pub argnlist: Vec<Option<Node>>,
-}
-
-impl Node {
-    pub fn verbatim<'s>(&self, s: &'s str) -> &'s str {
-        s.get(self.pos..self.pos + self.len).unwrap_or("")
-    }
-
-    /// The child list of a group, environment or math node (pylatexenc's
-    /// `nodelist`), `None` for the other kinds.
-    pub fn nodelist(&self) -> Option<&[Node]> {
-        match &self.kind {
-            Kind::Group { nodelist, .. }
-            | Kind::Env { nodelist, .. }
-            | Kind::Math { nodelist, .. } => Some(nodelist),
-            _ => None,
-        }
-    }
-
-    pub fn args(&self) -> Option<&Args> {
-        match &self.kind {
-            Kind::Macro { args, .. } | Kind::Env { args, .. } => args.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub fn macro_name(&self) -> Option<&str> {
-        match &self.kind {
-            Kind::Macro { name, .. } => Some(name),
-            _ => None,
-        }
-    }
-
-    pub fn env_name(&self) -> Option<&str> {
-        match &self.kind {
-            Kind::Env { name, .. } => Some(name),
-            _ => None,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -375,14 +339,43 @@ const ENV_SPECS: &[(&str, &str, bool)] = &[
 /// The "latex specials", longest match first.
 const SPECIALS: &[&str] = &["---", "``", "''", "--", "!`", "?`", "&", "~"];
 
+/// docling's `docling-metadata-and-bibliography` context category
+/// (`utils/latex_context.py`, docling#4817), prepended to pylatexenc's
+/// defaults: front-matter commands, `\caption` / `\captionof`, `\bibitem`
+/// and `\parbox` take their arguments, so their text reaches the handlers as
+/// the macro's argument instead of a sibling group.
+const DOCLING_MACRO_SPECS: &[(&str, &str)] = &[
+    ("title", "[{"),
+    ("affiliation", "{"),
+    ("affil", "{"),
+    ("address", "{"),
+    ("institute", "{"),
+    ("email", "{"),
+    ("altaffiliation", "[{"),
+    ("thanks", "{"),
+    ("inst", "{"),
+    ("preprint", "{"),
+    ("parbox", "[{{"),
+    ("caption", "*[{"),
+    ("captionof", "{{"),
+    ("bibitem", "[{"),
+    ("bibliographystyle", "{"),
+    ("newtheorem", "*{[{["),
+];
+
 fn macro_argspec(name: &str) -> &'static str {
-    MACRO_SPECS
+    DOCLING_MACRO_SPECS
         .iter()
+        .chain(MACRO_SPECS)
         .find(|(n, _)| *n == name)
         .map_or("", |(_, spec)| spec)
 }
 
 fn env_spec(name: &str) -> (&'static str, bool) {
+    if name == "thebibliography" {
+        // docling's context: the widest-label argument, `{99}`.
+        return ("{", false);
+    }
     ENV_SPECS
         .iter()
         .find(|(n, _, _)| *n == name)
@@ -448,6 +441,11 @@ const MAX_DEPTH: usize = 400;
 pub(crate) struct Walker<'s> {
     pub s: &'s str,
     depth: Cell<usize>,
+    /// Macros the document defines without arguments, registered ahead of
+    /// every other spec (docling's `docling-source-macros` category) so a
+    /// source definition of a built-in name — `\def\b{…}` — does not take an
+    /// argument the main parse would otherwise read.
+    zero_arg: Option<&'s HashSet<String>>,
 }
 
 impl<'s> Walker<'s> {
@@ -455,6 +453,17 @@ impl<'s> Walker<'s> {
         Walker {
             s,
             depth: Cell::new(0),
+            zero_arg: None,
+        }
+    }
+
+    /// [`Walker::new`] with the document's argument-less macros prepended
+    /// to the context.
+    pub fn with_zero_arg_macros(s: &'s str, names: &'s HashSet<String>) -> Self {
+        Walker {
+            s,
+            depth: Cell::new(0),
+            zero_arg: (!names.is_empty()).then_some(names),
         }
     }
 
@@ -998,7 +1007,6 @@ impl<'s> Walker<'s> {
             Stop::Brace(o, c) if c != '}' => Some((o, c)),
             _ => None,
         };
-        let has_stop = !matches!(stop, Stop::None);
         let mut nodelist: Vec<Node> = Vec::new();
         let mut p = origpos;
         // Accumulated plain characters and where they started.
@@ -1009,14 +1017,15 @@ impl<'s> Walker<'s> {
             let tok = match self.get_token(p, include_brace, true, state) {
                 Ok(t) => t,
                 Err(Fail::EndOfStream(final_space)) => {
-                    if !has_stop {
-                        // The trailing whitespace joins the last chars.
-                        if lastchars_pos.is_none() {
-                            lastchars_pos = Some(p);
-                        }
-                        lastchars.push_str(final_space);
-                        p += final_space.len();
+                    // The trailing whitespace joins the last chars — inside
+                    // an unclosed group or environment too: tolerant
+                    // `do_read` returns the end-of-stream error itself, and
+                    // the loop pushes its `final_space` whatever it stops at.
+                    if lastchars_pos.is_none() {
+                        lastchars_pos = Some(p);
                     }
+                    lastchars.push_str(final_space);
+                    p += final_space.len();
                     break;
                 }
                 Err(Fail::Parse) => break,
@@ -1110,7 +1119,11 @@ impl<'s> Walker<'s> {
                     }
                 }
                 Tok::Macro(name) => {
-                    let argspec = macro_argspec(name);
+                    let argspec = if self.zero_arg.is_some_and(|z| z.contains(name)) {
+                        ""
+                    } else {
+                        macro_argspec(name)
+                    };
                     let text_mode = if TEXT_MODE_ARG.contains(&name) {
                         Some(false)
                     } else if name == "ensuremath" {

@@ -250,7 +250,7 @@ escaped text (§ Markdown) — the sweep runs with the lock:
 | Markdown | 11 | 10 | 10 | `inline_and_formatting`: docling#4488's formatted table cells print as plain text on the flat Markdown path; `escaped_characters`: its code spans keep their literal `&amp; &lt;`, which upstream's HTML detour decodes (a divergence, § Markdown) |
 | DeepSeek-OCR Markdown | 3 | **3** | n/a | — (2.129's first-row-only `column_header` for HTML tables ported) |
 | AsciiDoc | 5 | **5** | **5** | — (JSON: docling's `parents`/`indents` tree — title root, headings at their level, nested `list` groups, body-level captions) |
-| LaTeX | 8 | 1 | 0 | docling 2.142's LaTeX rewrite (docling#4817: `equation` environments kept inside display math, table captions ahead of their table, arXiv metadata) is not ported yet — every fixture differs by it; against docling 2.130–2.141 the port was 8/8 Markdown and 7/8 JSON. JSON: docling's body-flat tree from the pylatexenc-faithful walk (#466) — `title`/`text` for the preamble metadata, `section_header` levels, `paragraph` for a chars node's middle part vs `text` for buffered text, `formula` items, `list` groups whose items are `enumerated: false`, `figure` section groups, `Image: <path>` caption items the picture references, `tabular` cells with `\multicolumn`/`\multirow` read the way upstream reads them. `1706.03762` differs in one `tabular` only: upstream writes a span into the cell's end offsets but leaves `row_span`/`col_span` at 1, here the two agree. PDF figures carry no image payload (upstream renders them with pypdfium2); raster figures are embedded as PNG like upstream's `ImageRef.from_pil` |
+| LaTeX | 8 | **8** | 7 | docling 2.142's rewrite (docling#4817) ported in full — see § LaTeX. `1706.03762` differs in one `tabular` only: upstream writes a span into the cell's end offsets but leaves `row_span`/`col_span` at 1, here the two agree (a deliberate divergence). Upstream's 213 test-suite inputs (`tests/test_latex`) convert identically too, bar the same span fields (3) and, in Markdown only, the Python repr of a TikZ picture's `meta.code` docling-core prints (8) |
 | JATS | 7 | 4 | **7** | the three `elife-56337` copies: a footnote of one run prints on its bullet, where docling 2.142 prints an empty bullet and the text below (a divergence, § JATS; whitespace-only). (JSON: docling's `_walk_linear` parent threading; the `.txt` copy of `elife-56337` routes to the JATS backend by its JATS DOCTYPE, as docling's format detection does) |
 | USPTO | 9 | **9** | **9** | — (JSON: the SAX handlers' `level`/`parents` tree — everything under the title, `ABSTRACT`/`CLAIMS` as level-2 headings holding `paragraph` items, `<heading level>` nesting, table placeholders at `</table>` filled with `XmlTable` cells that list a spanning entry once per covered column; `tables_ipa20180000016` fails in upstream) |
 | WebVTT | 4 | **4** | **4** | per-cue `source` (`kind: track`, start/end seconds, identifier, voice), inherited `formatting`, inline `WebVTT cue span` groups |
@@ -1016,29 +1016,33 @@ converted once more as that format with a warning.
 #### LaTeX
 
 **Backend:** `latex.rs` + `latex_walker.rs`\
-**Status:** **8/8 Markdown exact, 7/8 JSON identical** vs docling 2.130+ groundtruth
+**Status:** **8/8 Markdown exact, 7/8 JSON identical** vs docling 2.142.1 (docling-core 2.103.1), the six arXiv projects included; upstream's own `tests/test_latex` inputs 205/213 Markdown, 210/213 JSON, every difference one of the divergences below
 
-- docling's `LatexDocumentBackend` ported handler for handler on a port of pylatexenc 2.11's tolerant `LatexWalker` (#466)
-- `example_01/02` plus the six arXiv projects (`1706.03762`, `2305.03393`, `2310.06825`, `2412.19437`, `2501.00089`, `arXiv-2501.01300v2`), `\input` files parsed in place
-- The walker port is checked node for node against pylatexenc's own dump on every fixture (`scripts/dev/pylatexenc_dump.py` … `latex_walker::tests::dump_file`), because upstream's output is the node stream's:
-  - pylatexenc's default macro specs (`\paragraph{…}` is unknown to it, so the title becomes a sibling group)
-  - chars nodes ending at every macro
-  - the swallowed post-macro space
-  - comments
-  - specials (`~`, `--`, `` `` `` dropped — upstream has no handler for them)
-  - tolerant recovery from stray braces and `\end`s
+- docling's `LatexDocumentBackend` ported handler for handler (#466; docling 2.142's arXiv rewrite, docling#4817, plus #4974, #4517, #4644, #4579, #4502, #4475, #4441, #4325, #4340) on a port of pylatexenc 2.11's tolerant `LatexWalker`
+- `example_01/02` plus the six arXiv projects (`1706.03762`, `2305.03393`, `2310.06825`, `2412.19437`, `2501.00089`, `arXiv-2501.01300v2`), `\input` files parsed in place and decoded like the main file (UTF-8, cp1252, latin-1)
+- The walker port is checked node for node against pylatexenc's own dump, parsed with docling's context, on every fixture and on all 213 upstream test inputs (`scripts/dev/pylatexenc_dump.py` … `latex_walker::tests::dump_file`), because upstream's output is the node stream's:
+  - pylatexenc's default macro specs plus docling's (`\title`, `\caption`, `\captionof`, `\bibitem`, `\parbox`, the affiliation commands and `\thanks` take their arguments; `thebibliography` its `{99}`; `\paragraph{…}` is still unknown, so its title is a sibling group)
+  - the document's argument-less macros registered ahead of them (`\def\b{…}` does not read a following `$` as the accent's argument)
+  - chars nodes ending at every macro, the swallowed post-macro space, comments, specials (`~`, `--`, `` `` `` dropped — upstream has no handler for them)
+  - tolerant recovery from stray braces and `\end`s; an unclosed environment keeps the file's trailing whitespace
+- Preprocessing: every macro, environment, theorem, length, counter and conditional definition is masked out of the source before the parse and kept, with the preamble's ignored commands (`\documentclass`, `\usepackage`, …), as **furniture**-layer text items ahead of everything else (the default Markdown leaves them out); zero-argument shortcuts to an environment delimiter or `$$` (`\def\be{\begin{equation}}`) are expanded where used; `\hfuzz`/`\vfuzz` assignments dropped
 - Handlers:
-  - the text buffer flushed by structural macros/environments/paragraph breaks (docling#4340)
-  - `\newcommand` bodies expanded by text
-  - citations `[key]`
-  - `href` → `[text](url)`
-  - theorem/proof markers
-  - `thebibliography` as a list group
-  - `tabular` with the `\multicolumn`/`\multirow` lookup at the node's *document* offset into the environment's own text (usually a miss, then the macro's groups are cell text)
+  - the text buffer of strings and **inline formulas**, flushed by structural macros/environments/paragraph breaks/every `\item` (docling#4340, #4644): a run with inline math is an empty item holding an `inline` group of `text` and `formula` parts — paragraphs, headings, captions, list items, footnotes and front matter alike; Markdown joins the parts with spaces as docling-core does (`Inline math:  $E = mc^2$`, the text run's own space kept: whitespace that rendered Markdown collapses, followed byte for byte)
+  - whitespace runs holding a line break collapse to one space in every item but formulas and code
+  - front matter in `metadata` / `authors` / `affiliations` groups, `\and`-split, `\parbox` unwrapped, `\inst{1}` markers as `^{1}` formulas, `\thanks` / `\footnote` / `\altaffiliation` as footnotes (a body `\footnote` in place)
+  - `equation`, `align` & co. keep their `\begin`/`\end` inside the formula (only `displaymath`/`math`/`dmath` lose them) — an `align` body is not valid math without them
+  - accent and letter macros (`\'e` → é, `\ss` → ß, latex2text's combining marks, NFC; docling#4517)
+  - `\caption` as rich `caption` text: in a `figure` the picture's caption (no `Image: <path>` caption there), in a `table` / `longtable` the table's — Markdown prints it ahead of the table
+  - `\newcommand` bodies expanded by text (math-bearing ones inline), argument-less macros resolved to a fixed point; citations `[key]`; `href` → `[text](url)`; theorem/proof markers; description terms `Term: …` (docling#4579); `thebibliography` as one `[key] text` list item per `\bibitem`
+  - `tabular` with the `\multicolumn`/`\multirow` lookup at the node's *document* offset into the environment's own text (usually a miss, then the macro's groups are cell text), spans clamped to the HTML table model's caps (docling#4974); a cell holding math is a rich cell (a group under the table)
+  - figures: a raster file embedded as PNG like upstream's `ImageRef.from_pil`; a PDF's first page rendered at 144 dpi, the size pypdfium2's `render(scale=2)` gives (ceiling of the scaled page) — by docling-pdf's renderer, so the pixels differ; a build without the `pdf` feature (wasm) leaves the picture without a payload
+  - a `tikzpicture` is a picture carrying its source as `meta.code` (language `Tikz`), upstream's fallback without Tectonic (no engine here)
+  - code environments keep their first line's indentation (docling#4502)
+- DocLang: `example_01/02` exact against docling 2.142.1's (`groundtruth_dclx` regenerated): a table has no header row (`<fcel/>`, LaTeX flags no `column_header`), and a multi-line display formula's `<content>` prints in block form as minidom writes an element child (the shared DocLang serializer)
 - Deviations:
-  - PDF figures are payload-less pictures (upstream: pypdfium2 render at 144 dpi)
-  - a `tikzpicture` is a payload-less picture without upstream's `meta.code`
-  - `1706.03762`'s one `tabular` carries consistent span fields where upstream's stay 1
+  - a spanning cell's `row_span` / `col_span` agree with its offsets, where upstream leaves them at 1 (`1706.03762`'s one table)
+  - Markdown leaves out the Python repr docling-core prints for a TikZ picture's `meta.code` (`confidence=None created_by=None text='…' language=…`); the JSON keeps the code
+  - line endings are translated for byte input too (upstream reads a path in text mode, a stream raw)
 - docling#4325 (2.130.0-33): `tabular*`, `tabularx` and `longtable` are tables (longtable with docling's own `[{` spec; `\endhead` & co. no cell content)
 
 #### MHTML (.mhtml/.mht)
@@ -1427,7 +1431,7 @@ fragments as XML.
 |---|---|---|---|
 | CSV / AsciiDoc / Email | **100%** | JATS | 95% |
 | XLSX | **100%** | Markdown | 92% |
-| DOCX / PPTX | **100%** | LaTeX | 91% |
+| DOCX / PPTX | **100%** | LaTeX | **100%** |
 | USPTO | 98% | HTML | 97% |
 | ODF | 96% | WebVTT | 81% |
 

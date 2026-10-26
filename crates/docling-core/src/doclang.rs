@@ -981,7 +981,17 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                     }
                     out.push(depth, "</formula>".to_string());
                 } else {
-                    out.push(depth, format!("<formula>{}</formula>", escape_text(latex)));
+                    let body = escape_text(latex);
+                    // A `<content>` wrapper (a multi-line formula: a LaTeX
+                    // `equation` keeping its `\begin`/`\end`) is an element
+                    // child, which minidom prints in block form.
+                    if body.starts_with("<content>") {
+                        out.push(depth, "<formula>".to_string());
+                        out.push(depth + 1, body);
+                        out.push(depth, "</formula>".to_string());
+                    } else {
+                        out.push(depth, format!("<formula>{body}</formula>"));
+                    }
                 }
                 *i += 1;
             }
