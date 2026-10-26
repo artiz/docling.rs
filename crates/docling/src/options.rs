@@ -131,6 +131,14 @@ pub struct ConvertOptions {
     /// `DOCLING_RS_DEBUG` diagnostic says why), never an invented one. The
     /// picture stays either way. `"none"` turns the extraction off.
     pub extract_diagrams: Option<String>,
+    /// Word (DOCX / DOC): a paragraph style's `w:outlineLvl` alone makes it
+    /// a heading (docling's `MsWordBackendOptions.use_outline_level_for_headings`,
+    /// docling#4480; default `true`) — how a localized or custom heading
+    /// style ("Nadpis1") is recognized. `false` stops that for templates
+    /// whose body styles carry an outline level only for the TOC (numbered
+    /// legal clauses); a style named a heading still takes its level from
+    /// the outline either way.
+    pub use_outline_level_for_headings: Option<bool>,
     /// Pre-render HTML with a headless browser (the `web-browser` feature).
     pub use_web_browser: Option<bool>,
     /// XBRL: the directory the instance's taxonomy is read from.
@@ -574,6 +582,10 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("metadata"),
     row("track_changes"),
     row("extract_diagrams"),
+    OptionInfo {
+        cli: Some("--no-outline-level-headings"),
+        ..row("use_outline_level_for_headings")
+    },
     // The npm addon is not built with the `web-browser` feature, so the
     // option would only ever error there.
     OptionInfo {
@@ -1317,6 +1329,9 @@ impl ConvertOptions {
         }
         if let Some(format) = self.extract_diagrams()? {
             c = c.extract_diagrams(format);
+        }
+        if let Some(v) = self.use_outline_level_for_headings {
+            c = c.use_outline_level_for_headings(v);
         }
         if let Some(v) = self.use_web_browser {
             c = c.use_web_browser(v);

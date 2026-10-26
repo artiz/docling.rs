@@ -374,6 +374,8 @@ pub struct DocumentConverter {
     track_changes: Option<crate::TrackChanges>,
     /// [`Self::extract_diagrams`].
     extract_diagrams: crate::DiagramFormat,
+    /// [`Self::use_outline_level_for_headings`].
+    use_outline_level_for_headings: bool,
     /// Directory referenced-mode streaming writes images into (#80).
     /// See [`Self::artifacts_dir`].
     artifacts_dir: String,
@@ -628,6 +630,7 @@ impl Default for DocumentConverter {
             ipynb_outputs: crate::IpynbOutputs::None,
             track_changes: None,
             extract_diagrams: crate::DiagramFormat::default(),
+            use_outline_level_for_headings: true,
             artifacts_dir: "artifacts".to_string(),
             document_timeout: None,
             archive_limits: crate::archive::ArchiveLimits::default(),
@@ -1023,6 +1026,20 @@ impl DocumentConverter {
     /// extraction off. The CLI's `--extract-diagrams mermaid|none`.
     pub fn extract_diagrams(mut self, format: crate::DiagramFormat) -> Self {
         self.extract_diagrams = format;
+        self
+    }
+
+    /// Word documents (DOCX, DOC): whether a paragraph style's outline
+    /// level (`w:outlineLvl`, the `.doc` `sprmPOutLvl`) alone makes it a
+    /// heading — docling's `use_outline_level_for_headings` (docling#4480),
+    /// on by default: it is how a localized or custom heading style
+    /// ("Nadpis1", "Rubrik 1") is recognized. Off for templates whose body
+    /// styles carry an outline level only for the table of contents
+    /// (numbered legal clauses), which would otherwise all be headings. A
+    /// style named a heading keeps taking its level from the outline. The
+    /// CLI's `--no-outline-level-headings`.
+    pub fn use_outline_level_for_headings(mut self, on: bool) -> Self {
+        self.use_outline_level_for_headings = on;
         self
     }
 
@@ -2925,6 +2942,7 @@ impl DocumentConverter {
                 InputFormat::Docx => DocxBackend {
                     track_changes: self.track_changes,
                     extract_diagrams: self.extract_diagrams,
+                    use_outline_level_for_headings: self.use_outline_level_for_headings,
                 }
                 .convert(source)?,
                 // Legacy binary Office (issue #127): parsed natively — docling
@@ -2936,6 +2954,7 @@ impl DocumentConverter {
                 InputFormat::Ppt => PptBackend.convert(source)?,
                 InputFormat::Doc => DocBackend {
                     track_changes: self.track_changes,
+                    use_outline_level_for_headings: self.use_outline_level_for_headings,
                 }
                 .convert(source)?,
                 InputFormat::Vtt => WebVttBackend.convert(source)?,

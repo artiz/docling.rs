@@ -132,6 +132,7 @@ paths:
         - { $ref: "#/components/parameters/metadata" }
         - { $ref: "#/components/parameters/track_changes" }
         - { $ref: "#/components/parameters/extract_diagrams" }
+        - { $ref: "#/components/parameters/use_outline_level_for_headings" }
         - { $ref: "#/components/parameters/video_frames" }
         - { $ref: "#/components/parameters/video_scene_threshold" }
         - { $ref: "#/components/parameters/video_frame_max_side" }
@@ -226,10 +227,9 @@ paths:
                 encoding: { type: string, examples: ["shift_jis", "koi8-r", "windows-1251"] }
                 ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }
                 metadata: { $ref: "#/components/schemas/MetadataOutput" }
-        track_changes: { $ref: "#/components/schemas/TrackChanges" }
-        extract_diagrams: { $ref: "#/components/schemas/DiagramFormat" }
                 track_changes: { $ref: "#/components/schemas/TrackChanges" }
                 extract_diagrams: { $ref: "#/components/schemas/DiagramFormat" }
+                use_outline_level_for_headings: { type: boolean }
                 video_frames: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] }
                 video_scene_threshold: { type: number, minimum: 0, maximum: 1 }
                 video_frame_max_side: { type: integer, minimum: 0 }
@@ -1054,7 +1054,7 @@ components:
           minimum: 0
           maximum: 1
           default: 0.85
-          description: With `redact_pii`: the NER detector's minimum confidence.
+          description: "With `redact_pii`: the NER detector's minimum confidence."
         ebcdic_layout:
           type: string
           description: >
@@ -1230,6 +1230,7 @@ components:
         metadata: { $ref: "#/components/schemas/MetadataOutput" }
         track_changes: { $ref: "#/components/schemas/TrackChanges" }
         extract_diagrams: { $ref: "#/components/schemas/DiagramFormat" }
+        use_outline_level_for_headings: { type: boolean }
         video_frames:
           oneOf:
             - { type: integer, minimum: 0 }
@@ -1697,6 +1698,8 @@ components:
       { name: track_changes, in: query, schema: { $ref: "#/components/schemas/TrackChanges" } }
     extract_diagrams:
       { name: extract_diagrams, in: query, schema: { $ref: "#/components/schemas/DiagramFormat" } }
+    use_outline_level_for_headings:
+      { name: use_outline_level_for_headings, in: query, schema: { type: boolean, default: true } }
     video_frames:
       { name: video_frames, in: query, schema: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] } }
     video_scene_threshold:

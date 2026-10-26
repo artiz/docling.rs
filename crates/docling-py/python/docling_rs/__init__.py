@@ -400,6 +400,11 @@ class DocumentConverter:
       with the flowchart its labelled shapes and connectors describe — only
       when every connector names its two end shapes; a drawing laid by eye
       gets no graph. ``"none"`` turns the extraction off.
+    * ``use_outline_level_for_headings`` — Word (DOCX / DOC): a style's
+      ``w:outlineLvl`` alone makes it a heading (docling's
+      ``MsWordBackendOptions`` field, docling#4480; default ``True``).
+      ``False`` for templates whose body styles carry an outline level only
+      for the TOC; a style named a heading keeps its outline level.
     * ``metadata`` — document metadata (#679): the file's own (an EPUB's
       Dublin Core, Office properties, ODF ``meta.xml``, a photo's EXIF,
       audio tags, a PDF's Info dictionary). ``"none"`` (default) reads
@@ -511,6 +516,7 @@ class DocumentConverter:
         metadata: Optional[str] = None,
         track_changes: Optional[str] = None,
         extract_diagrams: Optional[str] = None,
+        use_outline_level_for_headings: bool = True,
         pipeline: Optional[str] = None,
         vlm_endpoint: Optional[str] = None,
         vlm_model: Optional[str] = None,
@@ -777,6 +783,7 @@ class DocumentConverter:
             metadata=metadata,
             track_changes=track_changes,
             extract_diagrams=extract_diagrams,
+            use_outline_level_for_headings=use_outline_level_for_headings,
             pipeline=pipeline,
             vlm_endpoint=vlm_endpoint,
             vlm_model=vlm_model,

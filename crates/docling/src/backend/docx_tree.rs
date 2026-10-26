@@ -94,11 +94,28 @@ struct ListCache {
     parent: Option<usize>,
 }
 
+/// `_NestedList` (docling#4465): a list opened under an open list's item
+/// for its larger left indentation — Word's "List Bullet 2" / "List Number
+/// 2" styles each own a `numId` at `w:ilvl` 0 and differ from "List
+/// Bullet" only by their indentation. `slot` and `start_ilevel` place the
+/// nested list's own levels in the parents stack; the `outer_*` fields
+/// describe the item it hangs from.
+#[derive(Clone)]
+struct NestedList {
+    slot: i64,
+    start_ilevel: i64,
+    outer_numid: String,
+    outer_ilevel: Option<i64>,
+    outer_left_indent: i64,
+}
+
 /// The list-related state `_isolated_list_context` saves around a rich cell.
 struct SavedListCtx {
     history: Vec<Hist>,
     level_at_new_list: Option<i64>,
     level_start_ilevel: i64,
+    nested_lists: Vec<NestedList>,
+    last_list_left_indent: i64,
     parents: Vec<Option<usize>>,
     cache: Option<ListCache>,
 }
@@ -112,6 +129,11 @@ struct Walker {
     /// The `w:ilvl` the current list opened at (docling#4188): a list that
     /// starts above level 0 still lands at `level_at_new_list`.
     level_start_ilevel: i64,
+    /// Lists nested under an open list's item by left indentation, innermost
+    /// last (docling#4465).
+    nested_lists: Vec<NestedList>,
+    /// The last list item's effective left indentation in twips.
+    last_list_left_indent: i64,
     numbered_headers: HashMap<u8, u64>,
     list_counters: HashMap<(String, i64), i64>,
     started_numids: HashSet<String>,
@@ -464,6 +486,8 @@ impl Walker {
             level: 0,
             level_at_new_list: None,
             level_start_ilevel: 0,
+            nested_lists: Vec::new(),
+            last_list_left_indent: 0,
             numbered_headers: HashMap::new(),
             list_counters: HashMap::new(),
             started_numids: HashSet::new(),
@@ -644,6 +668,8 @@ impl Walker {
             history: self.history.clone(),
             level_at_new_list: self.level_at_new_list,
             level_start_ilevel: self.level_start_ilevel,
+            nested_lists: self.nested_lists.clone(),
+            last_list_left_indent: self.last_list_left_indent,
             parents: self.parents.clone(),
             cache: self.cache.clone(),
         };
@@ -655,6 +681,8 @@ impl Walker {
         self.history = saved.history;
         self.level_at_new_list = saved.level_at_new_list;
         self.level_start_ilevel = saved.level_start_ilevel;
+        self.nested_lists = saved.nested_lists;
+        self.last_list_left_indent = saved.last_list_left_indent;
         self.parents = saved.parents;
         self.cache = saved.cache;
     }
@@ -824,8 +852,15 @@ impl Walker {
                     revision,
                 }),
                 "hyperlink" => {
-                    let runs: Vec<XmlNode> = child
-                        .children()
+                    // A link's runs may sit in the same wrappers as a
+                    // paragraph's — a tracked insertion made inside the
+                    // link text (docling#4576: python-docx's
+                    // `Hyperlink.runs` reads the direct `w:r` alone).
+                    let mut nested = Vec::new();
+                    children_recursive(child, ctx.policy(), revision.as_ref(), &mut nested);
+                    let runs: Vec<XmlNode> = nested
+                        .into_iter()
+                        .map(|(n, _)| n)
                         .filter(|n| n.has_tag_name("r") && !is_math(*n))
                         .collect();
                     let text: String = runs.iter().map(|r| run_text(*r)).collect();
@@ -1072,7 +1107,9 @@ impl Walker {
         {
             return ("Code".into(), None);
         }
-        if let Some(o) = outline {
+        // docling#4480: `use_outline_level_for_headings=False` keeps an
+        // outline level from promoting a style no name marks a heading.
+        if let Some(o) = outline.filter(|_| ctx.outline_headings) {
             if !is_title_style(style_id, name, ctx) {
                 return ("Heading".into(), Some(o));
             }
@@ -1840,17 +1877,19 @@ impl Walker {
         if let (Some(nid), Some(ilvl)) = (numid.clone(), ilevel) {
             if !matches!(p_style_id.as_str(), "Title" | "Heading" | "Code") {
                 let is_numbered = Self::has_visible_numbering(&nid, ilvl, ctx);
+                let left_indent = super::docx::list_left_indent(p, &nid, ilvl, ctx);
                 let li = if !equations.is_empty() {
                     self.add_list_item_with_equations(
                         &nid,
                         ilvl,
+                        left_indent,
                         &text,
                         &equations,
                         is_numbered,
                         ctx,
                     )
                 } else {
-                    self.add_list_item(&nid, ilvl, &elements, is_numbered, ctx)
+                    self.add_list_item(&nid, ilvl, left_indent, &elements, is_numbered, ctx)
                 };
                 refs.extend(li);
                 self.update_history(numid, ilevel);
@@ -1864,7 +1903,13 @@ impl Walker {
         {
             // Close the list. A Code paragraph after a list must close it
             // even with a stray numId, then be re-parented at body level.
-            self.last_numid = self.prev_numid();
+            // Lists nested by left indentation close with the outermost
+            // list, whose group is the one cached below (docling#4465).
+            self.last_numid = match self.nested_lists.first() {
+                Some(n) if self.level_at_new_list.is_some() => Some(n.outer_numid.clone()),
+                _ => self.prev_numid(),
+            };
+            self.nested_lists.clear();
             if !text.trim().is_empty() {
                 self.clear_list_cache();
             } else if let Some(lanl) = self.level_at_new_list.filter(|&l| l != 0) {
@@ -2170,17 +2215,58 @@ impl Walker {
     /// `_manage_list_structure`: open / indent / close / continue a list by
     /// `numId` and `ilvl`, returning the created groups and the level the
     /// item goes at.
-    fn manage_list_structure(&mut self, numid: &str, ilevel: i64) -> (Vec<usize>, i64) {
+    ///
+    /// `left_indent` is the item's effective left indentation in twips
+    /// ([`super::docx::list_left_indent`], docling#4465): an item of another
+    /// `numId` indented deeper than the open list's item opens its list
+    /// under that item, and a later one indented no deeper than that item
+    /// closes the nested list again and is placed as if it came right after
+    /// that item. Lists at one indentation stay siblings.
+    fn manage_list_structure(
+        &mut self,
+        numid: &str,
+        ilevel: i64,
+        left_indent: i64,
+    ) -> (Vec<usize>, i64) {
         let mut refs = Vec::new();
-        let level = self.get_level();
-        let prev_indent = self.prev_indent();
-        let prev_numid = self.prev_numid();
+        let mut level = self.get_level();
+        let mut prev_indent = self.prev_indent();
+        let mut prev_numid = self.prev_numid();
+        if let Some(prev) = prev_numid.clone().filter(|p| p != numid) {
+            if self.level_at_new_list.is_some() && self.is_list_group(self.parent_at(level - 1)) {
+                let mut closed = None;
+                while self
+                    .nested_lists
+                    .last()
+                    .is_some_and(|n| left_indent <= n.outer_left_indent)
+                {
+                    closed = self.nested_lists.pop();
+                }
+                if let Some(closed) = closed {
+                    // Back out to the item it hangs from.
+                    self.clear_parents_from(closed.slot);
+                    level = self.get_level();
+                    prev_numid = Some(closed.outer_numid);
+                    prev_indent = closed.outer_ilevel;
+                } else if left_indent > self.last_list_left_indent {
+                    // Nest under the open item.
+                    self.nested_lists.push(NestedList {
+                        slot: level,
+                        start_ilevel: ilevel,
+                        outer_numid: prev,
+                        outer_ilevel: prev_indent,
+                        outer_left_indent: self.last_list_left_indent,
+                    });
+                }
+            }
+        }
         let same = prev_numid.as_deref() == Some(numid);
         let use_level;
         if prev_numid.is_none() || (same && self.level_at_new_list.is_none()) {
             // Open a new list.
             self.level_at_new_list = Some(level);
             self.level_start_ilevel = ilevel;
+            self.nested_lists.clear();
             self.start_numid(numid);
             let parent = self.sub_list_parent(self.parent_at(level - 1));
             let g = self.get_or_create_list_group(numid, parent, &mut refs);
@@ -2224,6 +2310,7 @@ impl Walker {
                     use_level = level;
                     self.level_at_new_list = Some(use_level);
                     self.level_start_ilevel = ilevel;
+                    self.nested_lists.clear();
                 }
             }
             self.start_numid(numid);
@@ -2234,6 +2321,7 @@ impl Walker {
         } else {
             use_level = level - 1;
         }
+        self.last_list_left_indent = left_indent;
         (refs, use_level)
     }
 
@@ -2241,8 +2329,13 @@ impl Walker {
     /// list that starts at level 0 maps to `level_at_new_list + ilvl`; one
     /// that starts higher subtracts its start level so its first item lands
     /// at `level_at_new_list`, and an item shallower than the start level (a
-    /// resumed list returning to level 0) clamps to the list base.
+    /// resumed list returning to level 0) clamps to the list base. Inside a
+    /// list nested by left indentation (docling#4465) the levels map from
+    /// that list's own slot and start level.
     fn slot_for(&self, word_ilevel: i64) -> i64 {
+        if let Some(n) = self.nested_lists.last() {
+            return n.slot + (word_ilevel - n.start_ilevel).max(0);
+        }
         self.level_at_new_list.unwrap_or(0) + (word_ilevel - self.level_start_ilevel).max(0)
     }
 
@@ -2275,6 +2368,7 @@ impl Walker {
         &mut self,
         numid: &str,
         ilevel: i64,
+        left_indent: i64,
         elements: &[Part],
         is_numbered: bool,
         ctx: &Ctx,
@@ -2282,7 +2376,7 @@ impl Walker {
         if elements.is_empty() {
             return Vec::new();
         }
-        let (refs, use_level) = self.manage_list_structure(numid, ilevel);
+        let (refs, use_level) = self.manage_list_structure(numid, ilevel, left_indent);
         let marker = self.list_marker(numid, ilevel, is_numbered, ctx);
         self.add_formatted_list_item(elements, marker, is_numbered, use_level);
         refs
@@ -2352,16 +2446,18 @@ impl Walker {
 
     /// `_add_list_item_with_equations`: an empty list item over an inline
     /// group of alternating text and formula items.
+    #[allow(clippy::too_many_arguments)]
     fn add_list_item_with_equations(
         &mut self,
         numid: &str,
         ilevel: i64,
+        left_indent: i64,
         text: &str,
         equations: &[String],
         is_numbered: bool,
         ctx: &Ctx,
     ) -> Vec<usize> {
-        let (refs, use_level) = self.manage_list_structure(numid, ilevel);
+        let (refs, use_level) = self.manage_list_structure(numid, ilevel, left_indent);
         let marker = self.list_marker(numid, ilevel, is_numbered, ctx);
         let parent = self.parent_at(use_level);
         if !self.is_list_group(parent) {
@@ -2436,6 +2532,8 @@ impl Walker {
             self.clear_parents_from(-1);
             self.set_parent(-1, None);
             self.level = 0;
+            // Likewise, lists nested by left indentation in the body end here.
+            self.nested_lists.clear();
             let group = self.add(None, self.layer, group_kind("section", name));
             self.set_parent(0, Some(group));
             self.force_new_code_block = true;

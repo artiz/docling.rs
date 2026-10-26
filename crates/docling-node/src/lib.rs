@@ -66,6 +66,11 @@ pub struct ConverterOptions {
     /// names its two end shapes; a drawing laid by eye gets no graph.
     /// `"none"` turns the extraction off.
     pub extract_diagrams: Option<String>,
+    /// Word (DOCX / DOC): a style's `w:outlineLvl` alone makes it a heading
+    /// (docling's `use_outline_level_for_headings`, docling#4480; default
+    /// `true`). `false` for templates whose body styles carry an outline
+    /// level only for the TOC.
+    pub use_outline_level_for_headings: Option<bool>,
     /// Max frames sampled from a video input as timestamped pictures (needs
     /// the ffmpeg binary at runtime; `0` = transcript only). Default 8.
     /// `4294967295` (`2**32 - 1`, the largest value this field takes) keeps
@@ -429,6 +434,9 @@ pub struct ConvertOptions {
     /// Diagram extraction (#858): `"mermaid"` (default) | `"none"`; see
     /// [`ConverterOptions::extract_diagrams`].
     pub extract_diagrams: Option<String>,
+    /// Outline-level headings (docling#4480; default `true`); see
+    /// [`ConverterOptions::use_outline_level_for_headings`].
+    pub use_outline_level_for_headings: Option<bool>,
     /// Max frames sampled from a video input (`0` = transcript only;
     /// `4294967295` = every distinct cut, #647).
     pub video_frames: Option<u32>,
