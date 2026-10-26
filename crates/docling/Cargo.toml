@@ -133,8 +133,12 @@ serde_json = "1"
 # Blocking HTTP client for fetching remote <img src> images when image fetching
 # is enabled (DocumentConverter::fetch_images). 3.x matches the version `ort`
 # already pulls in (so the graph keeps a single ureq); it needs Rust 1.85, which
-# this crate already requires transitively via docling-pdf → ort.
-ureq = { version = "3", optional = true }
+# this crate already requires transitively via docling-pdf → ort. 3.5 at least:
+# the SSRF guard (`fetch.rs`, #752) implements ureq's `unversioned` resolver
+# API, which ureq exempts from semver — 3.5 added `per_read` / `per_write` to
+# `NextTimeout` (and a `Default` the tests build it with, so the next added
+# field does not break them again).
+ureq = { version = "3.5", optional = true }
 # Resolve relative / protocol-relative <img src> against the page's base URL
 # when the HTML was fetched from the web (fetch_images). Gated with ureq.
 url = { version = "2", optional = true }

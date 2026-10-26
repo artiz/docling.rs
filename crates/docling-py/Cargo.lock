@@ -884,7 +884,7 @@ dependencies = [
 
 [[package]]
 name = "docling"
-version = "2.51.1"
+version = "2.51.3"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -921,7 +921,7 @@ dependencies = [
 
 [[package]]
 name = "docling-asr"
-version = "2.51.1"
+version = "2.51.3"
 dependencies = [
  "docling-core",
  "docling-onnx",
@@ -932,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "docling-cli"
-version = "2.51.1"
+version = "2.51.3"
 dependencies = [
  "axum",
  "docling",
@@ -947,7 +947,7 @@ dependencies = [
 
 [[package]]
 name = "docling-core"
-version = "2.51.1"
+version = "2.51.3"
 dependencies = [
  "libc",
  "png 0.18.1",
@@ -961,7 +961,7 @@ dependencies = [
 
 [[package]]
 name = "docling-onnx"
-version = "2.51.1"
+version = "2.51.3"
 dependencies = [
  "docling-core",
  "libloading 0.8.9",
@@ -970,7 +970,7 @@ dependencies = [
 
 [[package]]
 name = "docling-pdf"
-version = "2.51.1"
+version = "2.51.3"
 dependencies = [
  "docling-core",
  "docling-onnx",
@@ -3519,17 +3519,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "socks"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0c3dbbd9ae980613c6dd8e28a9407b50509d3803b57624d5dfe8315218cd58b"
-dependencies = [
- "byteorder",
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "spm_precompiled"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4217,9 +4206,9 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "ureq"
-version = "3.4.2"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a7ac20be9b7726e0bbdbf974c059676d9acb1cd414961f570a4e8231cacd7fc"
+checksum = "cde93ff05758a36a851a398a772b0b79a82fbe3c186a46f2696baaeaf84c966b"
 dependencies = [
  "base64 0.23.1",
  "flate2",
@@ -4227,7 +4216,6 @@ dependencies = [
  "percent-encoding",
  "rustls",
  "rustls-pki-types",
- "socks",
  "ureq-proto",
  "utf8-zero",
  "webpki-roots",
@@ -4427,28 +4415,6 @@ dependencies = [
  "bytemuck",
  "safe_arch",
 ]
-
-[[package]]
-name = "winapi"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
-dependencies = [
- "winapi-i686-pc-windows-gnu",
- "winapi-x86_64-pc-windows-gnu",
-]
-
-[[package]]
-name = "winapi-i686-pc-windows-gnu"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
-
-[[package]]
-name = "winapi-x86_64-pc-windows-gnu"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windows-core"
