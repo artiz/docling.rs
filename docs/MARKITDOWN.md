@@ -26,7 +26,8 @@ the same Markdown byte for byte.
 
 ## Why switch — measured side by side
 
-MarkItDown 0.1.8 (`markitdown[all]`) vs docling.rs 2.33.0 on 4 vCPU, no GPU,
+MarkItDown 0.1.9 (`markitdown[all]`) vs docling.rs master after 2.51.3 on 4 vCPU,
+no GPU (2026-10-25),
 with [`scripts/conformance/markitdown_compare.py`](../scripts/conformance/markitdown_compare.py);
 the per-format table is in the README's
 [MarkItDown comparison](../README.md#conformance-with-microsoft-markitdown),
@@ -36,18 +37,18 @@ docling.rs by construction; the timings do not depend on it.
 
 | | MarkItDown | docling.rs |
 |---|---|---|
-| DOCX (38 files), warm | 4.22 s | **0.44 s** |
-| One CLI call, cold (DOCX) | 1102 ms | **14 ms** |
+| DOCX (38 files), warm | 9.32 s | **0.57 s** |
+| One CLI call, cold (DOCX) | 1360 ms | **31 ms** |
 | DOCX table-cell / heading recall | 0.81 / 0.78 | **1.00 / 1.00** |
 | PDF table-cell recall (full pipeline) | 0.31 | **0.94** |
 | PDF heading recall (full pipeline) | 0.00 | **0.91** |
-| PDF text layer only, 18 files | 7.6 s | **0.5 s** (`text_layer_only`) |
-| Text drawn into images (27 files) | 0.00–0.33 without an LLM; 1.00 with GPT-4o (46 API calls, $0.063) | **1.00**, local OCR, offline, no API key |
+| PDF text layer only, 18 files | 19.0 s | **0.8 s** (`text_layer_only`) |
+| Text drawn into images (27 files) | 0.00–0.33 without an LLM; 1.00 with GPT-4o (46 API calls, $0.064) | **1.00**, local OCR, offline, no API key |
 
 The full PDF pipeline renders every page and runs neural models — it is
-slower than MarkItDown's pdfminer pass (38.4 s vs 7.6 s on the 18 PDFs) and
+slower than MarkItDown's pdfminer pass (60.3 s vs 19.0 s on the 18 PDFs) and
 does the work that turns 0.31 table-cell recall into 0.94 and reads scans at
-all. When only the text layer matters, `text_layer_only` is 15× faster than
+all. When only the text layer matters, `text_layer_only` is 24× faster than
 MarkItDown and still scores higher on word F1 (0.97 vs 0.63).
 
 ## How the comparison is scored
@@ -82,12 +83,14 @@ transcribed by hand), share of those words in the output:
 
 | Run | Office pictures (16) | PDF with images (6) | Scanned PDF (5) | Time | Cost |
 |---|---|---|---|---|---|
-| MarkItDown, no LLM | 0.16 | 0.33 | 0.00 | 1.3 s | — |
-| MarkItDown + `markitdown-ocr`, gpt-4o | 1.00 | 1.00 | 1.00 | 43.5 s (46 API calls, 21 870 tokens) | $0.063 |
-| docling.rs `--picture-ocr --force-full-page-ocr` | **1.00** | **1.00** | **1.00** | **30.6 s** (`--jobs 4`: 27.0 s) | local, offline |
+| MarkItDown, no LLM | 0.16 | 0.33 | 0.00 | 2.9 s | — |
+| MarkItDown + `markitdown-ocr`, gpt-4o | 1.00 | 1.00 | 1.00 | 44.8 s (46 API calls, 21 927 tokens) | $0.064 |
+| docling.rs `--picture-ocr --force-full-page-ocr` | **1.00** | **1.00** | **1.00** | 56.8 s (`--jobs 4`: 47.1 s) | local, offline |
 
-The non-zero scores without OCR are words the images share with the body
-text. docling.rs reads the pictures with its own OCR models (PP-OCR detector
+On this machine the local OCR's wall time trails GPT-4o's round trips
+(the 2026-10-13 build takes the same ~55 s here; the earlier, faster host
+had it at 30.6 s against GPT-4o's 43.5 s). The non-zero scores without OCR
+are words the images share with the body text. docling.rs reads the pictures with its own OCR models (PP-OCR detector
 and recognizer, ONNX) — no API key, nothing leaves the machine.
 
 ## The API

@@ -13,6 +13,23 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 use zip::ZipArchive;
 
+/// Open a ZIP the way a well-formed one is laid out first: zip 9's default
+/// `ArchiveOffset::Detect` finds the central directory by scanning the
+/// whole archive forward for its signatures — ~1.5 instructions a byte, a
+/// millisecond on a 3 MB DOCX, paid by every open (format sniffing, the
+/// backend, the metadata read) — where a known offset of 0 checks the one
+/// position the end record names. An archive that does not start at 0
+/// (prepended data, a self-extracting stub) fails that check and is opened
+/// again with detection, so nothing that opened before fails now.
+pub(crate) fn open_zip<R: std::io::Read + std::io::Seek>(
+    reader: impl Fn() -> R,
+) -> zip::result::ZipResult<ZipArchive<R>> {
+    let at_zero = zip::read::Config {
+        archive_offset: zip::read::ArchiveOffset::Known(0),
+    };
+    ZipArchive::with_config(at_zero, reader()).or_else(|_| ZipArchive::new(reader()))
+}
+
 /// Hard cap on a single decompressed OOXML part (512 MiB). Real documents
 /// stay far below this; the limit only exists to stop a decompression-bomb
 /// part from exhausting memory. Override with `DOCLING_RS_MAX_PART_BYTES`.
@@ -25,9 +42,12 @@ pub(crate) fn max_part_bytes() -> u64 {
 /// Cloning is cheap (the file bytes are shared behind an `Arc`, the ZIP
 /// central directory is reference-counted by the `zip` crate), which gives
 /// each rayon worker its own independent cursor over the same archive.
+///
+/// `B` is the storage: the owned, shareable copy [`Package::open`] makes,
+/// or the caller's own bytes for a short read ([`Package::open_slice`]).
 #[derive(Clone)]
-pub struct Package {
-    zip: ZipArchive<Cursor<std::sync::Arc<[u8]>>>,
+pub struct Package<B: AsRef<[u8]> = std::sync::Arc<[u8]>> {
+    zip: ZipArchive<Cursor<B>>,
     /// The member paths, decoded once: zip 9 decodes a name on every
     /// `file_names()` call and hands it back as a `Result`.
     names: std::sync::Arc<[String]>,
@@ -35,7 +55,25 @@ pub struct Package {
 
 impl Package {
     pub fn open(bytes: &[u8]) -> Option<Self> {
-        let zip = ZipArchive::new(Cursor::new(std::sync::Arc::from(bytes))).ok()?;
+        let bytes: std::sync::Arc<[u8]> = std::sync::Arc::from(bytes);
+        Package::with_storage(|| bytes.clone())
+    }
+}
+
+impl<'a> Package<&'a [u8]> {
+    /// [`Package::open`] over the caller's bytes, without the owned copy
+    /// a long-lived (or per-worker cloned) package keeps — for a read of a
+    /// part or two, such as the document metadata (#679) every conversion
+    /// takes: copying a 3 MB DOCX for its `docProps` cost more than reading
+    /// them.
+    pub fn open_slice(bytes: &'a [u8]) -> Option<Self> {
+        Package::with_storage(|| bytes)
+    }
+}
+
+impl<B: AsRef<[u8]>> Package<B> {
+    fn with_storage(storage: impl Fn() -> B) -> Option<Self> {
+        let zip = open_zip(|| Cursor::new(storage())).ok()?;
         let names = zip
             .file_names()
             .filter_map(Result::ok)

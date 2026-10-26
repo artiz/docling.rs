@@ -347,7 +347,7 @@ fn looks_like_html(head: &[u8]) -> bool {
 
 /// A ZIP package by its parts: OOXML main parts, the ODF / EPUB `mimetype`.
 fn zip_kind(bytes: &[u8]) -> Option<InputFormat> {
-    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
+    let mut zip = crate::backend::ooxml::open_zip(|| Cursor::new(bytes)).ok()?;
     let has = |zip: &zip::ZipArchive<_>, name: &str| zip.file_names().flatten().any(|n| n == name);
     if has(&zip, "word/document.xml") {
         return Some(InputFormat::Docx);
@@ -432,7 +432,8 @@ fn iwork_kind(zip: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Option<InputFormat> {
                     .iter()
                     .find(|n| *n == "Index.zip" || n.ends_with("/Index.zip"))?;
                 let bytes = read_capped(zip, inner, 64 << 20)?;
-                let mut inner = zip::ZipArchive::new(Cursor::new(bytes.as_slice())).ok()?;
+                let mut inner =
+                    crate::backend::ooxml::open_zip(|| Cursor::new(bytes.as_slice())).ok()?;
                 let members: Vec<String> = inner
                     .file_names()
                     .flatten()
