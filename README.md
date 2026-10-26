@@ -324,25 +324,32 @@ model tier on CPU; its `standard` tier (a 1.2 B vision-language model through ll
 
 Every declarative format is compared against the live library — Markdown
 byte for byte, JSON structurally (every key and value but `origin`/`version`
-and re-encoded image bytes). Latest sweep, docling **2.129.0**
+and re-encoded image bytes). Latest sweep, docling **2.142.1** with the
+docling-core 2.103.1 it locks, over its mirrored test corpus
 (`scripts/conformance/full_conformance.py`; ✅ all = every file matches):
 
 | Format | Files | Markdown | JSON | Format | Files | Markdown | JSON |
 |---|---|---|---|---|---|---|---|
 | DOCX | 38 | ✅ all | ✅ all | iWork Pages | 1 | ✅ all | ✅ all |
-| HTML | 32 | ✅ all | 31 | iWork Keynote | 5 | ✅ all | ✅ all |
+| HTML | 32 | 30 ³ | ✅ all | iWork Keynote | 5 | ✅ all | ✅ all |
 | PPTX | 8 | ✅ all | ✅ all | EBCDIC | 3 | ✅ all | ✅ all |
-| XLSX | 14 | 13 ² | 13 ² | JATS | 7 | ✅ all | ✅ all |
+| XLSX | 14 | 13 ² | 13 ² | JATS | 7 | 4 ⁴ | ✅ all |
 | ODF | 7 | ✅ all | ✅ all | DocLang | 15 | ✅ all | ✅ all |
-| CSV | 9 | ✅ all | 6 | AsciiDoc | 5 | ✅ all | ✅ all |
-| Markdown | 11 | ✅ all | 6 | USPTO | 9 | ✅ all | ✅ all |
+| CSV | 9 | ✅ all | ✅ all | AsciiDoc | 5 | ✅ all | ✅ all |
+| Markdown | 11 | 10 ⁵ | 10 ⁵ | USPTO | 9 | ✅ all | ✅ all |
 | DeepSeek-OCR Markdown | 3 | ✅ all | n/a | EPUB | 1 | ✅ all | ✅ all |
-| WebVTT | 4 | ✅ all | ✅ all | LaTeX | 8 | ✅ all | 7 ¹ |
+| WebVTT | 4 | ✅ all | ✅ all | LaTeX | 8 | 1 ¹ | 0 ¹ |
 | Email (`.eml`) | 2 | ✅ all | ✅ all |  |  |  |  |
 
-¹ `1706.03762`: one `tabular`'s cells carry consistent `row_span`/`col_span` where upstream writes the span into the offsets only; PDF figures carry no image payload (upstream renders them with pypdfium2).
+¹ docling 2.142 rewrote its LaTeX backend (docling#4817); the port is still on the previous one, which matched docling 2.130–2.141 on 8/8 (Markdown) and 7/8 (JSON).
 
 ² `xlsx_02_sample_sales_data`: 20 date cells print by docling PR #4628's number-format rules (#634), which the released docling does not apply yet.
+
+³ Deliberate: a table inside a list item stays a table after the item (upstream prints its grid right under the item line); two Wikipedia links keep docling-core 2.104's `%28`/`%29` escaping.
+
+⁴ Whitespace only: a one-run footnote prints on its bullet, where docling 2.142 leaves the bullet empty and puts the text on the next line.
+
+⁵ Deliberate: a code span keeps its literal text (`&amp;`), which upstream decodes when a raw HTML block sends the file through its HTML backend; formatted table cells print as plain text in Markdown.
 
 The residuals, with the exact files: [`docs/MIGRATION.md`](./docs/MIGRATION.md).
 The PDF/image pipeline is pinned by a deterministic snapshot baseline and
