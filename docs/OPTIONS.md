@@ -236,6 +236,12 @@ codec or copybook when the conversion runs.
   warns and defaults). Under Tesseract: tessdata stems (`deu`, `eng+fra`,
   `script/Cyrillic`, a traineddata of your own) or BCP-47 tags mapped onto
   them (`de` → `deu`, `zh-Hant` → `chi_tra`); `en` and `ch` keep working.
+  Without a request `ocr_lang`, `DOCLING_RS_OCR_LANG` is Tesseract's list
+  too (`DOCLING_RS_OCR_ENGINE=tesseract DOCLING_RS_OCR_LANG=rus+eng` in a
+  container's environment, #889 — it used to reach only the PP-OCR model
+  choice, warn, and leave Tesseract on `eng`). The list is Tesseract's preference
+  order: for mostly-Latin pages with some Cyrillic write `eng+rus` — under
+  `rus+eng` Tesseract reads look-alike Latin words as Cyrillic (`My` → `Му`).
 - **Regions and scale** (#254). `ocr_mode` is docling's `OcrMode`: the
   default (= `pdf_aware_layout_regions`) keeps the text layer and OCRs what
   lacks one; `full_page` and `layout_regions` both discard the text layer,

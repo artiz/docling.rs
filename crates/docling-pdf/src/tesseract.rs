@@ -60,9 +60,15 @@ pub struct TesseractOptions {
 
 impl TesseractOptions {
     /// The process-level options: `lang` from the caller (the mapped
-    /// `ocr_lang`), the rest from the environment. A `DOCLING_RS_TESSERACT_PSM`
-    /// outside 0–13 warns and is ignored.
+    /// `ocr_lang`), else `DOCLING_RS_OCR_LANG` read as Tesseract's language
+    /// list (#889: `DOCLING_RS_OCR_LANG=rus+eng` in a container's
+    /// environment never reached Tesseract, which ran its `eng` default; an
+    /// invalid value warns and leaves that default), the rest from the
+    /// environment. A `DOCLING_RS_TESSERACT_PSM` outside 0–13 warns and is
+    /// ignored.
     pub fn from_env(lang: Option<String>) -> Self {
+        let lang = lang
+            .or_else(|| env_lang(docling_core::env::nonempty("DOCLING_RS_OCR_LANG").as_deref()));
         let psm = docling_core::env::nonempty("DOCLING_RS_TESSERACT_PSM").and_then(|raw| {
             let psm = parse_psm(&raw);
             if psm.is_none() {
@@ -81,6 +87,14 @@ impl TesseractOptions {
             tessdata_dir: docling_core::env::nonempty("DOCLING_RS_TESSDATA_DIR"),
         }
     }
+}
+
+/// Tesseract's `-l` argument from a `DOCLING_RS_OCR_LANG` value (#889);
+/// `None` when unset, or invalid (which warns).
+fn env_lang(raw: Option<&str>) -> Option<String> {
+    lang_arg(raw?)
+        .map_err(|e| eprintln!("docling-pdf: DOCLING_RS_OCR_LANG: {e}; using Tesseract's default"))
+        .ok()
 }
 
 /// A `DOCLING_RS_TESSERACT_PSM` value: a page segmentation mode 0–13, or
@@ -810,6 +824,17 @@ mod tests {
 
     /// `ocr_lang` under the Tesseract engine: stems verbatim, BCP-47 tags and
     /// the PP-OCR codes mapped, lists joined in order, junk rejected.
+    /// #889: `DOCLING_RS_OCR_LANG` reaches Tesseract when the request
+    /// names no language — `rus+eng` as written, a tag mapped — and an
+    /// invalid value leaves Tesseract's default.
+    #[test]
+    fn env_lang_is_tesseracts_language_list() {
+        assert_eq!(env_lang(Some("rus+eng")).as_deref(), Some("rus+eng"));
+        assert_eq!(env_lang(Some("ru+en")).as_deref(), Some("rus+eng"));
+        assert_eq!(env_lang(Some("de; rm -rf")), None);
+        assert_eq!(env_lang(None), None);
+    }
+
     #[test]
     fn lang_arg_maps_tags_and_keeps_stems() {
         for (raw, want) in [

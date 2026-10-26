@@ -104,12 +104,27 @@ impl OcrLang {
     }
 
     /// The process-level choice from `DOCLING_RS_OCR_LANG` (empty/unset → the
-    /// English default; unknown values warn and use English).
+    /// English default; unknown values warn and use English). Under a
+    /// `DOCLING_RS_OCR_ENGINE=tesseract` default the variable is Tesseract's
+    /// language list (`rus+eng`, [`crate::tesseract::lang_arg`]), not a
+    /// PP-OCR model choice: a value naming no en/ch model then selects the
+    /// English model silently — it is only used if a request switches the
+    /// engine back to PP-OCR — instead of warning on every request (#889).
     pub fn from_env() -> Self {
-        let Some(raw) = docling_core::env::nonempty("DOCLING_RS_OCR_LANG") else {
+        let raw = docling_core::env::nonempty("DOCLING_RS_OCR_LANG");
+        Self::from_env_value(raw.as_deref(), OcrEngine::from_env)
+    }
+
+    /// [`Self::from_env`] on the variable's value and the default engine
+    /// (asked only when the value names no model).
+    fn from_env_value(raw: Option<&str>, engine: impl Fn() -> OcrEngine) -> Self {
+        let Some(raw) = raw else {
             return Self::default();
         };
-        Self::parse(&raw).unwrap_or_else(|| {
+        Self::parse(raw).unwrap_or_else(|| {
+            if engine() == OcrEngine::Tesseract {
+                return Self::default();
+            }
             eprintln!(
                 "docling-pdf: DOCLING_RS_OCR_LANG={raw:?} names no language the en/ch \
                  recognizers read ({}); using en",
@@ -675,6 +690,19 @@ fn recognize_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #889: under a Tesseract default, `DOCLING_RS_OCR_LANG` is Tesseract's
+    /// language list — a value naming no en/ch model picks English without
+    /// the PP-OCR warning; under PP-OCR an en/ch value still selects it.
+    #[test]
+    fn env_lang_under_a_tesseract_default_is_not_a_model_choice() {
+        let tess = || OcrEngine::Tesseract;
+        let pp = || OcrEngine::PpOcr;
+        assert_eq!(OcrLang::from_env_value(Some("rus+eng"), tess), OcrLang::En);
+        assert_eq!(OcrLang::from_env_value(Some("rus+eng"), pp), OcrLang::En);
+        assert_eq!(OcrLang::from_env_value(Some("zh-Hans"), tess), OcrLang::Ch);
+        assert_eq!(OcrLang::from_env_value(None, pp), OcrLang::En);
+    }
 
     /// #388: BCP-47 tags and the ISO 639-2/3 codes for English and Chinese
     /// resolve to the two recognizers, with or without docling's `iso:`

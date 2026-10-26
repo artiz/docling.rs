@@ -125,8 +125,12 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   </div>
   <div class="row">
     <label title="PDF page window, 1-based inclusive: 3 or 2-5">Pages <input type="text" id="pages" size="6" placeholder="all"></label>
-    <label title="OCR recognition language for scanned pages">OCR language
-      <select id="ocr_lang"><option value="">en (default)</option><option value="ch">ch (multilingual)</option></select>
+    <label title="Which OCR engine reads scanned pages (#460): the built-in PP-OCR recognizer, or the server's tesseract binary">OCR engine
+      <select id="ocr_engine"><option value="">server default</option><option value="ppocr">ppocr</option><option value="tesseract">tesseract</option></select>
+    </label>
+    <label title="OCR recognition language (#889). PP-OCR: en | ch or a BCP-47 tag for either. Tesseract: tessdata stems joined by + (rus+eng, deu+fra) or BCP-47 tags (ru, de). Empty = the server's DOCLING_RS_OCR_LANG">OCR language
+      <input type="text" id="ocr_lang" list="ocr_lang_hints" size="9" placeholder="server default">
+      <datalist id="ocr_lang_hints"><option value="en"><option value="ch"><option value="rus+eng"><option value="deu+eng"><option value="fra+eng"><option value="ukr+eng"><option value="chi_sim+eng"></datalist>
     </label>
     <label title="Which regions feed the OCR (docling's OcrMode, #254); full_page / layout_regions discard the text layer">OCR mode
       <select id="ocr_mode"><option value="">default</option><option value="full_page">full_page</option><option value="layout_regions">layout_regions</option><option value="pdf_aware_layout_regions">pdf_aware_layout_regions</option></select>
@@ -222,7 +226,8 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <tr><td><code>do_code_enrichment</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: rewrite code blocks and detect their language with the CodeFormulaV2 VLM (docling's <code>do_code_enrichment</code>, #423). Needs <code>.models/code_formula/</code>; seconds per code region on CPU.</td></tr>
   <tr><td><code>do_formula_enrichment</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: decode display formulas to LaTeX with CodeFormulaV2 (docling's <code>do_formula_enrichment</code>, #423) — Markdown renders <code>$$latex$$</code> instead of the placeholder comment.</td></tr>
   <tr><td><code>pages</code></td><td><code>A-B</code> | <code>N</code></td><td>PDF page window, 1-based inclusive (#80).</td></tr>
-  <tr><td><code>ocr_lang</code></td><td><code>en</code> (default) | <code>ch</code> | a BCP-47 tag (<code>en-US</code>, <code>zh-Hans</code>, <code>iso:zh-CN</code>)</td><td>OCR recognition language for scanned pages (<code>ch</code> = the multilingual docling-conformance model; BCP-47 tags for English/Chinese resolve to the same two models, #388).</td></tr>
+  <tr><td><code>ocr_engine</code></td><td><code>ppocr</code> | <code>tesseract</code></td><td>Which OCR engine reads scanned pages (#460): the built-in PP-OCR recognizer, or the server's <code>tesseract</code> binary. Unset: the server's <code>DOCLING_RS_OCR_ENGINE</code>, else PP-OCR.</td></tr>
+  <tr><td><code>ocr_lang</code></td><td>PP-OCR: <code>en</code> (default) | <code>ch</code> | a BCP-47 tag (<code>en-US</code>, <code>zh-Hans</code>, <code>iso:zh-CN</code>). Tesseract: tessdata stems joined by <code>+</code> (<code>rus+eng</code>) or BCP-47 tags (<code>ru</code>, <code>de</code>)</td><td>OCR recognition language for scanned pages (<code>ch</code> = the multilingual docling-conformance model; BCP-47 tags for English/Chinese resolve to the same two models, #388). Under Tesseract the languages must be installed in its tessdata. Unset: the server's <code>DOCLING_RS_OCR_LANG</code> (#889).</td></tr>
   <tr><td><code>ocr_mode</code></td><td><code>default</code> | <code>full_page</code> | <code>layout_regions</code> | <code>pdf_aware_layout_regions</code></td><td>Which regions feed the OCR (docling's <code>OcrMode</code>, #254); <code>full_page</code>/<code>layout_regions</code> discard the text layer.</td></tr>
   <tr><td><code>ocr_scale</code></td><td>float</td><td>OCR render scale in px per PDF point (docling's <code>OcrOptions.scale</code>, default 3 = 216&nbsp;dpi; unset reads the pipeline's own 2.0 render).</td></tr>
   <tr><td><code>ocr_textline_orientation</code></td><td><code>true</code>/<code>false</code></td><td>RapidOCR's text-line orientation handling (#666): detected lines cropped along their rotated rectangle, tall crops turned 90°, upside-down lines turned by the 0/180 classifier (<code>.models/ocr_textline_ori.onnx</code>). Vertical, skewed and upside-down text reads; PP-OCR only. Off by default.</td></tr>
@@ -380,7 +385,7 @@ $('go').addEventListener('click', async () => {
   };
   // Free-form options ride along only when set, so the server keeps its
   // defaults (and its validation messages) for everything left blank.
-  for (const id of ['pages', 'ocr_lang', 'ocr_mode', 'ocr_scale', 'asr_lang', 'video_frames', 'xbrl_taxonomy', 'md_page_break_placeholder',
+  for (const id of ['pages', 'ocr_engine', 'ocr_lang', 'ocr_mode', 'ocr_scale', 'asr_lang', 'video_frames', 'xbrl_taxonomy', 'md_page_break_placeholder',
                     'pipeline', 'vlm_endpoint', 'vlm_model', 'vlm_api_key', 'vlm_prompt', 'vlm_max_tokens']) {
     const v = $(id).value.trim();
     if (v) opts[id] = v;

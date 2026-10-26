@@ -219,7 +219,7 @@ PDF/image models have loaded (and stays 503, with the error, if loading fails).
 | `DOCLING_RS_ORT_PROFILE` | unset | A directory: every ONNX session writes ORT's per-operator profile there (`<model>_<timestamp>.json`, Chrome-trace format); `scripts/dev/ort_profile_summary.py` summarizes one |
 | `DOCLING_RS_MAX_RASTER_PAGES` | `100` | Max page count for `to=images` PDF page rasterization |
 | `DOCLING_RS_MAX_FETCH_BYTES` | `268435456` (256MB) | Max response size for remote URL fetching |
-| `DOCLING_RS_OCR_LANG` | `en` | Default OCR language (`en` or `ch` multilingual) |
+| `DOCLING_RS_OCR_LANG` | `en` | Default OCR language: under PP-OCR `en` or `ch` (multilingual); under `DOCLING_RS_OCR_ENGINE=tesseract` Tesseract's language list — tessdata stems joined by `+` (`rus+eng`) or BCP-47 tags — whose `.traineddata` must be in the tessdata dir (`DOCLING_RS_TESSDATA_DIR`). A request's `ocr_lang` overrides it |
 | `DOCLING_RS_OCR_MODE` | `default` | OCR region selection (`default`, `full_page`, `layout_regions`) |
 | `DOCLING_RS_FP32` | `0` | Force FP32 model precision instead of INT8 |
 | `DOCLING_RS_MODELS_DIR` | `.models` | Directory override for ONNX model weights |
