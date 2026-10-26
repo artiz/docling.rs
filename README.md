@@ -336,7 +336,7 @@ docling-core 2.103.1 it locks, over its mirrored test corpus
 | XLSX | 14 | 13 ² | 13 ² | JATS | 7 | 4 ⁴ | ✅ all |
 | ODF | 7 | ✅ all | ✅ all | DocLang | 15 | ✅ all | ✅ all |
 | CSV | 9 | ✅ all | ✅ all | AsciiDoc | 5 | ✅ all | ✅ all |
-| Markdown | 11 | 10 ⁵ | 10 ⁵ | USPTO | 9 | ✅ all | ✅ all |
+| Markdown | 11 | ✅ all | 10 ⁵ | USPTO | 9 | ✅ all | ✅ all |
 | DeepSeek-OCR Markdown | 3 | ✅ all | n/a | EPUB | 1 | ✅ all | ✅ all |
 | WebVTT | 4 | ✅ all | ✅ all | LaTeX | 8 | ✅ all | 7 ¹ |
 | Email (`.eml`) | 2 | ✅ all | ✅ all |  |  |  |  |
@@ -349,7 +349,7 @@ docling-core 2.103.1 it locks, over its mirrored test corpus
 
 ⁴ Whitespace only: a one-run footnote prints on its bullet, where docling 2.142 leaves the bullet empty and puts the text on the next line.
 
-⁵ Deliberate: a code span keeps its literal text (`&amp;`), which upstream decodes when a raw HTML block sends the file through its HTML backend; formatted table cells print as plain text in Markdown.
+⁵ Deliberate: a code span keeps its literal text (`&amp;`), which upstream decodes when a raw HTML block sends the file through its HTML backend.
 
 The residuals, with the exact files: [`docs/MIGRATION.md`](./docs/MIGRATION.md).
 The PDF/image pipeline is pinned by a deterministic snapshot baseline and

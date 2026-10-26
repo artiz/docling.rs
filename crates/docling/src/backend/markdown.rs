@@ -12,7 +12,9 @@
 //!   inline text is kept verbatim (no run-spacing, no escaping), inline code is
 //!   left literal, and a lone code span stays an inline-code paragraph.
 //!
-//! Table cells are plain text in both modes; pipe/newline escaping is done by
+//! Table cells keep their inline formatting in both modes — `**bold**`,
+//! `*italic*`, `~~struck~~`, `` `code` ``, links — as docling prints a
+//! formatted cell since 2.135 (docling#4488); pipe/newline escaping is done by
 //! the serializer.
 
 use crate::backend::images::{FsImageResolver, ImagePolicy, ImageResolver, ImageSources, NoFetch};
@@ -677,6 +679,9 @@ impl DeclarativeBackend for MarkdownBackend {
 enum Stop {
     Eof,
     BlockQuote,
+    /// The blocks of a list item after its text: up to its `End(Item)`,
+    /// left for `parse_item` to consume.
+    Item,
 }
 
 /// Deepest block nesting (block quotes, lists) the parser descends into —
@@ -731,6 +736,7 @@ impl MarkdownBackend {
                     *i += 1;
                     return;
                 }
+                Event::End(TagEnd::Item) if stop == Stop::Item => return,
                 // Any other End belongs to a container handled elsewhere — skip
                 // it rather than abandoning the rest of the document.
                 Event::End(_) => {
@@ -835,7 +841,16 @@ impl MarkdownBackend {
                     let ordered = start.is_some();
                     let start_num = start.unwrap_or(1);
                     *i += 1;
-                    self.parse_list(events, i, out, list_level, ordered, start_num, depth + 1);
+                    self.parse_list(
+                        events,
+                        i,
+                        out,
+                        list_level,
+                        ordered,
+                        start_num,
+                        depth + 1,
+                        images,
+                    );
                 }
                 Event::Start(Tag::CodeBlock(kind)) => {
                     let language = match kind {
@@ -892,6 +907,7 @@ impl MarkdownBackend {
         ordered: bool,
         start: u64,
         depth: u16,
+        images: &dyn ImageResolver,
     ) {
         let mut number = start;
         let mut first = true;
@@ -899,7 +915,7 @@ impl MarkdownBackend {
             match &events[*i] {
                 Event::Start(Tag::Item) => {
                     *i += 1;
-                    self.parse_item(events, i, out, level, ordered, number, first, depth);
+                    self.parse_item(events, i, out, level, ordered, number, first, depth, images);
                     number += 1;
                     first = false;
                 }
@@ -966,6 +982,7 @@ impl MarkdownBackend {
         number: u64,
         first_in_list: bool,
         depth: u16,
+        images: &dyn ImageResolver,
     ) {
         let mut emitted = false;
         while *i < events.len() {
@@ -989,7 +1006,24 @@ impl MarkdownBackend {
                         nested_ordered,
                         nested_start,
                         depth + 1,
+                        images,
                     );
+                }
+                // The item's blocks after its text — another paragraph, a
+                // code block, a quote, a table, raw HTML, a heading — follow
+                // it as the blocks they are, as docling prints them below the
+                // item line (they used to be dropped, all of them).
+                Event::Start(Tag::Paragraph) if emitted => {
+                    self.parse_blocks(events, i, out, level + 1, Stop::Item, depth + 1, images);
+                }
+                Event::Start(
+                    Tag::CodeBlock(_)
+                    | Tag::BlockQuote(_)
+                    | Tag::Table(_)
+                    | Tag::HtmlBlock
+                    | Tag::Heading { .. },
+                ) => {
+                    self.parse_blocks(events, i, out, level + 1, Stop::Item, depth + 1, images);
                 }
                 Event::Start(Tag::Paragraph) => {
                     *i += 1;
@@ -1129,11 +1163,7 @@ impl MarkdownBackend {
                     } else {
                         unescape_entities(t)
                     };
-                    runs.push(if table {
-                        content
-                    } else {
-                        docling_core::code_span(&content)
-                    });
+                    runs.push(docling_core::code_span(&content));
                     *i += 1;
                 }
                 Event::Start(Tag::Emphasis) => {
@@ -1235,11 +1265,8 @@ impl MarkdownBackend {
         *i += 1;
         let inner = self.join_runs(&self.collect_inline(events, i, table), table);
         consume_end(events, i);
-        if table {
-            inner
-        } else {
-            format!("{marker}{inner}{marker}")
-        }
+        // A table cell keeps its formatting too (docling#4488, 2.135).
+        format!("{marker}{inner}{marker}")
     }
 
     /// Push one text event as a run. Legacy (non-table) trims and escapes
@@ -1569,12 +1596,30 @@ mod tests {
         assert_eq!(doc.export_to_markdown(), "3. third\n4. fourth\n");
     }
 
+    /// A list item's blocks after its text — a second paragraph, a code
+    /// block, a quote, a table — follow the item line, as docling prints
+    /// them; they were all dropped. The list goes on numbering after them.
     #[test]
-    fn parses_github_table_plain_cells() {
-        let doc = convert("| **A** | B |\n|---|---|\n| x | y |\n");
+    fn list_item_blocks_after_its_text_are_kept() {
+        let doc = convert(
+            "1. one\n\n   extra para\n\n2. two\n\n   ```\n   code\n   ```\n\n\
+             3. three\n\n   > quoted\n\n4. four\n\n   | a | b |\n   |---|---|\n   | 1 | 2 |\n",
+        );
         assert_eq!(
             doc.export_to_markdown(),
-            "| A   | B   |\n|-----|-----|\n| x   | y   |\n"
+            "1. one\n\nextra para\n\n2. two\n\n```\ncode\n```\n\n3. three\n\nquoted\n\n\
+             4. four\n\n|   a |   b |\n|-----|-----|\n|   1 |   2 |\n"
+        );
+    }
+
+    /// A cell keeps its inline formatting, as docling prints it since 2.135
+    /// (docling#4488) — it used to be flattened to plain text.
+    #[test]
+    fn parses_github_table_formatted_cells() {
+        let doc = convert("| **A** | B |\n|---|---|\n| x `y` | ~~z~~ |\n");
+        assert_eq!(
+            doc.export_to_markdown(),
+            "| **A**   | B     |\n|---------|-------|\n| x `y`   | ~~z~~ |\n"
         );
     }
 
