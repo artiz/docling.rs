@@ -401,13 +401,12 @@ impl Parser<'_> {
 
     /// A `....` literal or `----` listing block: docling's `add_code`, nested
     /// under the open list item when a `+` claimed it. A `[source,lang]`
-    /// hint is trusted over the content (docling's `detect_code_language`);
-    /// without one the language stays unknown, as upstream passes `None`.
+    /// hint is trusted over the content, an unknown one falls back to the
+    /// content's markers (docling's `detect_code_language`); without a hint
+    /// the language stays unknown, as upstream passes `None`.
     fn feed_literal(&mut self, code: String, language: Option<String>, doc: &mut DoclingDocument) {
         let language = language
-            .map(|hint| docling_core::code_language_label(&hint))
-            .filter(|l| *l != "unknown")
-            .map(str::to_string);
+            .and_then(|hint| super::code_language::detect_code_language(&code, Some(&hint)));
         self.close_list_if_needed(Trigger::Literal);
         if !self.in_list {
             self.flush_list_notes(doc);

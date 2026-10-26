@@ -420,6 +420,11 @@ impl PyDocumentConverter {
     ///   with the flowchart its labelled shapes and connectors describe —
     ///   only when every connector names its two end shapes; a drawing laid
     ///   by eye gets no graph. `"none"` turns the extraction off.
+    /// * `use_outline_level_for_headings` — Word (DOCX / DOC): a style's
+    ///   `w:outlineLvl` alone makes it a heading (docling's
+    ///   `MsWordBackendOptions` field, docling#4480; default `True`).
+    ///   `False` for templates whose body styles carry an outline level
+    ///   only for the TOC; a style named a heading keeps its outline level.
     /// * `pipeline` — `"standard"` (default) or `"vlm"` (#304): convert PDF /
     ///   image inputs by sending each page to a remote OpenAI-compatible
     ///   vision model instead of the local ML stack. The `vlm_*` kwargs
@@ -477,6 +482,7 @@ impl PyDocumentConverter {
         metadata = None,
         track_changes = None,
         extract_diagrams = None,
+        use_outline_level_for_headings = true,
         video_frames = None,
         video_scene_threshold = None,
         video_frame_max_side = None,
@@ -555,6 +561,7 @@ impl PyDocumentConverter {
         metadata: Option<String>,
         track_changes: Option<String>,
         extract_diagrams: Option<String>,
+        use_outline_level_for_headings: bool,
         video_frames: Option<usize>,
         video_scene_threshold: Option<f32>,
         video_frame_max_side: Option<u32>,
@@ -620,6 +627,7 @@ impl PyDocumentConverter {
             metadata,
             track_changes,
             extract_diagrams,
+            use_outline_level_for_headings: Some(use_outline_level_for_headings),
             use_web_browser: Some(use_web_browser),
             xbrl_taxonomy: xbrl_taxonomy.map(|p| p.to_string_lossy().into_owned()),
             asr_model,

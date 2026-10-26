@@ -97,6 +97,12 @@
       },
       {
         "$ref": "#/texts/105"
+      },
+      {
+        "$ref": "#/texts/336"
+      },
+      {
+        "$ref": "#/texts/338"
       }
     ],
     "content_layer": "body",
@@ -1661,7 +1667,14 @@
       "parent": {
         "$ref": "#/groups/57"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/335"
+        },
+        {
+          "$ref": "#/texts/337"
+        }
+      ],
       "content_layer": "furniture",
       "name": "list",
       "label": "list"
@@ -4465,7 +4478,7 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "1-4 chopped fresh red",
+      "orig": "1–4 chopped fresh red",
       "text": "1-4 chopped fresh red"
     },
     {
@@ -5080,7 +5093,7 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "for 5-8 minutes on each side or barbecued (cooking times depend on the temperature of the barbecue). Always ensure the chicken is cooked throughout before serving. It should come apart easily when pressed down with the side of a fork.",
+      "orig": "for 5–8 minutes on each side or barbecued (cooking times depend on the temperature of the barbecue). Always ensure the chicken is cooked throughout before serving. It should come apart easily when pressed down with the side of a fork.",
       "text": "for 5-8 minutes on each side or barbecued (cooking times depend on the temperature of the barbecue). Always ensure the chicken is cooked throughout before serving. It should come apart easily when pressed down with the side of a fork."
     },
     {
@@ -5578,10 +5591,10 @@
           "$ref": "#/groups/57"
         },
         {
-          "$ref": "#/texts/335"
+          "$ref": "#/texts/339"
         },
         {
-          "$ref": "#/texts/336"
+          "$ref": "#/texts/340"
         },
         {
           "$ref": "#/groups/62"
@@ -5702,7 +5715,7 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": ", Piatkus, London -",
+      "orig": ", Piatkus, London —",
       "text": ", Piatkus, London -"
     },
     {
@@ -5776,7 +5789,7 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": ", New Holland, London -",
+      "orig": ", New Holland, London —",
       "text": ", New Holland, London -"
     },
     {
@@ -6393,6 +6406,68 @@
     {
       "self_ref": "#/texts/335",
       "parent": {
+        "$ref": "#/groups/61"
+      },
+      "children": [
+        {
+          "$ref": "#/pictures/4"
+        }
+      ],
+      "content_layer": "furniture",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/336",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "caption",
+      "prov": [],
+      "orig": "Wikimedia Foundation",
+      "text": "Wikimedia Foundation",
+      "hyperlink": "https://www.wikimedia.org/"
+    },
+    {
+      "self_ref": "#/texts/337",
+      "parent": {
+        "$ref": "#/groups/61"
+      },
+      "children": [
+        {
+          "$ref": "#/pictures/5"
+        }
+      ],
+      "content_layer": "furniture",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/338",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "caption",
+      "prov": [],
+      "orig": "Powered by MediaWiki",
+      "text": "Powered by MediaWiki",
+      "hyperlink": "https://www.mediawiki.org/"
+    },
+    {
+      "self_ref": "#/texts/339",
+      "parent": {
         "$ref": "#/texts/278"
       },
       "children": [],
@@ -6403,7 +6478,7 @@
       "text": "Search Wikibooks"
     },
     {
-      "self_ref": "#/texts/336",
+      "self_ref": "#/texts/340",
       "parent": {
         "$ref": "#/texts/278"
       },
@@ -6482,6 +6557,42 @@
       "captions": [
         {
           "$ref": "#/texts/105"
+        }
+      ],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/4",
+      "parent": {
+        "$ref": "#/texts/335"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "picture",
+      "prov": [],
+      "captions": [
+        {
+          "$ref": "#/texts/336"
+        }
+      ],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/5",
+      "parent": {
+        "$ref": "#/texts/337"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "picture",
+      "prov": [],
+      "captions": [
+        {
+          "$ref": "#/texts/338"
         }
       ],
       "references": [],

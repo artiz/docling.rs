@@ -95,4 +95,91 @@
     , Space
     , Str "block:"
     ]
+, Para
+    [ Str "Ordered"
+    , Space
+    , Str "list"
+    , Space
+    , Str "starting"
+    , Space
+    , Str "at"
+    , Space
+    , Str "a"
+    , Space
+    , Str "non-1"
+    , Space
+    , Str "number:"
+    ]
+, OrderedList
+    ( 5 , Decimal , Period )
+    [ [ Plain [ Str "Fifth" , Space , Str "step" ] ]
+    , [ Plain [ Str "Sixth" , Space , Str "step" ] ]
+    , [ Plain [ Str "Seventh" , Space , Str "step" ] ]
+    ]
+, Para
+    [ Str "Ordered"
+    , Space
+    , Str "list"
+    , Space
+    , Str "split"
+    , Space
+    , Str "by"
+    , Space
+    , Str "a"
+    , Space
+    , Str "prose"
+    , Space
+    , Str "paragraph"
+    , Space
+    , Str "(numbers"
+    , Space
+    , Str "must"
+    , Space
+    , Str "continue,"
+    , Space
+    , Str "not"
+    , Space
+    , Str "restart):"
+    ]
+, OrderedList
+    ( 1 , Decimal , Period )
+    [ [ Plain
+          [ Str "Install"
+          , Space
+          , Str "the"
+          , Space
+          , Str "package."
+          ]
+      ]
+    , [ Plain
+          [ Str "Set"
+          , Space
+          , Str "the"
+          , Space
+          , Str "API"
+          , Space
+          , Str "key."
+          ]
+      ]
+    ]
+, Para
+    [ Str "Restart"
+    , Space
+    , Str "the"
+    , Space
+    , Str "shell"
+    , Space
+    , Str "before"
+    , Space
+    , Str "continuing."
+    ]
+, OrderedList
+    ( 3 , Decimal , Period )
+    [ [ Plain
+          [ Str "Run" , Space , Str "the" , Space , Str "import." ]
+      ]
+    , [ Plain
+          [ Str "Check" , Space , Str "the" , Space , Str "output." ]
+      ]
+    ]
 ]

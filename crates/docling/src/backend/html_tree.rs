@@ -38,9 +38,8 @@ use ego_tree::NodeRef;
 use scraper::{ElementRef, Html, Node as HtmlNode, Selector};
 
 use super::html::{
-    checkbox_label_text, detect_field_region, is_hidden, is_rich_cell, lang_from_class,
-    normalize_url, normalize_ws, pre_line_breaks, resolve_line_breaks, subtree_text,
-    text_with_breaks,
+    checkbox_label_text, detect_field_region, is_hidden, is_rich_cell, normalize_url, normalize_ws,
+    pre_line_breaks, resolve_line_breaks, subtree_text, text_with_breaks,
 };
 use super::images::ImageResolver;
 
@@ -378,10 +377,9 @@ fn code_language_hint(pre: ElementRef) -> Option<String> {
     }
     tokens.sort();
     tokens.dedup();
-    let known = |t: &str| {
-        let bare = lang_from_class(t).unwrap_or_else(|| t.to_string());
-        (docling_core::code_language_label(&bare) != "unknown").then_some(bare)
-    };
+    // The token itself is the hint (`return token`), normalized when the
+    // code item stores it.
+    let known = |t: &str| super::code_language::normalize_code_language(t).map(|_| t.to_string());
     let (prefixed, bare): (Vec<&String>, Vec<&String>) = tokens.iter().partition(|t| {
         let l = t.to_ascii_lowercase();
         l.starts_with("language-") || l.starts_with("lang-")
@@ -394,6 +392,7 @@ pub(super) fn build_tree(
     parsed: &Html,
     images: &dyn ImageResolver,
     infer_furniture: bool,
+    add_title: bool,
 ) -> ItemTree {
     let root = parsed.root_element();
     let mut w = Walker {
@@ -405,8 +404,9 @@ pub(super) fn build_tree(
         hyperlink: None,
         images,
     };
-    // The `<title>` is a furniture-layer title item, created first.
-    if let Some(title) = parsed.select(sel!("title")).next() {
+    // The `<title>` is a furniture-layer title item, created first (unless
+    // `add_title` is off, as for the Markdown backend's HTML detour).
+    if let Some(title) = parsed.select(sel!("title")).next().filter(|_| add_title) {
         let parts: Vec<String> = title
             .text()
             .map(normalize_ws)
@@ -517,6 +517,7 @@ impl<'a> Walker<'a> {
     fn add_code(
         &mut self,
         text: String,
+        orig: Option<String>,
         language: Option<String>,
         formatting: Option<Formatting>,
         hyperlink: Option<String>,
@@ -527,7 +528,7 @@ impl<'a> Walker<'a> {
             self.layer,
             TreeKind::Code {
                 text,
-                orig: None,
+                orig,
                 language,
                 formatting,
                 hyperlink,
@@ -696,15 +697,19 @@ impl<'a> Walker<'a> {
 
     /// Emit one annotated part as a `text` or `code` item under the current
     /// parent (upstream's per-part `add_text` / `add_code`).
-    fn emit_part(&mut self, part: &Part, text: String, formatting: Option<Formatting>) -> usize {
+    /// `seg` is the source text: the item's `text` is its `clean_unicode`,
+    /// `orig` the source itself (docling#4434).
+    fn emit_part(&mut self, part: &Part, seg: &str, formatting: Option<Formatting>) -> usize {
+        let text = clean_unicode(seg);
+        let orig = Some(seg.to_string());
         if part.code {
-            self.add_code(text, None, formatting, part.hyperlink.clone())
+            self.add_code(text, orig, None, formatting, part.hyperlink.clone())
         } else {
             let parent = self.parent();
             self.add_annotated(
                 "text",
                 text,
-                None,
+                orig,
                 formatting,
                 part.hyperlink.clone(),
                 parent,
@@ -718,10 +723,20 @@ impl<'a> Walker<'a> {
     /// block boundaries. Returns the refs of the items this walk created
     /// directly.
     fn walk(&mut self, element: ElementRef<'a>) -> Vec<usize> {
+        self.walk_nodes(element, element.children())
+    }
+
+    /// upstream's `_walk_nodes`: [`walk`](Self::walk) over some of
+    /// `element`'s children only.
+    fn walk_nodes(
+        &mut self,
+        element: ElementRef<'a>,
+        nodes: impl IntoIterator<Item = NodeRef<'a, HtmlNode>>,
+    ) -> Vec<usize> {
         let mut added: Vec<usize> = Vec::new();
         let mut buffer: Vec<Part> = Vec::new();
         let element_name = element.value().name();
-        for child in element.children() {
+        for child in nodes {
             match child.value() {
                 HtmlNode::Element(e) => {
                     let name = e.name();
@@ -835,7 +850,7 @@ impl<'a> Walker<'a> {
                 if seg.is_empty() {
                     continue;
                 }
-                let r = self.emit_part(part, clean_unicode(seg), part.formatting);
+                let r = self.emit_part(part, seg, part.formatting);
                 if group.is_none() {
                     added.push(r);
                 }
@@ -894,7 +909,7 @@ impl<'a> Walker<'a> {
                 }
             }
             "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => added.extend(self.handle_heading(tag)),
-            "ul" | "ol" | "dl" => added.push(self.handle_list(tag)),
+            "ul" | "ol" | "dl" => added.extend(self.handle_list(tag)),
             "p" | "address" | "summary" => {
                 let parts = simplify(self.extract(*tag, false, true, false));
                 for list in split_by_newline(&parts) {
@@ -904,7 +919,7 @@ impl<'a> Walker<'a> {
                         if seg.is_empty() {
                             continue;
                         }
-                        let r = self.emit_part(part, clean_unicode(seg), part.formatting);
+                        let r = self.emit_part(part, seg, part.formatting);
                         if group.is_none() {
                             added.push(r);
                         }
@@ -965,7 +980,7 @@ impl<'a> Walker<'a> {
                     TreeKind::Text {
                         label: "text".into(),
                         text,
-                        orig: None,
+                        orig: Some(raw.trim().to_string()),
                         formatting: None,
                         hyperlink: None,
                         level: None,
@@ -983,9 +998,16 @@ impl<'a> Walker<'a> {
                     if text.is_empty() {
                         continue;
                     }
-                    let text = clean_unicode(&text);
-                    let language = hint.clone().or_else(|| detect_code_language(&text));
-                    let r = self.add_code(text, language, part.formatting, part.hyperlink.clone());
+                    let clean = clean_unicode(&text);
+                    let language =
+                        super::code_language::detect_code_language(&clean, hint.as_deref());
+                    let r = self.add_code(
+                        clean,
+                        Some(text),
+                        language,
+                        part.formatting,
+                        part.hyperlink.clone(),
+                    );
                     if group.is_none() {
                         added.push(r);
                     }
@@ -1089,12 +1111,14 @@ impl<'a> Walker<'a> {
 
     // ----- lists ------------------------------------------------------------
 
-    /// upstream's `_handle_list`.
-    fn handle_list(&mut self, tag: ElementRef<'a>) -> usize {
+    /// upstream's `_handle_list`: the items it adds at the current level —
+    /// the list group, or, when non-`<li>` children split the list
+    /// (docling#4440), every group and the content between them.
+    fn handle_list(&mut self, tag: ElementRef<'a>) -> Vec<usize> {
         let name = tag.value().name();
         let is_ordered = name == "ol";
         let is_description = name == "dl";
-        let start: Option<usize> = if is_ordered {
+        let mut start: Option<usize> = if is_ordered {
             tag.value()
                 .attr("start")
                 .and_then(super::html::parse_ol_start)
@@ -1102,91 +1126,136 @@ impl<'a> Walker<'a> {
         } else {
             None
         };
-        let group_name = if is_description {
-            "description list".to_string()
-        } else if is_ordered {
-            match start {
-                Some(s) => format!("ordered list start {s}"),
-                None => "ordered list".to_string(),
-            }
-        } else {
-            "list".to_string()
-        };
-        let parent = self.parent();
-        let list_group = self.add_group("list", &group_name, parent);
-        self.set_parent(self.level + 1, Some(list_group));
-        self.level += 1;
-
         if is_description {
-            let mut current_dt: Option<usize> = None;
-            let mut dd_group: Option<usize> = None;
-            let children: Vec<ElementRef<'a>> = tag
-                .children()
-                .filter_map(ElementRef::wrap)
-                .filter(|c| matches!(c.value().name(), "dt" | "dd"))
-                .collect();
-            for child in children {
-                if child.value().name() == "dt" {
-                    dd_group = None;
-                    let bold = Formatting {
-                        bold: true,
-                        ..Formatting::default()
-                    };
-                    current_dt =
-                        self.add_list_item_with_content(child, list_group, false, "", Some(bold));
-                    if let Some(dt) = current_dt {
-                        self.set_parent(self.level + 1, Some(dt));
-                    }
-                } else {
-                    let has_nested_dl = child
-                        .children()
-                        .filter_map(ElementRef::wrap)
-                        .any(|c| c.value().name() == "dl");
-                    if has_nested_dl {
+            let parent = self.parent();
+            let list_group = self.add_group("list", "description list", parent);
+            self.set_parent(self.level + 1, Some(list_group));
+            self.level += 1;
+            if is_description {
+                let mut current_dt: Option<usize> = None;
+                let mut dd_group: Option<usize> = None;
+                let children: Vec<ElementRef<'a>> = tag
+                    .children()
+                    .filter_map(ElementRef::wrap)
+                    .filter(|c| matches!(c.value().name(), "dt" | "dd"))
+                    .collect();
+                for child in children {
+                    if child.value().name() == "dt" {
                         dd_group = None;
+                        let bold = Formatting {
+                            bold: true,
+                            ..Formatting::default()
+                        };
+                        current_dt = self.add_list_item_with_content(
+                            child,
+                            list_group,
+                            false,
+                            "",
+                            Some(bold),
+                        );
                         if let Some(dt) = current_dt {
-                            self.with_list_item_context(Some(dt), |w| {
+                            self.set_parent(self.level + 1, Some(dt));
+                        }
+                    } else {
+                        let has_nested_dl = child
+                            .children()
+                            .filter_map(ElementRef::wrap)
+                            .any(|c| c.value().name() == "dl");
+                        if has_nested_dl {
+                            dd_group = None;
+                            if let Some(dt) = current_dt {
+                                self.with_list_item_context(Some(dt), |w| {
+                                    w.process_list_item_nested_content(child)
+                                });
+                            }
+                        } else {
+                            if dd_group.is_none() {
+                                if let Some(dt) = current_dt {
+                                    dd_group =
+                                        Some(self.add_group("list", "descriptions", Some(dt)));
+                                }
+                            }
+                            let dd_parent = dd_group.unwrap_or(list_group);
+                            let dd_item =
+                                self.add_list_item_with_content(child, dd_parent, false, "", None);
+                            let content_parent = dd_item.unwrap_or(dd_parent);
+                            self.with_list_item_context(Some(content_parent), |w| {
                                 w.process_list_item_nested_content(child)
                             });
                         }
-                    } else {
-                        if dd_group.is_none() {
-                            if let Some(dt) = current_dt {
-                                dd_group = Some(self.add_group("list", "descriptions", Some(dt)));
-                            }
-                        }
-                        let dd_parent = dd_group.unwrap_or(list_group);
-                        let dd_item =
-                            self.add_list_item_with_content(child, dd_parent, false, "", None);
-                        let content_parent = dd_item.unwrap_or(dd_parent);
-                        self.with_list_item_context(Some(content_parent), |w| {
-                            w.process_list_item_nested_content(child)
-                        });
                     }
                 }
+                self.set_parent(self.level + 1, None);
+                self.level -= 1;
+                return vec![list_group];
             }
-            self.set_parent(self.level + 1, None);
-            self.level -= 1;
-            return list_group;
         }
 
+        // Children of `<ul>`/`<ol>` other than `<li>` are invalid HTML, but
+        // common in CMS output. Those before the first `<li>` precede the
+        // list; the others interrupt it, like the DOCX backend's interleaved
+        // blocks: the list is closed, the content is emitted at the parent
+        // level, and the following items open a new list group that
+        // continues the numbering (docling#4440).
+        let mut added: Vec<usize> = Vec::new();
+        let children: Vec<NodeRef<'a, HtmlNode>> = tag.children().collect();
+        let n_leading = children
+            .iter()
+            .take_while(|n| n.value().as_element().is_none_or(|e| e.name() != "li"))
+            .count();
+        added.extend(self.walk_nodes(tag, children[..n_leading].iter().copied()));
+
+        let mut list_group = Some(self.open_list_group(is_ordered, start, &mut added));
         let mut counter = 0usize;
-        let items: Vec<ElementRef<'a>> = tag
-            .children()
-            .filter_map(ElementRef::wrap)
-            .filter(|c| matches!(c.value().name(), "li" | "ul" | "ol"))
-            .collect();
-        for li in items {
-            if matches!(li.value().name(), "ul" | "ol") {
-                // Invalid HTML (a list directly inside a list): its own group
-                // under this one.
-                self.handle_block(li);
-                continue;
-            }
-            let marker = match start {
-                Some(s) if is_ordered => format!("{}.", s + counter),
-                _ => String::new(),
+        let mut prev_item: Option<usize> = None;
+        for &node in &children[n_leading..] {
+            let li = match node.value() {
+                HtmlNode::Text(t) if t.trim().is_empty() => continue,
+                HtmlNode::Element(e) if e.name() == "li" => {
+                    ElementRef::wrap(node).expect("element")
+                }
+                HtmlNode::Element(e) if matches!(e.name(), "ul" | "ol") && prev_item.is_some() => {
+                    // A nested list is a sub-list of the preceding item.
+                    self.with_list_item_context(prev_item, |w| {
+                        w.walk_nodes(tag, [node]);
+                    });
+                    continue;
+                }
+                HtmlNode::Text(_) | HtmlNode::Element(_) => {
+                    if list_group.is_some() {
+                        self.set_parent(self.level + 1, None);
+                        self.level -= 1;
+                    }
+                    let before = self.child_count(self.parent());
+                    added.extend(self.walk_nodes(tag, [node]));
+                    if list_group.is_some() && self.child_count(self.parent()) == before {
+                        // Nothing was added, e.g. a `<br>`: the list stays open.
+                        self.set_parent(self.level + 1, list_group);
+                        self.level += 1;
+                    } else {
+                        list_group = None;
+                        prev_item = None;
+                    }
+                    continue;
+                }
+                // Comments, CDATA, processing instructions.
+                _ => continue,
             };
+            if list_group.is_none() {
+                if is_ordered && start.is_none() {
+                    start = Some(1);
+                }
+                let group_start = start.map(|s| s + counter);
+                list_group = Some(self.open_list_group(is_ordered, group_start, &mut added));
+            }
+            let list_group = list_group.expect("open list group");
+            // An explicit marker on the item wins (docling#4669), else the
+            // counter.
+            let marker =
+                super::html::list_style_marker(li.value()).unwrap_or_else(|| match start {
+                    Some(s) if is_ordered => format!("{}.", s + counter),
+                    _ => String::new(),
+                });
             let inputs: Vec<ElementRef<'a>> = li
                 .select(sel!("input"))
                 .filter(|i| ancestor_named(**i, "li", None).is_some_and(|l| l.id() == li.id()))
@@ -1211,9 +1280,38 @@ impl<'a> Walker<'a> {
                 }
                 continue;
             }
-            let item = self.add_list_item_with_content(li, list_group, is_ordered, &marker, None);
+            let mut item =
+                self.add_list_item_with_content(li, list_group, is_ordered, &marker, None);
+            if item.is_none()
+                && li
+                    .descendants()
+                    .skip(1)
+                    .filter_map(ElementRef::wrap)
+                    .filter(|c| matches!(c.value().name(), "table" | "img"))
+                    .any(|c| !has_list_ancestor(*c, *li))
+            {
+                // A `<li>` without text still holds its table or image, under
+                // an empty list item that keeps the numbering (docling#4617).
+                item = Some(self.tree.add(
+                    Some(list_group),
+                    self.layer,
+                    TreeKind::Text {
+                        label: "list_item".into(),
+                        text: String::new(),
+                        orig: None,
+                        formatting: None,
+                        hyperlink: None,
+                        level: None,
+                        list: Some(ListMeta {
+                            enumerated: is_ordered,
+                            marker: marker.clone(),
+                        }),
+                    },
+                ));
+            }
             if item.is_some() {
                 counter += 1;
+                prev_item = item;
             }
             if item.is_some() || !inputs.is_empty() || !boxes.is_empty() {
                 self.with_list_item_context(item, |w| {
@@ -1239,9 +1337,40 @@ impl<'a> Walker<'a> {
                 }
             }
         }
-        self.set_parent(self.level + 1, None);
-        self.level -= 1;
-        list_group
+        if list_group.is_some() {
+            self.set_parent(self.level + 1, None);
+            self.level -= 1;
+        }
+        added
+    }
+
+    /// upstream's `open_list_group` (inside `_handle_list`): a list group
+    /// under the current parent, made the parent one level down.
+    fn open_list_group(
+        &mut self,
+        is_ordered: bool,
+        start: Option<usize>,
+        added: &mut Vec<usize>,
+    ) -> usize {
+        let group_name = match (is_ordered, start) {
+            (true, Some(s)) => format!("ordered list start {s}"),
+            (true, None) => "ordered list".to_string(),
+            (false, _) => "list".to_string(),
+        };
+        let parent = self.parent();
+        let group = self.add_group("list", &group_name, parent);
+        added.push(group);
+        self.set_parent(self.level + 1, Some(group));
+        self.level += 1;
+        group
+    }
+
+    /// The number of children `parent` (`None` = the body) has.
+    fn child_count(&self, parent: Option<usize>) -> usize {
+        match parent {
+            Some(p) => self.tree.items[p].children.len(),
+            None => self.tree.body.len(),
+        }
     }
 
     /// upstream's `_use_list_item_context`.
@@ -1336,12 +1465,12 @@ impl<'a> Walker<'a> {
             self.level += 1;
             let group = self.open_inline_group(&min_parts, false);
             for part in &min_parts {
-                let text = clean_unicode(&resolve_line_breaks(&squash_ws(&part.text)));
-                if text.is_empty() {
+                let text = resolve_line_breaks(&squash_ws(&part.text));
+                if clean_unicode(&text).is_empty() {
                     // The part only held `<br>` tags.
                     continue;
                 }
-                self.emit_part(part, text, with_extra(part.formatting));
+                self.emit_part(part, &text, with_extra(part.formatting));
             }
             self.close_inline_group(group);
             self.set_parent(self.level, None);
@@ -1415,22 +1544,24 @@ impl<'a> Walker<'a> {
                 .collect()
         };
         // `get_html_table_row_col`.
-        let (mut num_rows, mut num_cols) = (0usize, 0usize);
+        let mut num_rows = 0usize;
+        let mut row_spans: Vec<Vec<(usize, usize)>> = Vec::with_capacity(rows.len());
         for tr in &rows {
-            let mut col_count = 0;
+            let mut spans = Vec::new();
             let mut is_row_header = true;
             for cell in cells_of(*tr) {
                 let (col_span, row_span) = cell_spans(cell);
-                col_count += col_span;
+                spans.push((col_span, row_span));
                 if cell.value().name() == "td" || row_span == 1 {
                     is_row_header = false;
                 }
             }
-            num_cols = num_cols.max(col_count);
+            row_spans.push(spans);
             if !is_row_header {
                 num_rows += 1;
             }
         }
+        let num_cols = super::html::table_width(&row_spans);
         // `parse_table_data`.
         let mut grid: Vec<Vec<Option<String>>> = vec![vec![None; num_cols]; num_rows];
         let mut cells: Vec<TableCell> = Vec::new();
@@ -1508,6 +1639,11 @@ impl<'a> Walker<'a> {
                 {
                     col_idx += 1;
                 }
+                // The cell stays within the table, so its declared spans
+                // cannot outgrow the grid (docling#4414).
+                let rows_left = num_rows as isize - (row_idx + start_row_span as isize);
+                let row_span = row_span.min(rows_left.max(1) as usize);
+                let col_span = col_span.min(num_cols.saturating_sub(col_idx).max(1));
                 for r in start_row_span..start_row_span + row_span {
                     for c in 0..col_span {
                         let gr = row_idx + r as isize;
@@ -1848,45 +1984,6 @@ fn to_single(parts: &[Part]) -> Part {
     }
 }
 
-/// upstream's `detect_code_language` content fallback (no hint): a shebang,
-/// PHP / HTML / Dockerfile markers, `#include`, JSON. Conservative; anything
-/// else is `unknown`.
-pub(super) fn detect_code_language(text: &str) -> Option<String> {
-    let head = text.trim_start();
-    if let Some(rest) = head.strip_prefix("#!") {
-        let first = rest.lines().next().unwrap_or("");
-        let interp = first
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-            .split_whitespace()
-            .next()
-            .unwrap_or("");
-        let interp = if interp == "env" {
-            first.split_whitespace().nth(1).unwrap_or("")
-        } else {
-            interp
-        };
-        let lang = match interp.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.') {
-            "bash" | "sh" | "zsh" => "Bash",
-            "python" => "Python",
-            "perl" => "Perl",
-            "ruby" => "Ruby",
-            "node" => "JavaScript",
-            _ => return None,
-        };
-        return Some(lang.to_string());
-    }
-    if text.contains("<?php") {
-        return Some("PHP".into());
-    }
-    let lower = text.to_ascii_lowercase();
-    if lower.contains("<!doctype html") || lower.contains("<html") {
-        return Some("HTML".into());
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1896,6 +1993,7 @@ mod tests {
         build_tree(
             &Html::parse_document(html),
             &super::super::images::NoFetch,
+            true,
             true,
         )
     }

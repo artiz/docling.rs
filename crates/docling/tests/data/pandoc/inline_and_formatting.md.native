@@ -181,6 +181,28 @@
     , Code ( "" , [] , [] ) "not_to_escape"
     ]
 , Para
+    [ Str "This"
+    , Space
+    , Str "is"
+    , Space
+    , Strikeout [ Str "old" ]
+    , Space
+    , Str "new."
+    ]
+, Para
+    [ Str "Approx"
+    , Space
+    , Str "~5"
+    , Space
+    , Str "items"
+    , Space
+    , Str "and"
+    , Space
+    , Str "~10"
+    , Space
+    , Str "more."
+    ]
+, Para
     [ Link
         ( "" , [] , [] )
         [ Str "$$E=mc^2$$" ]
@@ -232,6 +254,144 @@
                 (RowSpan 1)
                 (ColSpan 1)
                 [ Plain [ Str "data" , Space , Str "b" ] ]
+            ]
+        , Row
+            ( "" , [] , [] )
+            [ Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Para [ Strong [ Str "C" ] , Space , Str "Cadre" ] ]
+            , Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Plain [ Str "x" ] ]
+            ]
+        , Row
+            ( "" , [] , [] )
+            [ Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Para [ Str "foo" , Space , Strong [ Str "bar" ] ] ]
+            , Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Plain [ Str "y" ] ]
+            ]
+        , Row
+            ( "" , [] , [] )
+            [ Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Para
+                    [ Strong [ Str "A" ] , Space , Strong [ Str "B" ] ]
+                ]
+            , Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Plain [ Str "z" ] ]
+            ]
+        , Row
+            ( "" , [] , [] )
+            [ Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Para
+                    [ Emph [ Str "italic" ]
+                    , Space
+                    , Str "and"
+                    , Space
+                    , Strong [ Str "bold" ]
+                    , Space
+                    , Str "and"
+                    , Space
+                    , Strikeout [ Str "strikethrough" ]
+                    ]
+                ]
+            , Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Plain [ Str "w" ] ]
+            ]
+        , Row
+            ( "" , [] , [] )
+            [ Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Para
+                    [ Str "run"
+                    , Space
+                    , Code ( "" , [] , [] ) "build"
+                    , Space
+                    , Str "now"
+                    ]
+                ]
+            , Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Plain
+                    [ Str "code"
+                    , Space
+                    , Str "in"
+                    , Space
+                    , Str "a"
+                    , Space
+                    , Str "cell"
+                    ]
+                ]
+            ]
+        , Row
+            ( "" , [] , [] )
+            [ Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Para
+                    [ Str "visit"
+                    , Space
+                    , Link
+                        ( "" , [] , [] )
+                        [ Str "Docling" ]
+                        ( "https://github.com/docling-project/docling"
+                        , ""
+                        )
+                    ]
+                ]
+            , Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Plain
+                    [ Str "link"
+                    , Space
+                    , Str "in"
+                    , Space
+                    , Str "a"
+                    , Space
+                    , Str "cell"
+                    ]
+                ]
             ]
         ]
     ]

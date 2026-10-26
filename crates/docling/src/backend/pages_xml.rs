@@ -498,15 +498,22 @@ pub(crate) fn legacy_list_styles(root: XmlNode) -> HashMap<String, ListStyle> {
 }
 
 /// `legacy_list_label`: how an '09 paragraph is labelled as a list item, if it
-/// is one. `sf:list-level` counts from one, unlike the depth the IWA reader
-/// works in.
+/// is one. `sf:list-level` is the rung of the style's ladder, counted from the
+/// unlabelled one ordinary body text sits on (a paragraph naming no level is
+/// on that rung); docling counts nesting from the first labelled rung
+/// instead, so the depth is one less — docling's reading since its Keynote
+/// reader (2.131, docling#4330), which the Keynote '09 reader here shares.
+/// Pages' own ladders label every rung alike, so its documents read the same
+/// as under the earlier one-based reading.
 fn legacy_list_label(
     paragraph: XmlNode,
     list_styles: &HashMap<String, ListStyle>,
 ) -> Option<ListLabel> {
     let style = list_styles.get(paragraph.attribute((SF_NS, "list-style")).unwrap_or(""))?;
-    let level = int_attr(paragraph, "list-level").unwrap_or(1);
-    style.label(level.saturating_sub(1))
+    let rung = int_attr(paragraph, "list-level").unwrap_or(0);
+    let mut label = style.label(rung)?;
+    label.depth = rung.saturating_sub(1);
+    Some(label)
 }
 
 /// `legacy_formatting`: an iWork '09 character style's property map as
@@ -644,6 +651,7 @@ mod tests {
         let xml = format!(
             r#"{HEAD}<sf:stylesheet>
               <sf:liststyle sf:ident="ls">
+                <sf:list-label-typeinfo sf:type="none"/>
                 <sf:list-label-typeinfo><sf:text-label sf:type="bullet" sf:format="•"/></sf:list-label-typeinfo>
                 <sf:list-label-typeinfo><sf:text-label sf:type="decimal" sf:format="%L."/></sf:list-label-typeinfo>
                 <sf:list-label-typeinfo sf:type="none"/>

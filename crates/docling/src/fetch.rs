@@ -689,9 +689,13 @@ mod tests {
         let uri: ureq::http::Uri = "http://rebind.example/doc.pdf".parse().unwrap();
         let config = ureq::config::Config::default();
         let resolve = |g: &GuardedResolver<Fixed>| {
+            // `..Default::default()` (ureq 3.5+): the struct sits in ureq's
+            // semver-exempt `unversioned` module and grows fields in minor
+            // releases (3.5: `per_read` / `per_write`).
             let timeout = ureq::unversioned::transport::NextTimeout {
                 after: ureq::unversioned::transport::time::Duration::NotHappening,
                 reason: ureq::Timeout::Resolve,
+                ..Default::default()
             };
             g.resolve(&uri, &config, timeout)
                 .map(|a| a.iter().map(|a| a.ip().to_string()).collect::<Vec<_>>())

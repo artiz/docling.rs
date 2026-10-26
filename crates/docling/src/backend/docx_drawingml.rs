@@ -268,6 +268,9 @@ struct Frame<'a, 'i> {
     holder: XmlNode<'a, 'i>,
     cx: f64,
     cy: f64,
+    /// Where the shapes start inside the frame: `(0, 0)`, but for a
+    /// degenerate frame (below) the side margin it was widened by.
+    inset: (f64, f64),
     pos: Option<(f64, f64)>,
     relative: (String, String),
 }
@@ -277,9 +280,26 @@ fn frame<'a, 'i>(drawing: XmlNode<'a, 'i>) -> Option<Frame<'a, 'i>> {
         .children()
         .find(|c| c.has_tag_name("inline") || c.has_tag_name("anchor"))?;
     let extent = holder.children().find(|c| c.has_tag_name("extent"))?;
-    let (cx, cy) = (emu(extent, "cx")?, emu(extent, "cy")?);
-    if cx <= 0.0 || cy <= 0.0 {
+    let (mut cx, mut cy) = (emu(extent, "cx")?, emu(extent, "cy")?);
+    if cx <= 0.0 && cy <= 0.0 {
         return None;
+    }
+    // A straight vertical or horizontal line has a zero-width (or -height)
+    // extent: it is widened by its `wp:effectExtent` — the room Word keeps
+    // for the stroke and an arrowhead — or by one pixel without one, so it
+    // still draws, where docling's LibreOffice render shows it too.
+    let effect = holder.children().find(|c| c.has_tag_name("effectExtent"));
+    let margin = |name: &str| effect.and_then(|e| emu(e, name)).unwrap_or(0.0).max(0.0);
+    let mut inset = (0.0, 0.0);
+    if cx <= 0.0 {
+        let (l, r) = (margin("l"), margin("r"));
+        cx = (l + r).max(EMU_PER_PX);
+        inset.0 = if l + r > 0.0 { l } else { EMU_PER_PX / 2.0 };
+    }
+    if cy <= 0.0 {
+        let (t, b) = (margin("t"), margin("b"));
+        cy = (t + b).max(EMU_PER_PX);
+        inset.1 = if t + b > 0.0 { t } else { EMU_PER_PX / 2.0 };
     }
     let offset = |name: &str| -> Option<(String, f64)> {
         let pos = holder.children().find(|c| c.has_tag_name(name))?;
@@ -300,6 +320,7 @@ fn frame<'a, 'i>(drawing: XmlNode<'a, 'i>) -> Option<Frame<'a, 'i>> {
         holder,
         cx,
         cy,
+        inset,
         pos,
         relative,
     })
@@ -359,8 +380,8 @@ pub(super) fn render(drawings: &[XmlNode], theme: &Theme) -> Option<Rendered> {
     let mut drawn = 0usize;
     for (f, p) in frames.iter().zip(&placed) {
         let root = Xform {
-            ox: p.0 - min_x,
-            oy: p.1 - min_y,
+            ox: p.0 - min_x + f.inset.0,
+            oy: p.1 - min_y + f.inset.1,
             sx: 1.0,
             sy: 1.0,
         };

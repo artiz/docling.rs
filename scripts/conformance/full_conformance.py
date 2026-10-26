@@ -14,7 +14,9 @@ slim install without torch is enough:
     uv pip install --python .venv-compare/bin/python \\
         "docling-slim[format-docx,format-email,format-html,format-iwork,format-latex,\\
 format-markdown,format-office,format-opendocument,format-pptx,format-xlsx,\\
-format-xml-jats,format-xml-uspto,format-xml-xbrl]" pypdfium2 pylatexenc
+format-xml-jats,format-xml-uspto,format-xml-xbrl]" pypdfium2 pylatexenc \\
+        "docling-core==2.103.1"   # what docling 2.142.1 locks; 2.104.0 prints a
+                                  # Markdown raw HTML block as escaped text
     cargo build -p docling-cli
     .venv-compare/bin/python scripts/conformance/full_conformance.py [fmt ...]
 
@@ -54,11 +56,12 @@ CLI = os.environ.get("DOCLING_RS_BIN", str(ROOT / "target/debug/docling-rs"))
 DEFAULT_FORMATS = [
     "asciidoc", "csv", "docx", "html", "xlsx", "pptx", "md", "md_deepseek",
     "latex", "jats", "uspto", "xbrl", "webvtt", "odf", "epub", "email", "iwork",
-    "doclang", "ebcdic",
+    "doclang", "ebcdic", "keynote",
 ]
 
 for ext, name in [
-    ("tex", "LATEX"), ("latex", "LATEX"), ("pages", "IWORK_PAGES"), ("ebc", "EBCDIC"),
+    ("tex", "LATEX"), ("latex", "LATEX"), ("pages", "IWORK_PAGES"), ("key", "IWORK_KEYNOTE"),
+    ("ebc", "EBCDIC"),
     ("xhtml", "HTML"), ("pptm", "PPTX"), ("xltx", "XLSX"), ("xltm", "XLSX"),
 ]:
     if hasattr(InputFormat, name):
@@ -78,6 +81,10 @@ def backend_for(fmt):
         from docling.backend.iwork_backend import IWorkPagesDocumentBackend
 
         return IWorkPagesDocumentBackend
+    if fmt.name == "IWORK_KEYNOTE":
+        from docling.backend.iwork_backend import IWorkKeynoteDocumentBackend
+
+        return IWorkKeynoteDocumentBackend
     if fmt.name == "EBCDIC":
         from docling.backend.ebcdic_backend import EbcdicDocumentBackend
 
@@ -106,6 +113,8 @@ def upstream(path: Path):
             fmt = InputFormat.XML_USPTO
     if ext == "pages":
         fmt = InputFormat.IWORK_PAGES
+    if ext == "key":
+        fmt = InputFormat.IWORK_KEYNOTE
     if fmt is None or fmt in dc._PIPELINE_FORMATS:
         return None
     if fmt == InputFormat.MD and dc._is_deepseek(path.read_text(encoding="utf-8")):
@@ -139,6 +148,35 @@ def strip(o):
     if isinstance(o, list):
         return [strip(x) for x in o]
     return o
+
+
+def drop_documented(doc):
+    """Take out of docling.rs's JSON what docs/MIGRATION.md records as a
+    deliberate extension, so the comparison counts what is left: a picture's
+    alt text as its description (#676, `created_by` / `provenance`
+    `alt_text`, which docling does not read), and a picture image's payload
+    details (mimetype, dpi, size) — the drawings docling renders through
+    LibreOffice are drawn here (#858 SVG, #536 EMF/WMF → PNG), so only the
+    image's presence is compared (on both sides)."""
+    for pic in doc.get("pictures", []):
+        meta = pic.get("meta")
+        if isinstance(meta, dict) and (meta.get("description") or {}).get("created_by") == "alt_text":
+            meta.pop("description")
+            if not meta:
+                pic.pop("meta")
+        if isinstance(pic.get("annotations"), list):
+            pic["annotations"] = [
+                a for a in pic["annotations"]
+                if not (a.get("kind") == "description" and a.get("provenance") == "alt_text")
+            ]
+    return doc
+
+
+def image_presence(doc):
+    for pic in doc.get("pictures", []):
+        if pic.get("image") is not None:
+            pic["image"] = "<image>"
+    return doc
 
 
 def norm(text: str) -> str:
@@ -183,8 +221,8 @@ def main() -> None:
             md_norm += loose == 0
             json_state = "n/a"
             if ref_json is not None:
-                ours = strip(json.loads(run_cli("--to", "json", src) or "{}"))
-                want = strip(ref_json)
+                ours = image_presence(drop_documented(strip(json.loads(run_cli("--to", "json", src) or "{}"))))
+                want = image_presence(strip(ref_json))
                 ours.pop("name", None)
                 want.pop("name", None)
                 json_state = "ok" if ours == want else "DIFF"

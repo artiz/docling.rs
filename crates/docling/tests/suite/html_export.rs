@@ -4,7 +4,7 @@
 //! image_mode=EMBEDDED)` produced for `sources/<name>`, so the port is scored
 //! the way the Markdown and JSON exports are. The content-layer selection
 //! (#499) is scored the same way against `tests/data/html_layers/` in this
-//! crate: docling-core 2.99's `export_to_html(included_content_layers=…)`
+//! crate: docling-core 2.103.1's `export_to_html(included_content_layers=…)`
 //! run over the upstream groundtruth JSON of the same fixtures.
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,6 +28,14 @@ fn mask_data_uris(html: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// Drop each masked `<img src="data:…">` and the `<figure></figure>` left
+/// empty by it, with the line break the serializer put before it.
+fn drop_embedded_images(html: &str) -> String {
+    html.replace("<img src=\"data:…\">", "")
+        .replace("\n<figure></figure>", "")
+        .replace("<figure></figure>", "")
 }
 
 fn corpus() -> PathBuf {
@@ -80,10 +88,14 @@ fn html_matches_upstream_groundtruth() {
         // Picture payloads are the JSON export's business (upstream's
         // `save_as_html` re-encodes every picture through PIL as PNG, so
         // neither its bytes nor its media type are the file's): compare the
-        // markup with the `data:` URIs masked, the trailing newline aside.
+        // markup with the embedded `<img>`s dropped, the trailing newline
+        // aside. Dropped, not masked: references written since docling-core
+        // 2.103 leave out the image of a picture its local-image opt-in did
+        // not load (`docx_rich_cells`' two cell pictures, whose JSON
+        // carries them), so only the markup around a picture is compared.
         let (got, want) = (
-            mask_data_uris(got.trim_end()),
-            mask_data_uris(want.trim_end()),
+            drop_embedded_images(&mask_data_uris(got.trim_end())),
+            drop_embedded_images(&mask_data_uris(want.trim_end())),
         );
         if got != want {
             if let Some(dir) = std::env::var_os("DOCLING_RS_HTML_DUMP") {

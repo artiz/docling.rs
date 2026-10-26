@@ -140,6 +140,7 @@ pub(crate) fn convert_html_with(
                 &parsed,
                 images,
                 infer_furniture,
+                true,
             ));
         }
     }
@@ -573,9 +574,21 @@ fn walk_block(
     base: Fmt,
     images: &dyn ImageResolver,
 ) {
+    walk_block_nodes(elem.children(), nodes, list_level, base, images);
+}
+
+/// [`walk_block`] over some of an element's children only — upstream's
+/// `_walk_nodes`.
+fn walk_block_nodes<'a>(
+    children: impl IntoIterator<Item = ego_tree::NodeRef<'a, HtmlNode>>,
+    nodes: &mut Vec<Node>,
+    list_level: u8,
+    base: Fmt,
+    images: &dyn ImageResolver,
+) {
     let mut inline = RunBuf::default();
 
-    for child in elem.children() {
+    for child in children {
         match child.value() {
             HtmlNode::Text(text) => {
                 let run = normalize_ws(text);
@@ -747,8 +760,8 @@ fn handle_block(
                 push_inline_paragraph(nodes, text, runs);
             }
         }
-        "ul" | "ol" => walk_list(elem, name == "ol", nodes, list_level, base),
-        "dl" => walk_dl(elem, nodes, list_level, base),
+        "ul" | "ol" => walk_list(elem, name == "ol", nodes, list_level, base, images),
+        "dl" => walk_dl(elem, nodes, list_level, base, images),
         "pre" => {
             // A <pre> with inline structure (links/formatting) renders each
             // segment as inline code; a plain <pre> is a code block.
@@ -1134,7 +1147,14 @@ pub(super) fn parse_ol_start(value: &str) -> Option<u64> {
 
 /// Emit one `ListItem` per `<li>`, recursing into nested `<ul>`/`<ol>` at a
 /// deeper level. Ordered items are numbered from the list's `start` attribute.
-fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
+fn walk_list(
+    list: ElementRef,
+    ordered: bool,
+    nodes: &mut Vec<Node>,
+    level: u8,
+    base: Fmt,
+    images: &dyn ImageResolver,
+) {
     let start = list
         .value()
         .attr("start")
@@ -1142,20 +1162,54 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
         .filter(|_| ordered);
     // docling emits an enumeration `<marker>` only for an ordered list with an
     // explicit `start` attribute; a plain `<ol>` carries no marker.
-    let has_start = start.is_some();
+    let mut has_start = start.is_some();
     let mut number = start.unwrap_or(1);
     // Each top-level `<ul>`/`<ol>` is its own docling list group; its first
     // item is flagged so the Markdown serializer separates sibling lists with
     // a blank line (nested lists at level > 0 don't need it — the serializer
     // only splits at level 0).
     let mut first = level == 0;
-    for child in list.children() {
-        let Some(li) = ElementRef::wrap(child) else {
-            continue;
+    // Children of `<ul>`/`<ol>` other than `<li>` are invalid HTML, but common
+    // in CMS output (docling#4440). Those before the first `<li>` precede the
+    // list; a nested list is a sub-list of the item before it; any other
+    // content closes the list, and the items after it open a new list that
+    // continues the numbering — as an explicit start, so an `<ol>` resumes
+    // with its markers.
+    let children: Vec<_> = list.children().collect();
+    let n_leading = children
+        .iter()
+        .take_while(|n| n.value().as_element().is_none_or(|e| e.name() != "li"))
+        .count();
+    walk_block_nodes(
+        children[..n_leading].iter().copied(),
+        nodes,
+        level,
+        base,
+        images,
+    );
+    let mut prev_item = false;
+    for &child in &children[n_leading..] {
+        let li = match child.value() {
+            HtmlNode::Text(t) if t.trim().is_empty() => continue,
+            HtmlNode::Element(e) if e.name() == "li" => ElementRef::wrap(child).expect("element"),
+            HtmlNode::Element(e) if matches!(e.name(), "ul" | "ol") && prev_item => {
+                let sub = ElementRef::wrap(child).expect("element");
+                walk_list(sub, e.name() == "ol", nodes, level + 1, base, images);
+                continue;
+            }
+            HtmlNode::Text(_) | HtmlNode::Element(_) => {
+                let before = nodes.len();
+                walk_block_nodes([child], nodes, level, base, images);
+                if nodes.len() > before {
+                    first = level == 0;
+                    prev_item = false;
+                    has_start |= ordered;
+                }
+                continue;
+            }
+            // Comments, CDATA, processing instructions.
+            _ => continue,
         };
-        if li.value().name() != "li" {
-            continue;
-        }
 
         // GFM task-list form (docling#4401): the whole `<li>` is bare checkbox
         // input(s) plus inline text — `<li><input type="checkbox" checked>
@@ -1173,14 +1227,16 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
         }
 
         // The item's own inline text, then its block content. Images fold into
-        // the item text (so the list stays tight); nested lists follow as
-        // adjacent items in the same run.
+        // the item text (so the list stays tight); nested lists and tables
+        // follow as their own nodes.
         let mut runs = RunBuf::default();
         collect_li_inline(li, base, &mut runs);
         let mut text = finalize(&runs.md);
         let mut nested: Vec<(&str, ElementRef)> = Vec::new();
         append_li_blocks(li, &mut text, &mut nested);
-        if !text.is_empty() {
+        // An item without text still holds its table (docling#4617): an
+        // empty item keeps it, and the numbering, in place.
+        if !text.is_empty() || nested.iter().any(|(kind, _)| *kind == "table") {
             nodes.push(Node::ListItem {
                 ordered,
                 number,
@@ -1189,22 +1245,60 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
                 level,
                 // docling's HTML backend passes an enumeration marker only for
                 // an ordered list with an explicit `start`; otherwise none.
-                marker: has_start.then(|| format!("{number}.")),
+                // an explicit `list-style-type` string on the item wins
+                // (docling#4669).
+                marker: list_style_marker(li.value())
+                    .or_else(|| has_start.then(|| format!("{number}."))),
                 location: None,
                 dclx: None,
                 href: first_href(li),
                 layer: None,
             });
+            prev_item = true;
         }
         number += 1;
         for (kind, el) in nested {
             match kind {
-                "ol" => walk_list(el, true, nodes, level + 1, base),
-                "dl" => walk_dl(el, nodes, level, base),
-                _ => walk_list(el, false, nodes, level + 1, base),
+                "ol" => walk_list(el, true, nodes, level + 1, base, images),
+                "dl" => walk_dl(el, nodes, level, base, images),
+                // docling nests the table under the item, and its Markdown
+                // prints the grid right below the item line; here it is the
+                // node after the item, so the Markdown blank-line-separates
+                // it — the table keeps its rows and columns in every format,
+                // where it used to flatten into the item text.
+                "table" => handle_block(el, "table", nodes, level, base, images),
+                _ => walk_list(el, false, nodes, level + 1, base, images),
             }
         }
     }
+}
+
+/// docling's `_get_list_style_marker` (docling#4669): the marker an inline
+/// CSS string `list-style-type` sets on a `<li>` — `<li style="list-style-type:
+/// '3. ';">`, how docling's HTML export writes an item's original marker — so
+/// the marker survives the round trip (the Markdown backend takes it for every
+/// file with an HTML block). The first declaration with a quoted value counts.
+pub(super) fn list_style_marker(li: &scraper::node::Element) -> Option<String> {
+    let style = li.attr("style")?;
+    let lower = style.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(at) = lower[from..].find("list-style-type") {
+        let rest = style[from + at + "list-style-type".len()..].trim_start();
+        from += at + "list-style-type".len();
+        let Some(rest) = rest.strip_prefix(':') else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(quote) = rest.chars().next().filter(|c| matches!(c, '\'' | '"')) else {
+            continue;
+        };
+        let Some(end) = rest[1..].find(quote) else {
+            continue;
+        };
+        let marker = rest[1..1 + end].trim();
+        return (!marker.is_empty()).then(|| marker.to_string());
+    }
+    None
 }
 
 /// Block-level tags whose presence in a `<li>` rules out the GFM task-list
@@ -1312,7 +1406,7 @@ fn collect_li_inline(li: ElementRef, base: Fmt, runs: &mut RunBuf) {
                     continue;
                 }
                 match e.name() {
-                    "ul" | "ol" | "dl" | "img" => {} // pulled out as blocks
+                    "ul" | "ol" | "dl" | "img" | "table" => {} // pulled out as blocks
                     "p" | "div" | "section" | "article" | "blockquote" => {
                         collect_li_inline(cref, base, runs)
                     }
@@ -1354,6 +1448,7 @@ fn append_li_blocks<'a>(
             "ul" => nested.push(("ul", child)),
             "ol" => nested.push(("ol", child)),
             "dl" => nested.push(("dl", child)),
+            "table" => nested.push(("table", child)),
             "p" | "div" | "section" | "blockquote" => append_li_blocks(child, text, nested),
             _ => {
                 // Images wrapped in inline markup (`<span><a><img></a></span>`):
@@ -1371,7 +1466,13 @@ fn append_li_blocks<'a>(
 
 /// A description list: each `<dt>` is a bold list item, each `<dd>` an item one
 /// level deeper, recursing into nested `<dl>`/`<ul>`/`<ol>` (docling's rendering).
-fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
+fn walk_dl(
+    dl: ElementRef,
+    nodes: &mut Vec<Node>,
+    level: u8,
+    base: Fmt,
+    images: &dyn ImageResolver,
+) {
     let bold = Fmt { bold: true, ..base };
     // A top-level `<dl>` is its own docling list group, like a `<ul>`: its
     // first term opens a new list, so the Markdown blank-separates it from
@@ -1399,7 +1500,7 @@ fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
                     });
                 }
             }
-            "dd" => walk_dd(c, nodes, level + 1, base),
+            "dd" => walk_dd(c, nodes, level + 1, base, images),
             _ => {}
         }
     }
@@ -1407,7 +1508,13 @@ fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
 
 /// A `<dd>`: its own inline text becomes an item at `level`, and any nested
 /// `<dl>`/`<ul>`/`<ol>` is walked at the same level.
-fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
+fn walk_dd(
+    dd: ElementRef,
+    nodes: &mut Vec<Node>,
+    level: u8,
+    base: Fmt,
+    images: &dyn ImageResolver,
+) {
     let mut runs = RunBuf::default();
     let mut nested: Vec<(&str, ElementRef)> = Vec::new();
     for child in dd.children() {
@@ -1448,9 +1555,9 @@ fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
     }
     for (kind, el) in nested {
         match kind {
-            "dl" => walk_dl(el, nodes, level, base),
-            "ol" => walk_list(el, true, nodes, level, base),
-            _ => walk_list(el, false, nodes, level, base),
+            "dl" => walk_dl(el, nodes, level, base, images),
+            "ol" => walk_list(el, true, nodes, level, base, images),
+            _ => walk_list(el, false, nodes, level, base, images),
         }
     }
 }
@@ -2199,15 +2306,21 @@ fn parse_table_cells(
     // its cells are offset into the following rows. `num_rows` therefore counts
     // only non-row-header rows; cells are clamped to the `num_rows × num_cols`
     // grid. Mirrors docling's `parse_table_data`.
-    let (mut num_rows, mut num_cols) = (0usize, 0usize);
+    let mut num_rows = 0usize;
+    let mut row_spans: Vec<Vec<(usize, usize)>> = Vec::with_capacity(trs.len());
     for tr in &trs {
         let cells = row_cells(*tr);
-        let col_count: usize = cells.iter().map(|c| span_attr(*c, "colspan")).sum();
-        num_cols = num_cols.max(col_count);
+        row_spans.push(
+            cells
+                .iter()
+                .map(|c| (span_attr(*c, "colspan"), span_attr(*c, "rowspan")))
+                .collect(),
+        );
         if !is_row_header(&cells) {
             num_rows += 1;
         }
     }
+    let num_cols = table_width(&row_spans);
     // A table whose every row is a "row header" (e.g. one `<th rowspan>` and
     // no body rows to span into) would count zero rows and vanish — upstream's
     // out-of-bounds crash in the same shape (docling#3827, 2.122); it keeps
@@ -2347,6 +2460,47 @@ fn is_row_header(cells: &[ElementRef]) -> bool {
 /// position, so the cell dropped out and every later cell shifted left;
 /// HTML5's "rowspan=0 spans to the end of the row group" is not modelled,
 /// the cell simply keeps one slot).
+/// docling's `table_width` (`backend/utils/table_spans.py`, docling#4414 and
+/// #4527): the number of columns of a table, given each row's `(colspan,
+/// rowspan)` pairs. The declared width is the widest row's colspan sum, cut
+/// after the last column some cell starts in — the columns right of it hold
+/// no cell of their own, and browsers collapse them too. A cell goes in the
+/// first column no earlier cell still covers, so a rowspan shifts the cells
+/// of the rows it reaches to the right, and the table widens to keep them
+/// (they used to fall off the grid); a cell covers only the columns it holds
+/// inside the declared width, so an oversized colspan cannot widen every row
+/// below it.
+pub(super) fn table_width(rows: &[Vec<(usize, usize)>]) -> usize {
+    let mut width = 0usize;
+    let mut last_start: Option<usize> = None;
+    for cells in rows {
+        let mut col = 0usize;
+        for &(col_span, _) in cells {
+            last_start = last_start.max(Some(col));
+            col += col_span;
+        }
+        width = width.max(col);
+    }
+    let declared = width.min(last_start.map_or(0, |c| c + 1));
+    // The row, exclusive, up to which the cells placed so far cover a column.
+    let mut covered_until = vec![0usize; declared];
+    let mut last_start: Option<usize> = None;
+    for (row_idx, cells) in rows.iter().enumerate() {
+        let mut col = 0usize;
+        for &(col_span, row_span) in cells {
+            while covered_until.get(col).is_some_and(|&until| until > row_idx) {
+                col += 1;
+            }
+            last_start = last_start.max(Some(col));
+            for until in covered_until.iter_mut().take(col + col_span).skip(col) {
+                *until = (*until).max(row_idx + row_span);
+            }
+            col += col_span;
+        }
+    }
+    declared.max(last_start.map_or(0, |c| c + 1))
+}
+
 fn span_attr(cell: ElementRef, name: &str) -> usize {
     let limit = if name == "colspan" {
         MAX_COLSPAN
@@ -3399,6 +3553,59 @@ mod tests {
     fn ordered_list_is_numbered_sequentially() {
         let doc = convert("<ol><li>first</li><li>second</li></ol>");
         assert_eq!(doc.export_to_markdown(), "1. first\n2. second\n");
+    }
+
+    /// docling#4440: a non-`<li>` child of a list closes it, the items after
+    /// it open a new list that continues the numbering, and a list directly
+    /// inside a list is the preceding item's sub-list — none of it dropped.
+    #[test]
+    fn non_li_list_children_are_kept_in_order() {
+        let doc = convert("<ol><li>a</li><p>between</p><li>b</li><ol><li>c</li></ol></ol>");
+        assert_eq!(
+            doc.export_to_markdown(),
+            "1. a\n\nbetween\n\n2. b\n    1. c\n"
+        );
+        let doc = convert("<ul><li>a</li><ul><li>b</li></ul><li>c</li></ul>");
+        assert_eq!(doc.export_to_markdown(), "- a\n    - b\n- c\n");
+    }
+
+    /// docling#4617: a `<li>` without text keeps its table under an empty
+    /// item, and the table keeps its grid instead of folding into the text.
+    #[test]
+    fn list_item_table_stays_a_table() {
+        let doc =
+            convert("<ol><li><table><tr><td>A</td><td>B</td></tr></table></li><li>c</li></ol>");
+        let md = doc.export_to_markdown();
+        assert!(md.starts_with("1. \n\n|"), "{md}");
+        assert!(md.ends_with("\n\n2. c\n"), "{md}");
+    }
+
+    /// docling#4669: a `<li>`'s string `list-style-type` is its marker.
+    #[test]
+    fn list_style_type_string_is_the_marker() {
+        let doc = convert(
+            r#"<ol><li style="list-style-type: '3. ';">c</li><li style="color: red; list-style-type: 'iv) '">d</li></ol>"#,
+        );
+        assert_eq!(doc.export_to_markdown(), "3. c\n- iv) d\n");
+    }
+
+    /// docling's `table_width` (docling#4414, #4527).
+    #[test]
+    fn table_width_follows_rowspan_shifts_and_collapses_empty_columns() {
+        // "North" covers column 0 of all three rows, pushing Q1/10 right.
+        assert_eq!(
+            table_width(&[vec![(1, 3)], vec![(1, 1), (1, 1)], vec![(1, 1), (1, 1)]]),
+            3
+        );
+        // No cell starts right of column 0: the colspan's columns collapse.
+        assert_eq!(table_width(&[vec![(3, 1)]]), 1);
+        // An oversized colspan is cut to the columns cells start in.
+        assert_eq!(table_width(&[vec![(1000, 1)], vec![(1, 1), (1, 1)]]), 2);
+        let doc = convert(
+            r#"<table><tr><td rowspan="3">North</td></tr><tr><td>Q1</td><td>10</td></tr><tr><td>Q2</td><td>20</td></tr></table>"#,
+        );
+        let md = doc.export_to_markdown();
+        assert!(md.contains("10") && md.contains("20"), "{md}");
     }
 
     #[test]

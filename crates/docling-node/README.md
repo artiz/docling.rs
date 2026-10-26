@@ -588,6 +588,10 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   flowchart its labelled shapes and connectors describe, only when every
   connector names its two end shapes (a drawing laid by eye gets no graph,
   never an invented one); `"none"` turns the extraction off.
+- `useOutlineLevelForHeadings`: Word (DOCX / DOC) — a style's `w:outlineLvl`
+  alone makes it a heading (docling's `use_outline_level_for_headings`,
+  docling#4480; default `true`); `false` for templates whose body styles
+  carry an outline level only for the table of contents.
 - `videoFrames`: max frames sampled from a video input as timestamped pictures
   (`0` = transcript only; default 8, needs ffmpeg at runtime; `4294967295` =
   every distinct cut, #647).

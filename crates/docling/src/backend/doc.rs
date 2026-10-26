@@ -81,13 +81,26 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct DocBackend {
     /// How tracked changes are read (#851): `accept` leaves the deleted runs
     /// out, `reject` the inserted ones (`sprmCFRMarkDel` / `sprmCFRMark`);
     /// `None` keeps every run's text, as this reader did before #851.
     /// `all` is refused: the typed revisions it asks for are not read.
     pub track_changes: Option<TrackChanges>,
+    /// A style's outline level (`sprmPOutLvl`) alone makes it a heading —
+    /// docling's `use_outline_level_for_headings` (docling#4480), on by
+    /// default; see [`style_outlines`].
+    pub use_outline_level_for_headings: bool,
+}
+
+impl Default for DocBackend {
+    fn default() -> Self {
+        DocBackend {
+            track_changes: None,
+            use_outline_level_for_headings: true,
+        }
+    }
 }
 
 impl DeclarativeBackend for DocBackend {
@@ -123,7 +136,13 @@ impl DeclarativeBackend for DocBackend {
         }
         if w_ident != 0xA5EC {
             if (101..=105).contains(&n_fib) {
-                return convert_word6(&source.name, &word, flags, policy);
+                return convert_word6(
+                    &source.name,
+                    &word,
+                    flags,
+                    policy,
+                    self.use_outline_level_for_headings,
+                );
             }
             return Err(ConversionError::Parse(format!(
                 "doc: unsupported Word binary format (wIdent {w_ident:#06X}, nFib {n_fib}); \
@@ -163,7 +182,10 @@ impl DeclarativeBackend for DocBackend {
         })?;
 
         // Styles (istd → sti) and paragraph properties (FC → PAPX).
-        let stis = parse_stsh(fib.part(&table, Fib::STSHF), DocFormat::Word97);
+        let stis = style_outlines(
+            parse_stsh(fib.part(&table, Fib::STSHF), DocFormat::Word97),
+            self.use_outline_level_for_headings,
+        );
         let bte = fib.part(&table, Fib::PLCF_BTE_PAPX);
         // Character-run properties (bold/italic): PlcfBteChpx → CHPX FKPs.
         let btec = fib.part(&table, Fib::PLCF_BTE_CHPX);
@@ -1274,6 +1296,7 @@ fn convert_word6(
     word: &[u8],
     flags: u16,
     policy: Option<TrackChanges>,
+    outline_headings: bool,
 ) -> Result<DoclingDocument, ConversionError> {
     let field = |o: usize, what: &str| {
         u32_at(word, o).map(|v| v as usize).ok_or_else(|| {
@@ -1330,7 +1353,7 @@ fn convert_word6(
             .and_then(|end| word.get(fc as usize..end))
             .unwrap_or(&[])
     };
-    let stis = parse_stsh(part(0x60), DocFormat::Word6);
+    let stis = style_outlines(parse_stsh(part(0x60), DocFormat::Word6), outline_headings);
     let lists = ListTables::default();
     let drawings = Drawings::default();
     let comment_cps = comment_anchor_cps(part(0x78), Atrd::Word6);
@@ -2385,6 +2408,20 @@ fn style_chain_bold(stis: &[StyleDef], istd: u16) -> bool {
 /// cyclic chain — the DOCX backend's `MAX_STYLE_INHERITANCE_DEPTH`.
 const MAX_STYLE_CHAIN: usize = 10;
 
+/// The style sheet as the heading rules read it: with
+/// `use_outline_level_for_headings` off (docling#4480) every style's outline
+/// level is dropped, so only a heading or Title style — by `sti`, through
+/// the based-on chain — makes a heading, as the DOCX backend reads it then;
+/// the outline level is read for nothing else.
+fn style_outlines(mut stis: Vec<StyleDef>, on: bool) -> Vec<StyleDef> {
+    if !on {
+        for style in &mut stis {
+            style.outline = None;
+        }
+    }
+    stis
+}
+
 /// The heading level (docling's Markdown level) paragraph style `istd`
 /// gives, or `None` for body text. Mirrors the DOCX backend: Title (`sti`
 /// 62) is level 1, "heading N" level N + 1, and a style that is neither can
@@ -2399,6 +2436,8 @@ const MAX_STYLE_CHAIN: usize = 10;
 /// explicit "body text" and ends the walk: a style that opts out of the
 /// outline is not a heading whatever it is based on.
 fn style_heading_level(stis: &[StyleDef], istd: u16) -> Option<u8> {
+    // (With `use_outline_level_for_headings` off the styles reach here
+    // without their outline levels — [`style_outlines`].)
     let mut cur = istd;
     for _ in 0..MAX_STYLE_CHAIN {
         let style = stis.get(cur as usize)?;
@@ -4351,6 +4390,26 @@ mod tests {
     /// where the `.docx` backend (one hop, docling's) prints bold text.
     #[test]
     fn heading_styles_inherit_through_the_based_on_chain() {
+        // docling#4480: with `use_outline_level_for_headings` off, an outline
+        // level alone makes no heading; a heading style (by `sti`, here one
+        // hop up the chain) still does.
+        let mut stis = vec![StyleDef::NONE; 3];
+        stis[1] = StyleDef {
+            sti: 1,
+            ..StyleDef::NONE
+        };
+        stis[2] = StyleDef {
+            sti: 0xFFE,
+            outline: Some(0),
+            base: 0x0FFF,
+            ..StyleDef::NONE
+        };
+        assert_eq!(style_heading_level(&stis, 2), Some(2));
+        let off = style_outlines(stis.clone(), false);
+        assert_eq!(style_heading_level(&off, 2), None);
+        assert_eq!(style_heading_level(&off, 1), Some(2));
+        assert_eq!(style_heading_level(&style_outlines(stis, true), 2), Some(2));
+
         let doc = converted("doc_inherited_heading_styles.doc");
         let headings: Vec<(u8, &str)> = doc
             .nodes

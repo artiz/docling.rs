@@ -22,7 +22,7 @@
 use roxmltree::{Document, Node as XmlNode};
 
 use super::numfmt::{civil_from_days, days_from_civil};
-use super::xlsx_drawings::chart_table;
+use super::xlsx_drawings::build_chart_table;
 
 /// A PPTX chart as docling records it on the picture.
 pub struct PptxChart {
@@ -54,10 +54,6 @@ const PLOT_TAGS: [&str; 16] = [
     "surface3DChart",
     "surfaceChart",
 ];
-
-/// Backstop on the cells of one chart's table (docling's
-/// `_MAX_CHART_TABLE_CELLS`).
-const MAX_CHART_TABLE_CELLS: usize = 100_000;
 
 /// The label of a plot python-pptx can read (its `PlotFactory`), by the
 /// family of the type `PlotTypeInspector` gives it; `None` for a plot it
@@ -180,38 +176,7 @@ fn chart_data(
     if columns.is_empty() {
         return None;
     }
-    // Trailing rows with no category and no value are dropped (interior gaps
-    // stay), then the table is capped.
-    let declared = columns
-        .iter()
-        .map(|(_, v)| v.len())
-        .chain([categories.len()])
-        .max()
-        .unwrap_or(0);
-    let populated = (0..declared)
-        .rev()
-        .find(|&row| {
-            categories.get(row).is_some_and(|c| !c.is_empty())
-                || columns
-                    .iter()
-                    .any(|(_, v)| v.get(row).is_some_and(|s| !s.is_empty()))
-        })
-        .map_or(0, |row| row + 1);
-    if populated == 0 {
-        return None;
-    }
-    let num_cols = 1 + columns.len();
-    let rows = if populated * num_cols > MAX_CHART_TABLE_CELLS {
-        (MAX_CHART_TABLE_CELLS / num_cols).max(1)
-    } else {
-        populated
-    };
-    categories.truncate(rows);
-    categories.resize(rows, String::new());
-    for (_, values) in &mut columns {
-        values.truncate(rows);
-    }
-    chart_table(categories, columns, corner)
+    build_chart_table(categories, columns, corner)
 }
 
 /// A series' values as python-pptx reads them (`c:val`, else `c:yVal`): one

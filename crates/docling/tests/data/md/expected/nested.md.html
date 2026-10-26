@@ -176,32 +176,32 @@
 <h1>Nesting</h1>
 <p>A list featuring nesting:</p>
 <ul>
-<li style="list-style-type: '- ';">
+<li>
 abc
 <ul>
-<li style="list-style-type: '- ';">
+<li>
 abc123
 <ul>
-<li style="list-style-type: '- ';">
+<li>
 abc1234
 <ul>
-<li style="list-style-type: '- ';">
+<li>
 abc12345
 <ul>
-<li style="list-style-type: '- ';">a.</li>
-<li style="list-style-type: '- ';">b.</li>
+<li>a.</li>
+<li>b.</li>
 </ul>
 </li>
 </ul>
 </li>
-<li style="list-style-type: '- ';">
+<li>
 abcd1234：
 <ul>
-<li style="list-style-type: '- ';">
+<li>
 abcd12345：
 <ul>
-<li style="list-style-type: '- ';">a.</li>
-<li style="list-style-type: '- ';">b.</li>
+<li>a.</li>
+<li>b.</li>
 </ul>
 </li>
 </ul>
@@ -210,45 +210,57 @@ abcd12345：
 </li>
 </ul>
 </li>
-<li style="list-style-type: '- ';">
+<li>
 def：
 <ul>
-<li style="list-style-type: '- ';">
+<li>
 def1234：
 <ul>
-<li style="list-style-type: '- ';">def12345。</li>
+<li>def12345。</li>
 </ul>
 </li>
 </ul>
 </li>
-<li style="list-style-type: '- ';">
+<li>
 after one empty line
 <ul>
-<li style="list-style-type: '- ';">foo</li>
+<li>foo</li>
 </ul>
 </li>
-<li style="list-style-type: '- ';">
+<li>
 afer two empty lines
 <ul>
-<li style="list-style-type: '- ';">bar</li>
+<li>bar</li>
 </ul>
 </li>
 </ul>
 <ul>
-<li style="list-style-type: '- ';">changing symbol</li>
+<li>changing symbol</li>
 </ul>
 <p>A nested HTML list:</p>
 <ul>
-<li style="list-style-type: '- ';">First item</li>
-<li style="list-style-type: '- ';">
+<li>First item</li>
+<li>
 Second item with subitems:
 <ul>
-<li style="list-style-type: '- ';">Subitem 1</li>
-<li style="list-style-type: '- ';">Subitem 2</li>
+<li>Subitem 1</li>
+<li>Subitem 2</li>
 </ul>
 </li>
-<li style="list-style-type: '- ';">Last list item</li>
+<li>Last list item</li>
 </ul>
+<p>A nested ordered list:</p>
+<ol>
+<li style="list-style-type: '1. ';">First main item</li>
+<li style="list-style-type: '2. ';">
+Second main item
+<ol>
+<li style="list-style-type: '1. ';">First nested sub-item</li>
+<li style="list-style-type: '2. ';">Second nested sub-item</li>
+</ol>
+</li>
+<li style="list-style-type: '3. ';">Third main item</li>
+</ol>
 </div>
 </body>
 </html>

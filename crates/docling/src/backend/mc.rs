@@ -8,8 +8,8 @@
 //! understands, else the `Fallback`, and never both.
 //!
 //! The DOCX backends used to see both branches: a body-level block was skipped
-//! outright (python-docx's `body.iterchildren()` does the same, so docling
-//! loses those paragraphs too), and a text box arrived twice — once from the
+//! outright (as docling did until 2.142 read its selected branch,
+//! docling#4615), and a text box arrived twice — once from the
 //! `wps` drawing, once from the VML fallback — which a text-keyed dedup then
 //! folded, dropping a paragraph legitimately repeated inside one box along
 //! with the copy (#572). [`resolve_alternate_content`] settles the choice
@@ -27,14 +27,26 @@ use roxmltree::{Document, Node};
 pub(super) const MC_NS: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
 /// The namespaces whose markup the DOCX backends read, so a `Choice`
-/// requiring them is taken over the fallback: 2010 wordprocessing shapes
-/// (text boxes — `txbxContent` under `wps:txbx`), shape groups and canvases
-/// (text boxes inside them), the 2010 drawing and `w14` extensions (the same
-/// runs and pictures with extra properties — `w14:checkbox` is read), and
-/// DrawingML 2010 picture extensions (the `a:blip` is the same). Anything
-/// else — ink (`wpi`), chartex (`cx`), the `w15`/`w16*` extensions — takes
-/// the fallback Word wrote for readers without it.
+/// requiring them is taken over the fallback: docling's own
+/// `_OOXML_NAMESPACES` (2.142's `_select_alternate_content_branch`,
+/// docling#4615 — the base WordprocessingML, DrawingML, chart and
+/// relationship schemas, `wp` anchors, VML and its `w10` wrap, `wps` text
+/// boxes, the `w14` and `a14` extensions: the same runs and pictures with
+/// extra properties, `w14:checkbox` is read), plus 2010 shape groups and
+/// canvases and the 2010 drawing extensions, whose text boxes and pictures
+/// both walks read too (docling takes their fallback — the same content, as
+/// VML or a picture). Anything else — ink (`wpi`), chartex (`cx`), the
+/// `w15`/`w16*` extensions — takes the fallback Word wrote for readers
+/// without it.
 const SUPPORTED: &[&str] = &[
+    "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "http://schemas.openxmlformats.org/drawingml/2006/chart",
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+    MC_NS,
+    "urn:schemas-microsoft-com:vml",
+    "urn:schemas-microsoft-com:office:word",
     "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
     "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
     "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
@@ -173,6 +185,33 @@ mod tests {
             .filter(|n| n.has_tag_name("t"))
             .map(|t| t.text().unwrap_or("").to_string())
             .collect()
+    }
+
+    /// docling#4615: a Choice requiring a namespace of docling's own
+    /// `_OOXML_NAMESPACES` (VML here) is the branch read, as docling 2.142
+    /// reads it; one requiring another (ink) yields its Fallback.
+    #[test]
+    fn choice_requiring_doclings_namespaces_is_read() {
+        let head = HEAD.replace(
+            "mc:Ignorable",
+            r#"xmlns:v="urn:schemas-microsoft-com:vml" mc:Ignorable"#,
+        );
+        let alt = |req: &str| {
+            format!(
+                "{head}<mc:AlternateContent><mc:Choice Requires=\"{req}\">\
+                 <w:p><w:r><w:t>choice</w:t></w:r></w:p></mc:Choice>\
+                 <mc:Fallback><w:p><w:r><w:t>fallback</w:t></w:r></w:p></mc:Fallback>\
+                 </mc:AlternateContent>{TAIL}"
+            )
+        };
+        assert_eq!(
+            paragraphs(&resolve_alternate_content(&alt("v"))),
+            ["choice"]
+        );
+        assert_eq!(
+            paragraphs(&resolve_alternate_content(&alt("v wpi"))),
+            ["fallback"]
+        );
     }
 
     #[test]

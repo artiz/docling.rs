@@ -32,7 +32,7 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct DocxBackend {
     /// How tracked changes are read (#851); `None` = docling's reading
     /// (insertions shown, deletions left out, every table row kept).
@@ -41,6 +41,19 @@ pub struct DocxBackend {
     /// in that format after a drawing's picture when its connectors name
     /// their end shapes; Mermaid by default.
     pub extract_diagrams: crate::DiagramFormat,
+    /// A style's `w:outlineLvl` alone makes it a heading (docling#4480's
+    /// `use_outline_level_for_headings`; on by default).
+    pub use_outline_level_for_headings: bool,
+}
+
+impl Default for DocxBackend {
+    fn default() -> Self {
+        DocxBackend {
+            track_changes: None,
+            extract_diagrams: crate::DiagramFormat::default(),
+            use_outline_level_for_headings: true,
+        }
+    }
 }
 
 impl DeclarativeBackend for DocxBackend {
@@ -84,6 +97,7 @@ impl DeclarativeBackend for DocxBackend {
             style_bold: &sm.bolds,
             not_paragraph_styles: &sm.not_paragraph,
             num_levels: &num_levels,
+            style_left_ind: &sm.left_inds,
             rels: &rels,
             images: &images,
             charts: &charts,
@@ -94,6 +108,7 @@ impl DeclarativeBackend for DocxBackend {
             bookmarks: &HashMap::new(),
             track_changes: self.track_changes,
             extract_diagrams: self.extract_diagrams,
+            outline_headings: self.use_outline_level_for_headings,
         };
 
         let mut doc = DoclingDocument::new(&source.name);
@@ -294,8 +309,10 @@ pub(super) struct DocxNote {
 /// (docling#4374): the parts are reached through the document's FOOTNOTES /
 /// ENDNOTES relationships, the `separator` / `continuationSeparator` /
 /// `continuationNotice` placeholders Word writes into every document are
-/// skipped, and a note's non-blank paragraphs (python-docx's `Paragraph.text`)
-/// are joined with one space. Each becomes a furniture-layer `footnote` item.
+/// skipped, and a note's non-blank paragraphs — at any depth, so a table in
+/// the note counts, read through the inline wrappers (a tracked insertion,
+/// a content control) like a body paragraph, docling#4735 — are joined with
+/// one space. Each becomes a furniture-layer `footnote` item.
 /// The note's kind (`footnote` / `endnote`) and `w:id` come along: a body
 /// `w:footnoteReference` / `w:endnoteReference` names it by those (#538).
 pub(super) fn footnote_texts(pkg: &mut Package) -> Vec<DocxNote> {
@@ -327,7 +344,7 @@ pub(super) fn footnote_texts(pkg: &mut Package) -> Vec<DocxNote> {
                 continue;
             }
             let texts: Vec<String> = note
-                .children()
+                .descendants()
                 .filter(|n| n.has_tag_name("p"))
                 .map(|p| plain_paragraph_text(p).trim().to_string())
                 .filter(|t| !t.is_empty())
@@ -511,6 +528,10 @@ pub(super) struct Ctx<'a> {
     /// [`paragraph_style_id`].
     pub(super) not_paragraph_styles: &'a HashSet<String>,
     pub(super) num_levels: &'a HashMap<(String, i64), NumLevel>, // (numId, ilvl) -> level props
+    /// styleId → the first `w:pPr/w:ind` left indentation on the style's
+    /// `basedOn` chain (twips; `None` = none sets one), and `""` → the
+    /// default paragraph style's — see [`list_left_indent`].
+    pub(super) style_left_ind: &'a HashMap<String, Option<i64>>,
     pub(super) rels: &'a HashMap<String, String>,
     pub(super) images: &'a HashMap<String, PictureImage>, // image relationship id -> extracted image
     /// Native charts by relationship id: `(classified kind, title, data grid)`
@@ -538,6 +559,9 @@ pub(super) struct Ctx<'a> {
     pub(super) track_changes: Option<TrackChanges>,
     /// The diagram extraction (#858); `DiagramFormat::None` = pictures alone.
     pub(super) extract_diagrams: crate::DiagramFormat,
+    /// `use_outline_level_for_headings` (docling#4480): an outline level
+    /// alone promotes a style that is not named a heading.
+    pub(super) outline_headings: bool,
 }
 
 impl<'a> Ctx<'a> {
@@ -558,6 +582,7 @@ impl<'a> Ctx<'a> {
             style_bold: self.style_bold,
             not_paragraph_styles: self.not_paragraph_styles,
             num_levels: self.num_levels,
+            style_left_ind: self.style_left_ind,
             rels,
             images,
             charts,
@@ -568,6 +593,7 @@ impl<'a> Ctx<'a> {
             bookmarks: self.bookmarks,
             track_changes: self.track_changes,
             extract_diagrams: self.extract_diagrams,
+            outline_headings: self.outline_headings,
         }
     }
 
@@ -631,7 +657,8 @@ pub(super) fn is_heading_paragraph(p: XmlNode, ctx: &Ctx) -> bool {
         .map(String::as_str)
         .unwrap_or(style_id);
     named_heading_level(style_id, style_name, ctx).is_some()
-        || inherited_outline(style_id, ctx).is_some_and(|l| (1..=9).contains(&l))
+        || (ctx.outline_headings
+            && inherited_outline(style_id, ctx).is_some_and(|l| (1..=9).contains(&l)))
         || is_title_style(style_id, style_name, ctx)
 }
 
@@ -794,6 +821,85 @@ struct ListState {
     /// `TextItem` *unwrapped* (no `<text>` element); under the body/a group it
     /// is wrapped.
     seen_heading: bool,
+    /// Lists nested under the open list's item by left indentation,
+    /// innermost last — the flat walk's half of docling#4465 (see
+    /// `docx_tree`'s `NestedList`).
+    nested_lists: Vec<FlatNestedList>,
+    /// The last list item's effective left indentation in twips and its
+    /// nesting level.
+    last_list_left_indent: i64,
+    last_list_level: u8,
+}
+
+/// A list nested under the item above it by left indentation (docling#4465):
+/// its items start at `level`, offset by their `w:ilvl` past `start_ilvl`.
+struct FlatNestedList {
+    level: u8,
+    start_ilvl: i64,
+    outer_num_id: String,
+    outer_left_indent: i64,
+}
+
+impl ListState {
+    /// End the current list run (a non-list block). A list nested by left
+    /// indentation closes with the outermost list, whose `numId` an item
+    /// after an empty spacer paragraph resumes (docling#4465).
+    fn end_list_run(&mut self) {
+        self.list_run_base = None;
+        if let Some(outer) = self.nested_lists.first() {
+            if self.last_list_num_id.is_some() {
+                self.last_list_num_id = Some(outer.outer_num_id.clone());
+            }
+        }
+        self.nested_lists.clear();
+    }
+
+    /// An item's nesting level and whether it opens a list. `left_indent`
+    /// nests an item of another `numId` than the open list's under that
+    /// list's last item when it is indented deeper, and returns to the
+    /// outer list when it is indented no deeper than the item a nested list
+    /// hangs from — as `docx_tree`'s `manage_list_structure` places it.
+    /// `open`: a list run was open before this item (an empty spacer
+    /// paragraph closes it — the outer list then resumes by `numId` alone).
+    fn list_item_position(
+        &mut self,
+        num_id: &str,
+        ilvl: i64,
+        left_indent: i64,
+        open: bool,
+    ) -> (u8, bool) {
+        let base = *self.list_run_base.get_or_insert(ilvl);
+        let mut prev = self.last_list_num_id.clone();
+        if let Some(open) = prev.clone().filter(|p| open && p != num_id) {
+            let mut closed = None;
+            while self
+                .nested_lists
+                .last()
+                .is_some_and(|n| left_indent <= n.outer_left_indent)
+            {
+                closed = self.nested_lists.pop();
+            }
+            if let Some(closed) = closed {
+                prev = Some(closed.outer_num_id);
+            } else if left_indent > self.last_list_left_indent {
+                self.nested_lists.push(FlatNestedList {
+                    level: self.last_list_level.saturating_add(1),
+                    start_ilvl: ilvl,
+                    outer_num_id: open,
+                    outer_left_indent: self.last_list_left_indent,
+                });
+            }
+        }
+        let level = match self.nested_lists.last() {
+            Some(n) => n.level as i64 + (ilvl - n.start_ilvl).max(0),
+            None => (ilvl - base).max(0),
+        }
+        .min(u8::MAX as i64) as u8;
+        self.last_list_left_indent = left_indent;
+        self.last_list_level = level;
+        self.last_list_num_id = Some(num_id.to_string());
+        (level, prev.as_deref() != Some(num_id))
+    }
 }
 
 /// Dispatch a body-level block: paragraph, table, or `<w:sdt>` (whose
@@ -833,7 +939,7 @@ fn process_block(node: XmlNode, ctx: &Ctx, state: &mut ListState, doc: &mut Docl
                         text: String::new(),
                     })));
                 }
-                state.list_run_base = None;
+                state.end_list_run();
                 state.last_list_num_id = None;
             }
         }
@@ -953,7 +1059,7 @@ fn handle_paragraph_inner(
                 }
             }
         }
-        state.list_run_base = None;
+        state.end_list_run();
         state.last_list_num_id = None;
         return;
     }
@@ -968,7 +1074,7 @@ fn handle_paragraph_inner(
             == Some("1");
         let text = clean_checkbox_symbols(&paragraph_markdown(p, ctx));
         doc.push(Node::CheckboxItem { checked, text });
-        state.list_run_base = None;
+        state.end_list_run();
         state.last_list_num_id = None;
         return;
     }
@@ -981,7 +1087,7 @@ fn handle_paragraph_inner(
 
     // Numbering can come from the paragraph (a direct `numId` of 0 turns it off
     // and overrides the style) or be inherited from the paragraph's style.
-    let numbering = if p.descendants().any(|n| n.has_tag_name("numPr")) {
+    let numbering = if own_num_pr(p).is_some() {
         num_pr(p)
     } else {
         style_numbering(style_id, ctx)
@@ -1003,7 +1109,9 @@ fn handle_paragraph_inner(
     let level = match (named, outline) {
         (Some(1), _) => Some(1), // Title
         (Some(_), Some(out)) => Some(out + 1),
-        (named, Some(out)) if !is_title_style(style_id, &style_name, ctx) => {
+        (named, Some(out))
+            if ctx.outline_headings && !is_title_style(style_id, &style_name, ctx) =>
+        {
             debug_assert!(named.is_none());
             Some(out + 1)
         }
@@ -1045,7 +1153,7 @@ fn handle_paragraph_inner(
             doc.push(Node::Heading { level, text });
             state.seen_heading = true;
         }
-        state.list_run_base = None;
+        state.end_list_run();
         state.last_list_num_id = None;
         return;
     }
@@ -1055,7 +1163,7 @@ fn handle_paragraph_inner(
     // preceding fenced block when it directly follows one.
     let prev_is_code = matches!(doc.nodes.last(), Some(Node::Code { .. }));
     if !rich && (is_code_style(style_id, ctx) || is_code_by_font(p, style_id, ctx, prev_is_code)) {
-        state.list_run_base = None;
+        state.end_list_run();
         state.last_list_num_id = None;
         // Keep leading indentation (code blocks are verbatim); trailing space
         // is dropped, matching docling's `raw_paragraph_text.rstrip()`.
@@ -1109,17 +1217,18 @@ fn handle_paragraph_inner(
             .unwrap_or(false);
         // The base indent of the current contiguous list run (the first item's
         // `ilvl`); nesting spans numIds within the run.
-        let base = *state.list_run_base.get_or_insert(ilvl);
-        let level = (ilvl - base).max(0) as u8;
+        let open = state.list_run_base.is_some();
+        state.list_run_base.get_or_insert(ilvl);
         if text.is_empty() {
             return;
         }
         // Word's list identity is the `numId`: the item continues the last
         // list when it carries the same one and no body content intervened;
         // anything else is a new list, so the serializers never have to infer
-        // the boundary from the numbering (#385).
-        let first_in_list = state.last_list_num_id.as_deref() != Some(num_id.as_str());
-        state.last_list_num_id = Some(num_id.clone());
+        // the boundary from the numbering (#385). An item of another `numId`
+        // indented deeper nests under the item above it (docling#4465).
+        let left_indent = list_left_indent(p, &num_id, ilvl, ctx);
+        let (level, first_in_list) = state.list_item_position(&num_id, ilvl, left_indent, open);
         if numbered {
             get_list_counter(&mut state.counters, ctx.num_levels, &num_id, ilvl);
             let marker = build_enum_marker(&state.counters, ctx.num_levels, &num_id, ilvl);
@@ -1154,10 +1263,11 @@ fn handle_paragraph_inner(
                 // docling-core's rules (`ensure_valid_list_item_marker` with
                 // `orig_list_item_marker_mode=AUTO`): a marker of Unicode
                 // digits and a dot (`１.`, docling#4336) is already valid and
-                // prints verbatim; one holding an ASCII letter or digit
-                // (`1.1.`, `a)`) is kept as a text prefix behind the bullet
-                // (`- 1.1. text`); one without any (`第九条`, `甲.`, `①`) is
-                // dropped and the item is a plain bullet.
+                // prints verbatim; one holding a letter or digit — any
+                // Unicode one since docling-core 2.100 (`1.1.`, `a)`, `第九条`,
+                // `甲.`, `①`) — is kept as a text prefix behind the bullet
+                // (`- 1.1. text`); one without any (`•`) is dropped and the
+                // item is a plain bullet.
                 let dclx = Some(ListItemDclx {
                     ordered: true,
                     marker: Some(marker.clone()),
@@ -1165,10 +1275,10 @@ fn handle_paragraph_inner(
                     runs: Vec::new(),
                 });
                 let already_valid = cached_regex!(r"^\d+\.$").is_match(&marker);
-                let ascii_alnum = marker.bytes().any(|b| b.is_ascii_alphanumeric());
+                let informative = marker.chars().any(char::is_alphanumeric);
                 let (ordered, marker, text) = if already_valid {
                     (true, Some(marker), text)
-                } else if ascii_alnum {
+                } else if informative {
                     (false, None, format!("{marker} {text}"))
                 } else {
                     (false, None, text)
@@ -1234,7 +1344,7 @@ fn handle_paragraph_inner(
     // A plain (non-list) paragraph ends the current list run. Body *text*
     // also ends the list's identity; an empty spacer paragraph does not, so
     // the same Word list resumes after it as one list (docling#3902).
-    state.list_run_base = None;
+    state.end_list_run();
     if !text.is_empty() {
         state.last_list_num_id = None;
     }
@@ -1731,8 +1841,19 @@ pub(super) fn style_numbering(style_id: &str, ctx: &Ctx) -> Option<(String, i64)
 
 /// `(numId, ilvl)` for an element carrying explicit list numbering. A `numId`
 /// of 0 means "no list" in OOXML and yields `None`.
+/// The paragraph's own `w:pPr/w:numPr` — the only place it is valid
+/// (docling#4456): a descendant search reaches the paragraphs of a textbox
+/// anchored in this one and takes their numbering as its own, which made an
+/// empty list item and a stray list group after every numbered textbox.
+pub(super) fn own_num_pr<'a, 'i>(p: XmlNode<'a, 'i>) -> Option<XmlNode<'a, 'i>> {
+    p.children()
+        .find(|n| n.has_tag_name("pPr"))?
+        .children()
+        .find(|n| n.has_tag_name("numPr"))
+}
+
 pub(super) fn num_pr(p: XmlNode) -> Option<(String, i64)> {
-    let num_pr = p.descendants().find(|n| n.has_tag_name("numPr"))?;
+    let num_pr = own_num_pr(p)?;
     let num_id_node = num_pr.children().find(|n| n.has_tag_name("numId"))?;
     let num_id = attr(num_id_node, "val")?.to_string();
     if num_id == "0" {
@@ -2747,9 +2868,11 @@ fn plain_paragraph_text(p: XmlNode) -> String {
 fn push_inline_text(node: XmlNode, out: &mut String) {
     match node.tag_name().name() {
         "r" => out.extend(child_elements(node).map(run_child_text)),
+        // A link's runs, through the same wrappers as a paragraph's
+        // (docling#4576: a tracked insertion inside the link text).
         "hyperlink" => {
-            for r in node.children().filter(|n| n.has_tag_name("r")) {
-                out.extend(child_elements(r).map(run_child_text));
+            for c in child_elements(node).filter(|c| !c.has_tag_name("hyperlink")) {
+                push_inline_text(c, out);
             }
         }
         "sdt" => {
@@ -2873,6 +2996,49 @@ fn style_font(style_id: &str, ctx: &Ctx) -> String {
     String::new()
 }
 
+/// docling's `_CODE_CALL_PATTERN`: a call whose arguments look like code
+/// (`print(sys.argv)`, an empty `set()`), not a `party(ies)` shape —
+/// `[A-Za-z_]\((?:\s*\)|[^)\d,._='"]{0,200}[\d,._='"][^)]{0,200}\))`
+/// since 2.142, its argument runs bounded at 200 characters (docling#4973:
+/// a linear-time guard for Python's backtracking engine). The `regex` crate
+/// is linear without it, but its counted repetitions made that pattern
+/// some 300× slower than the unbounded one on a long paragraph, so the
+/// unbounded pattern — which every bounded match also matches — screens
+/// first and the bounds are checked by a scan from each call opening.
+pub(super) fn is_code_call(text: &str) -> bool {
+    const RUN: usize = 200;
+    let codeish = |c: char| matches!(c, ',' | '.' | '_' | '=' | '\'' | '"') || c.is_numeric();
+    if !cached_regex!(r#"[A-Za-z_]\((?:\s*\)|[^)]*[\d,._='"][^)]*\))"#).is_match(text) {
+        return false;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let bounded_call = |open: usize| {
+        let args = &chars[open + 1..];
+        // `\s*\)` — an empty call.
+        if args.iter().find(|c| !c.is_whitespace()) == Some(&')') {
+            return true;
+        }
+        // The first run stops at the first code-like character…
+        let Some(first) = args
+            .iter()
+            .take(RUN + 1)
+            .position(|&c| c == ')' || codeish(c))
+        else {
+            return false;
+        };
+        if args[first] == ')' {
+            return false;
+        }
+        // …and the second runs to the closing parenthesis.
+        args[first + 1..].iter().take(RUN + 1).any(|&c| c == ')')
+    };
+    (1..chars.len()).any(|i| {
+        chars[i] == '('
+            && (chars[i - 1].is_ascii_alphabetic() || chars[i - 1] == '_')
+            && bounded_call(i)
+    })
+}
+
 /// Whether a paragraph reads as code set in a monospaced font — the
 /// lower-precision fallback used when the style name doesn't already mark it as
 /// code (docling's `_is_code_by_font`): (nearly) every character must resolve to
@@ -2904,12 +3070,12 @@ pub(super) fn is_code_by_font(p: XmlNode, style_id: &str, ctx: &Ctx, prev_is_cod
         .filter(|c| CODE_INDICATIVE_CHARS.contains(c))
         .collect();
     let has_strong = strong.iter().any(|&c| c != ';');
-    let call = cached_regex!(r#"[A-Za-z_]\((?:\s*\)|[^)]*[\d,._='"][^)]*\))"#).is_match(stripped);
+    let call = is_code_call(stripped);
     let def = cached_regex!(
         r"(?m)^[ \t]*(?:async\s+)?(?:def|class|if|elif|while|for|with|except|finally|try|catch|switch|function|func|fn|sub|proc)\s+\S[^\n]*:[ \t]*$"
     )
     .is_match(stripped);
-    let has_code_char = has_strong || call || def;
+    let has_code_char = has_strong || call || def || detect_code_language(stripped).is_some();
     let is_continuation = prev_is_code && raw.chars().next().is_some_and(|c| c.is_whitespace());
     if !has_code_char && !is_continuation {
         return false;
@@ -2953,22 +3119,9 @@ fn monospaced_char_counts(p: XmlNode, style_font: &str) -> (usize, usize) {
     (mono, total)
 }
 
-/// Best-effort code language for a fenced block (docling's `detect_code_language`,
-/// the conservative markers used for DOCX). Returns `None` (→ `unknown`) unless a
-/// distinctive marker is present.
+/// docling's `detect_code_language(text)` with no hint.
 pub(super) fn detect_code_language(text: &str) -> Option<String> {
-    let lang = |l: &str| Some(l.to_string());
-    if cached_regex!(r"(?m)^[ \t]*(?:def|elif)\b|\b__name__\b|^[ \t]*from\s+\S+\s+import\b")
-        .is_match(text)
-    {
-        return lang("Python");
-    }
-    if cached_regex!(r"(?i)^[ \t]*(select|insert|update|delete|create|alter|drop)\b").is_match(text)
-        && cached_regex!(r"(?i)\b(from|into|table|where|values|set)\b").is_match(text)
-    {
-        return lang("SQL");
-    }
-    None
+    super::code_language::detect_code_language(text, None)
 }
 
 /// From `styles.xml`: `styleId` → display name / list numbering `(numId, ilvl)` /
@@ -2991,6 +3144,8 @@ struct StyleMaps {
     /// The styles a paragraph cannot take (#865): every `w:type` but
     /// `paragraph` — see [`paragraph_style_id`].
     not_paragraph: HashSet<String>,
+    /// See [`Ctx::style_left_ind`].
+    left_inds: HashMap<String, Option<i64>>,
 }
 fn parse_styles(styles_xml: &str) -> StyleMaps {
     let mut names = HashMap::new();
@@ -3000,6 +3155,9 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
     let mut outlines = HashMap::new();
     let mut bolds = HashMap::new();
     let mut not_paragraph = HashSet::new();
+    let mut own_lefts: HashMap<String, Option<i64>> = HashMap::new();
+    let mut default_paragraph: Option<String> = None;
+    let mut numbering_styles: HashSet<String> = HashSet::new();
     let Ok(dom) = Document::parse(styles_xml) else {
         return StyleMaps {
             names,
@@ -3009,6 +3167,7 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
             outlines,
             bolds,
             not_paragraph,
+            left_inds: HashMap::new(),
         };
     };
     for style in dom.descendants().filter(|n| n.has_tag_name("style")) {
@@ -3064,7 +3223,42 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
         {
             bolds.insert(id.to_string(), on_off(attr(b, "val")));
         }
+        own_lefts.insert(id.to_string(), own_left_indent(style));
+        if attr(style, "type") == Some("paragraph")
+            && attr(style, "default").is_some_and(|v| on_off(Some(v)))
+        {
+            // python-docx's `default_for`: the last default in document order.
+            default_paragraph = Some(id.to_string());
+        }
+        if attr(style, "type").is_some_and(|t| t == "numbering" || t == "list") {
+            numbering_styles.insert(id.to_string());
+        }
     }
+    // `_get_list_left_indent`'s style step: the first `w:ind` on the style's
+    // `basedOn` chain (`_iter_style_chain` — stopping at a numbering style,
+    // which has no `base_style`, at a missing one, and after
+    // `MAX_STYLE_INHERITANCE_DEPTH` hops).
+    let chain_left = |start: &str| -> Option<i64> {
+        let mut id = start;
+        for _ in 0..MAX_STYLE_INHERITANCE_DEPTH {
+            if numbering_styles.contains(id) {
+                return None;
+            }
+            if let Some(left) = *own_lefts.get(id)? {
+                return Some(left);
+            }
+            id = based.get(id)?;
+        }
+        None
+    };
+    let mut left_inds: HashMap<String, Option<i64>> = own_lefts
+        .keys()
+        .map(|id| (id.clone(), chain_left(id)))
+        .collect();
+    left_inds.insert(
+        String::new(),
+        default_paragraph.as_deref().and_then(chain_left),
+    );
     StyleMaps {
         names,
         nums,
@@ -3073,7 +3267,47 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
         outlines,
         bolds,
         not_paragraph,
+        left_inds,
     }
+}
+
+/// An element's own `w:pPr/w:ind` left indentation in twips — docling's
+/// `_get_list_left_indent._left`: `w:left`, else its direction-neutral
+/// spelling `w:start`; `None` when neither is set.
+fn own_left_indent(el: XmlNode) -> Option<i64> {
+    let ind = el
+        .children()
+        .find(|n| n.has_tag_name("pPr"))?
+        .children()
+        .find(|n| n.has_tag_name("ind"))?;
+    ["left", "start"]
+        .iter()
+        .find_map(|a| attr(ind, a).and_then(|v| v.trim().parse::<i64>().ok()))
+}
+
+/// A list paragraph's effective left indentation in twips — docling's
+/// `_get_list_left_indent` (docling#4465): the paragraph's own `w:ind`,
+/// else its numbering level's, else its style's `basedOn` chain (an
+/// unstyled paragraph takes the default paragraph style's); 0 when none
+/// sets one. Both walks compare it to nest Word's multi-level list styles
+/// ("List Bullet 2", "List Number 2", …), which each own a `numId` at
+/// `w:ilvl` 0 and differ from "List Bullet" only by their indentation.
+pub(super) fn list_left_indent(p: XmlNode, num_id: &str, ilvl: i64, ctx: &Ctx) -> i64 {
+    own_left_indent(p)
+        .or_else(|| {
+            ctx.num_levels
+                .get(&(num_id.to_string(), ilvl))
+                .and_then(|l| l.left)
+        })
+        .or_else(|| {
+            let id = paragraph_style_id(p, ctx);
+            ctx.style_left_ind
+                .get(id)
+                .or_else(|| ctx.style_left_ind.get(""))
+                .copied()
+                .flatten()
+        })
+        .unwrap_or(0)
 }
 
 /// A paragraph's style id (`w:pStyle`), empty when unstyled — and empty
@@ -3115,6 +3349,8 @@ pub(super) struct NumLevel {
     num_fmt: Option<String>,
     start: i64,
     lvl_text: String,
+    /// The level's own `w:pPr/w:ind` left indentation in twips (docling#4465).
+    pub(super) left: Option<i64>,
 }
 
 /// OOXML `numFmt` values that produce a visible list/heading marker
@@ -3416,6 +3652,7 @@ fn parse_numbering(
                     num_fmt: num_fmt.map(str::to_string),
                     start,
                     lvl_text,
+                    left: own_left_indent(lvl),
                 },
             );
         }

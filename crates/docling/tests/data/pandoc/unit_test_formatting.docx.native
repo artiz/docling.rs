@@ -90,6 +90,36 @@
           ]
       ]
     ]
+, Para [ Strong [ Str "Indexation" ] ]
+, Para
+    [ Str "This"
+    , Space
+    , Str "text"
+    , Space
+    , Str "carries"
+    , Space
+    , Str "a"
+    , Space
+    , Emph [ Str "complex-script" , Space , Str "bold" ]
+    , Space
+    , Str "property"
+    , Space
+    , Str "in"
+    , Space
+    , Str "OOXML"
+    , Space
+    , Str "but"
+    , Space
+    , Str "it"
+    , Space
+    , Str "should"
+    , Space
+    , Str "not"
+    , Space
+    , Str "be"
+    , Space
+    , Str "bold."
+    ]
 , Para
     [ Str "The"
     , Space

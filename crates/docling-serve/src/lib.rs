@@ -101,6 +101,9 @@
 //!   (default) adds a `mermaid` code item after a drawing's picture with the
 //!   flowchart its connectors describe, when every connector names its two
 //!   end shapes | `none` (the picture alone)
+//! - `use_outline_level_for_headings` — Word (DOCX/DOC): `false` stops a
+//!   style's outline level alone from making a heading (docling#4480;
+//!   default `true`)
 //! - `ipynb_outputs` — Jupyter notebooks (#673): `none` (default, the
 //!   notebook as written) | `text` (stream and `text/plain` results as code
 //!   blocks after their cell, image outputs as pictures)

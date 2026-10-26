@@ -2046,7 +2046,9 @@ impl Builder {
                     } else {
                         self_ref.clone()
                     });
-                    return Some(self_ref);
+                    // The group is already its parent's child: listing it
+                    // again put a thread's group in the body once per message.
+                    return None;
                 }
                 let self_ref = format!("#/groups/{}", self.groups.len());
                 self.groups.push(Value::Null);
@@ -4332,6 +4334,26 @@ mod tests {
         let v = crate::json::to_json(&doc);
         assert_eq!(v["groups"][0]["name"], "comment-Sheet1-A1");
         assert_eq!(v["texts"][0]["comments"][0]["$ref"], "#/texts/1");
+    }
+
+    /// A thread's messages are notes of one `comment_section` group, which is
+    /// listed once among its parent's children however many notes it holds.
+    #[test]
+    fn a_comment_thread_is_one_child_of_its_parent() {
+        let note = |text: &str| Node::CommentSection {
+            name: "comment-Sheet1-F7".into(),
+            text: text.into(),
+            refs_note_text: true,
+            grouped: true,
+        };
+        let doc = DoclingDocument {
+            name: "c".into(),
+            nodes: vec![note("[author: A]: first"), note("[author: B]: reply")],
+            ..DoclingDocument::new("c")
+        };
+        let v = crate::json::to_json(&doc);
+        assert_eq!(v["body"]["children"].as_array().unwrap().len(), 1);
+        assert_eq!(v["groups"][0]["children"].as_array().unwrap().len(), 2);
     }
 
     /// docx reviewer comments: a `comment_section` group on the notes layer

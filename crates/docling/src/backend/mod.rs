@@ -28,6 +28,7 @@ mod asciidoc;
 pub(crate) mod browser;
 pub(crate) mod cfb;
 mod chandra;
+mod code_language;
 mod csv;
 mod deepseek;
 pub(crate) mod doc;
@@ -39,6 +40,8 @@ mod docx;
 mod docx_chain_parity;
 mod docx_drawingml;
 mod docx_tree;
+#[cfg(test)]
+mod docx_upstream_unit;
 mod ebcdic;
 mod email;
 pub(crate) mod epub;
