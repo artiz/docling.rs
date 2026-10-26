@@ -19,11 +19,13 @@
 //! `_iterate_elements` call for call into a
 //! [`docling_core::tree::ItemTree`].
 //!
-//! Not reproduced: a document with a raw HTML block. Upstream then exports
-//! the parsed document to HTML and re-converts it with the HTML backend, so
-//! its JSON is the HTML backend's tree over docling-core's HTML serializer —
-//! there is no HTML export here to feed that. Such a document keeps the flat
-//! export's JSON ([`build_tree`] returns `None`).
+//! A document with a raw HTML block takes upstream's detour: each block is
+//! a `code` item of its source between two markers, the tree is exported
+//! to HTML (docling's `serialize_markdown_for_html`, every picture an
+//! `<img>` keyed by its `self_ref`), the markers and the `<pre><code>`
+//! around them are cut so the block is markup again, and the HTML item
+//! tree ([`super::html_tree`], no furniture inference, no `<title>` item)
+//! is the document's — its pictures resolved back through the keys.
 
 use std::collections::HashMap;
 
@@ -58,7 +60,8 @@ enum El {
         lang: Option<String>,
         text: String,
     },
-    HtmlBlock,
+    /// The block's source lines (marko's `HTMLBlock.body`).
+    HtmlBlock(String),
     /// `RawText` or `Literal` (an escaped character is a node of its own).
     Text(String),
     /// `InlineHTML`: walked as nothing, but part of a table cell's text.
@@ -299,11 +302,15 @@ fn parse_container(tag: Tag, events: &[Event], i: &mut usize, depth: u16) -> El 
             El::CodeBlock { lang, text: code }
         }
         Tag::HtmlBlock => {
+            let mut body = String::new();
             while *i < events.len() && !matches!(events[*i], Event::End(TagEnd::HtmlBlock)) {
+                if let Event::Html(t) | Event::Text(t) = &events[*i] {
+                    body.push_str(t);
+                }
                 *i += 1;
             }
             *i += 1;
-            El::HtmlBlock
+            El::HtmlBlock(body)
         }
         Tag::Emphasis => El::Emphasis(parse_children(events, i, depth)),
         Tag::Strong => El::Strong(parse_children(events, i, depth)),
@@ -428,8 +435,14 @@ struct Walker<'a> {
     list_last_item: HashMap<usize, usize>,
 }
 
-/// Build docling's item tree for a Markdown document, or `None` when it holds
-/// a raw HTML block (see the module docs).
+/// docling's `_START_MARKER` / `_STOP_MARKER` around a raw HTML block.
+const HTML_START: &str = "#_#_DOCLING_DOC_MD_HTML_EXPORT_START_#_#";
+const HTML_STOP: &str = "#_#_DOCLING_DOC_MD_HTML_EXPORT_STOP_#_#";
+
+/// Build docling's item tree for a Markdown document (through the HTML
+/// backend when it holds a raw HTML block, see the module docs); `None`
+/// when that detour fails, as upstream's conversion would — the flat
+/// export's JSON stays then.
 pub(super) fn build_tree(
     text: &str,
     images: &dyn super::images::ImageResolver,
@@ -448,7 +461,63 @@ pub(super) fn build_tree(
         list_last_item: HashMap::new(),
     };
     w.iterate(&root, None, None, None);
-    (w.html_blocks == 0).then_some(w.tree)
+    if w.html_blocks == 0 {
+        return Some(w.tree);
+    }
+    reparse_as_html(w.tree, w.html_blocks, images)
+}
+
+/// The key prefix of a picture's `<img src>` in the detour's HTML: upstream's
+/// `data:application/x-docling-md-picture,{hash}/`. The hash only keeps the
+/// source's own markup from colliding with a key; one constant does that.
+const PICTURE_KEY: &str = "data:application/x-docling-md-picture,docling-rs/";
+
+/// Upstream's `convert` past the walk when it met a raw HTML block: the tree
+/// exported to HTML, each block's markers cut together with the `<pre><code>`
+/// the code item rendered as (a count other than the blocks' is upstream's
+/// internal error: `None`), and the HTML backend's tree over the result.
+fn reparse_as_html(
+    tree: ItemTree,
+    blocks: usize,
+    images: &dyn super::images::ImageResolver,
+) -> Option<ItemTree> {
+    let pictures: HashMap<String, Option<docling_core::PictureImage>> = {
+        let mut out = HashMap::new();
+        let mut n = 0usize;
+        for item in &tree.items {
+            if let TreeKind::Picture { image, .. } = &item.kind {
+                out.insert(format!("{PICTURE_KEY}#/pictures/{n}"), image.clone());
+                n += 1;
+            }
+        }
+        out
+    };
+    let mut doc = docling_core::DoclingDocument::new("");
+    doc.tree = Some(tree);
+    let html = docling_core::to_html_with_picture_refs(&doc, PICTURE_KEY, HTML_START);
+    let start = regex::Regex::new(&format!(r"<pre>\s*<code>\s*{HTML_START}")).ok()?;
+    let stop = regex::Regex::new(&format!(r"{HTML_STOP}\s*</code>\s*</pre>")).ok()?;
+    if start.find_iter(&html).count() != blocks || stop.find_iter(&html).count() != blocks {
+        return None;
+    }
+    let html = start.replace_all(&html, "");
+    let html = stop.replace_all(&html, "");
+    struct Keys<'a> {
+        pictures: HashMap<String, Option<docling_core::PictureImage>>,
+        images: &'a dyn super::images::ImageResolver,
+    }
+    impl super::images::ImageResolver for Keys<'_> {
+        fn resolve(&self, src: &str) -> Option<docling_core::PictureImage> {
+            match self.pictures.get(src) {
+                Some(image) => image.clone(),
+                // The original HTML's own images keep the normal policy.
+                None => self.images.resolve(src),
+            }
+        }
+    }
+    let keys = Keys { pictures, images };
+    let parsed = scraper::Html::parse_document(&html);
+    Some(super::html_tree::build_tree(&parsed, &keys, false, false))
 }
 
 fn text_kind(
@@ -994,8 +1063,23 @@ impl Walker<'_> {
                     self.pending_hard_break = true;
                 }
             }
-            El::HtmlBlock => {
+            El::HtmlBlock(body) => {
                 self.html_blocks += 1;
+                // Wrapped in markers that `reparse_as_html` cuts again.
+                if !body.is_empty() {
+                    self.tree.add(
+                        parent,
+                        None,
+                        TreeKind::Code {
+                            text: format!("{HTML_START}{}{HTML_STOP}", body.trim()),
+                            orig: None,
+                            language: None,
+                            formatting,
+                            hyperlink: hyperlink.clone(),
+                            captions: Vec::new(),
+                        },
+                    );
+                }
             }
             El::Table(rows) => {
                 // Its cells are walked by `table`, not below.
@@ -1365,10 +1449,21 @@ mod tests {
         );
     }
 
+    /// A raw HTML block sends the document through the HTML backend: its
+    /// markup is parsed (a table, not text), the rest keeps its structure.
     #[test]
-    fn html_blocks_yield_no_tree() {
-        assert!(build_tree("para\n\n<div>hi</div>\n", &super::super::images::NoFetch).is_none());
-        assert!(build_tree("para\n", &super::super::images::NoFetch).is_some());
+    fn html_blocks_take_the_html_detour() {
+        let t = build_tree(
+            "# Title\n\npara\n\n<table><tr><th>a</th></tr><tr><td>b</td></tr></table>\n",
+            &super::super::images::NoFetch,
+        )
+        .expect("a tree");
+        let kinds: Vec<String> = t.items.iter().map(label).collect();
+        assert_eq!(kinds, ["title", "text", "table"], "{kinds:?}");
+        // The paragraph and the table nest under the title, as the HTML
+        // backend nests everything after a heading.
+        assert_eq!(t.items[1].parent, Some(0));
+        assert_eq!(t.items[2].parent, Some(0));
     }
 
     /// Deep nesting is cut off instead of overflowing the stack.

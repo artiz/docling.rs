@@ -19,27 +19,6 @@
     "children": [
       {
         "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/groups/0"
-      },
-      {
-        "$ref": "#/groups/11"
-      },
-      {
-        "$ref": "#/texts/20"
-      },
-      {
-        "$ref": "#/groups/12"
-      },
-      {
-        "$ref": "#/texts/26"
-      },
-      {
-        "$ref": "#/groups/14"
       }
     ],
     "content_layer": "body",
@@ -50,7 +29,7 @@
     {
       "self_ref": "#/groups/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [
         {
@@ -222,7 +201,7 @@
     {
       "self_ref": "#/groups/11",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [
         {
@@ -236,7 +215,7 @@
     {
       "self_ref": "#/groups/12",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [
         {
@@ -273,7 +252,7 @@
     {
       "self_ref": "#/groups/14",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [
         {
@@ -287,7 +266,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "ordered list",
       "label": "list"
     },
     {
@@ -304,7 +283,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "ordered list",
       "label": "list"
     }
   ],
@@ -314,7 +293,29 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/groups/0"
+        },
+        {
+          "$ref": "#/groups/11"
+        },
+        {
+          "$ref": "#/texts/20"
+        },
+        {
+          "$ref": "#/groups/12"
+        },
+        {
+          "$ref": "#/texts/26"
+        },
+        {
+          "$ref": "#/groups/14"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -324,7 +325,7 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -349,7 +350,7 @@
       "orig": "abc",
       "text": "abc",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/3",
@@ -367,7 +368,7 @@
       "orig": "abc123",
       "text": "abc123",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/4",
@@ -385,7 +386,7 @@
       "orig": "abc1234",
       "text": "abc1234",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/5",
@@ -403,7 +404,7 @@
       "orig": "abc12345",
       "text": "abc12345",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/6",
@@ -417,7 +418,7 @@
       "orig": "a.",
       "text": "a.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
@@ -431,7 +432,7 @@
       "orig": "b.",
       "text": "b.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/8",
@@ -449,7 +450,7 @@
       "orig": "abcd1234：",
       "text": "abcd1234：",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
@@ -467,7 +468,7 @@
       "orig": "abcd12345：",
       "text": "abcd12345：",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/10",
@@ -481,7 +482,7 @@
       "orig": "a.",
       "text": "a.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/11",
@@ -495,7 +496,7 @@
       "orig": "b.",
       "text": "b.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/12",
@@ -513,7 +514,7 @@
       "orig": "def：",
       "text": "def：",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/13",
@@ -531,7 +532,7 @@
       "orig": "def1234：",
       "text": "def1234：",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/14",
@@ -545,7 +546,7 @@
       "orig": "def12345。",
       "text": "def12345。",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/15",
@@ -563,7 +564,7 @@
       "orig": "after one empty line",
       "text": "after one empty line",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/16",
@@ -577,7 +578,7 @@
       "orig": "foo",
       "text": "foo",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/17",
@@ -595,7 +596,7 @@
       "orig": "afer two empty lines",
       "text": "afer two empty lines",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/18",
@@ -609,7 +610,7 @@
       "orig": "bar",
       "text": "bar",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/19",
@@ -623,12 +624,12 @@
       "orig": "changing symbol",
       "text": "changing symbol",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/20",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -649,7 +650,7 @@
       "orig": "First item",
       "text": "First item",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/22",
@@ -667,7 +668,7 @@
       "orig": "Second item with subitems:",
       "text": "Second item with subitems:",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/23",
@@ -681,7 +682,7 @@
       "orig": "Subitem 1",
       "text": "Subitem 1",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/24",
@@ -695,7 +696,7 @@
       "orig": "Subitem 2",
       "text": "Subitem 2",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/25",
@@ -709,12 +710,12 @@
       "orig": "Last list item",
       "text": "Last list item",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/26",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",

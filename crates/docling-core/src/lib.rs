@@ -45,6 +45,8 @@ pub use document::{
     PictureClass, PictureDescription, PictureImage, Script, Table, TableCell, TableStructure,
 };
 pub use encryption::EncryptionError;
+#[doc(hidden)]
+pub use html::to_html_with_picture_refs;
 pub use json::code_language_label;
 pub use labels::DocItemLabel;
 pub use limits::LimitExceeded;

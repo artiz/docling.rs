@@ -140,6 +140,7 @@ pub(crate) fn convert_html_with(
                 &parsed,
                 images,
                 infer_furniture,
+                true,
             ));
         }
     }
@@ -1244,7 +1245,10 @@ fn walk_list(
                 level,
                 // docling's HTML backend passes an enumeration marker only for
                 // an ordered list with an explicit `start`; otherwise none.
-                marker: has_start.then(|| format!("{number}.")),
+                // an explicit `list-style-type` string on the item wins
+                // (docling#4669).
+                marker: list_style_marker(li.value())
+                    .or_else(|| has_start.then(|| format!("{number}."))),
                 location: None,
                 dclx: None,
                 href: first_href(li),
@@ -1267,6 +1271,34 @@ fn walk_list(
             }
         }
     }
+}
+
+/// docling's `_get_list_style_marker` (docling#4669): the marker an inline
+/// CSS string `list-style-type` sets on a `<li>` — `<li style="list-style-type:
+/// '3. ';">`, how docling's HTML export writes an item's original marker — so
+/// the marker survives the round trip (the Markdown backend takes it for every
+/// file with an HTML block). The first declaration with a quoted value counts.
+pub(super) fn list_style_marker(li: &scraper::node::Element) -> Option<String> {
+    let style = li.attr("style")?;
+    let lower = style.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(at) = lower[from..].find("list-style-type") {
+        let rest = style[from + at + "list-style-type".len()..].trim_start();
+        from += at + "list-style-type".len();
+        let Some(rest) = rest.strip_prefix(':') else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(quote) = rest.chars().next().filter(|c| matches!(c, '\'' | '"')) else {
+            continue;
+        };
+        let Some(end) = rest[1..].find(quote) else {
+            continue;
+        };
+        let marker = rest[1..1 + end].trim();
+        return (!marker.is_empty()).then(|| marker.to_string());
+    }
+    None
 }
 
 /// Block-level tags whose presence in a `<li>` rules out the GFM task-list
@@ -3546,6 +3578,15 @@ mod tests {
         let md = doc.export_to_markdown();
         assert!(md.starts_with("1. \n\n|"), "{md}");
         assert!(md.ends_with("\n\n2. c\n"), "{md}");
+    }
+
+    /// docling#4669: a `<li>`'s string `list-style-type` is its marker.
+    #[test]
+    fn list_style_type_string_is_the_marker() {
+        let doc = convert(
+            r#"<ol><li style="list-style-type: '3. ';">c</li><li style="color: red; list-style-type: 'iv) '">d</li></ol>"#,
+        );
+        assert_eq!(doc.export_to_markdown(), "3. c\n- iv) d\n");
     }
 
     /// docling's `table_width` (docling#4414, #4527).

@@ -392,6 +392,7 @@ pub(super) fn build_tree(
     parsed: &Html,
     images: &dyn ImageResolver,
     infer_furniture: bool,
+    add_title: bool,
 ) -> ItemTree {
     let root = parsed.root_element();
     let mut w = Walker {
@@ -403,8 +404,9 @@ pub(super) fn build_tree(
         hyperlink: None,
         images,
     };
-    // The `<title>` is a furniture-layer title item, created first.
-    if let Some(title) = parsed.select(sel!("title")).next() {
+    // The `<title>` is a furniture-layer title item, created first (unless
+    // `add_title` is off, as for the Markdown backend's HTML detour).
+    if let Some(title) = parsed.select(sel!("title")).next().filter(|_| add_title) {
         let parts: Vec<String> = title
             .text()
             .map(normalize_ws)
@@ -1247,10 +1249,13 @@ impl<'a> Walker<'a> {
                 list_group = Some(self.open_list_group(is_ordered, group_start, &mut added));
             }
             let list_group = list_group.expect("open list group");
-            let marker = match start {
-                Some(s) if is_ordered => format!("{}.", s + counter),
-                _ => String::new(),
-            };
+            // An explicit marker on the item wins (docling#4669), else the
+            // counter.
+            let marker =
+                super::html::list_style_marker(li.value()).unwrap_or_else(|| match start {
+                    Some(s) if is_ordered => format!("{}.", s + counter),
+                    _ => String::new(),
+                });
             let inputs: Vec<ElementRef<'a>> = li
                 .select(sel!("input"))
                 .filter(|i| ancestor_named(**i, "li", None).is_some_and(|l| l.id() == li.id()))
@@ -1988,6 +1993,7 @@ mod tests {
         build_tree(
             &Html::parse_document(html),
             &super::super::images::NoFetch,
+            true,
             true,
         )
     }

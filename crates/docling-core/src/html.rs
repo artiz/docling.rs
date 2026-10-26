@@ -223,6 +223,33 @@ pub fn to_html(
     doc: &DoclingDocument,
     options: &HtmlExportOptions,
 ) -> (String, Vec<(String, Vec<u8>)>) {
+    render_html(doc, options, None)
+}
+
+/// docling's `serialize_markdown_for_html` (`backend/utils/markdown_html.py`,
+/// docling#4777): the HTML a Markdown document with a raw HTML block is
+/// re-converted from. Every picture is `<figure>[<figcaption>…]<img
+/// src="{prefix}{self_ref}"></figure>` — a document-local key the HTML
+/// backend resolves back to the picture's image, whatever the image mode —
+/// a code item starting with `raw_marker` (a raw HTML block) is written raw
+/// and any other code escaped (upstream writes all code raw — docling-core
+/// 2.103 — so an inline `` `<img>` `` became a picture; or, with 2.104, all
+/// escaped, so the blocks stayed text), and the rest is the default export.
+#[doc(hidden)]
+pub fn to_html_with_picture_refs(doc: &DoclingDocument, prefix: &str, raw_marker: &str) -> String {
+    render_html(
+        doc,
+        &HtmlExportOptions::default(),
+        Some((prefix, raw_marker)),
+    )
+    .0
+}
+
+fn render_html(
+    doc: &DoclingDocument,
+    options: &HtmlExportOptions,
+    reparse: Option<(&str, &str)>,
+) -> (String, Vec<(String, Vec<u8>)>) {
     // The tables stay typed (#875): a `Value` per cell was most of an HTML
     // export's peak on a large sheet.
     let (json, tables) = crate::json::to_json_typed_tables(doc, false);
@@ -234,6 +261,8 @@ pub fn to_html(
         let mut ser = Serializer::new(&json, options);
         ser.tables = &tables;
         ser.alt_text_meta = alt_text_meta;
+        ser.picture_ref_prefix = reparse.map(|(prefix, _)| prefix);
+        ser.raw_code_marker = reparse.map(|(_, marker)| marker);
         let body = ser.serialize_body();
         let name = json.get("name").and_then(Value::as_str).unwrap_or_default();
         let title = if name.is_empty() {
@@ -400,6 +429,12 @@ struct Serializer<'a> {
     artifacts_dir: String,
     /// The content layers rendered (`HTMLParams.layers`).
     layers: ContentLayers,
+    /// [`to_html_with_picture_refs`]'s key prefix: pictures render as
+    /// docling's `_MarkdownPictureSerializer` writes them.
+    picture_ref_prefix: Option<&'a str>,
+    /// [`to_html_with_picture_refs`]'s raw-block marker: a code item whose
+    /// text starts with it is written raw, any other escaped.
+    raw_code_marker: Option<&'a str>,
     artifacts: Vec<(String, Vec<u8>)>,
     pic_index: usize,
     /// Refs already rendered (upstream's `visited`), so the body traversal
@@ -468,6 +503,8 @@ impl<'a> Serializer<'a> {
             alt_text_meta: false,
             artifacts_dir: options.artifacts_dir.clone(),
             layers: options.layers,
+            picture_ref_prefix: None,
+            raw_code_marker: None,
             artifacts: Vec::new(),
             pic_index: 0,
             visited: std::collections::HashSet::new(),
@@ -708,10 +745,18 @@ impl<'a> Serializer<'a> {
             None => {
                 let raw = Self::text(item);
                 if is_code {
-                    // Upstream writes a code item's source raw (no
-                    // `html.escape`); reproduced for parity — see the
-                    // module docs.
-                    raw.to_string()
+                    match self.raw_code_marker {
+                        // The Markdown backend's HTML detour: only a raw HTML
+                        // block (its markers around it) is meant as markup;
+                        // any other code is escaped, so an inline `<img>`
+                        // stays the text it is instead of becoming a
+                        // picture.
+                        Some(marker) if !raw.starts_with(marker) => escape(raw, false),
+                        // Upstream writes a code item's source raw (no
+                        // `html.escape`); reproduced for parity — see the
+                        // module docs.
+                        _ => raw.to_string(),
+                    }
                 } else if is_formula {
                     // Nor is a formula's LaTeX: it feeds `latex2mathml` and
                     // the `<annotation>` / `<pre>` fallback verbatim.
@@ -986,6 +1031,17 @@ impl<'a> Serializer<'a> {
     /// `HTMLPictureSerializer`: caption, image per mode, meta — in a
     /// `<figure>`.
     fn picture(&mut self, item: &'a Value) -> String {
+        if let Some(prefix) = self.picture_ref_prefix {
+            // `_MarkdownPictureSerializer`: the captions and the key, no
+            // exclusion check and no meta.
+            let cap = self.captions(item, "figcaption");
+            let self_ref = item
+                .get("self_ref")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let src = escape(&format!("{prefix}{self_ref}"), true);
+            return format!("<figure>{cap}<img src=\"{src}\"></figure>");
+        }
         let mut res_parts: Vec<String> = Vec::new();
         let cap = self.captions(item, "figcaption");
         if !cap.is_empty() {
