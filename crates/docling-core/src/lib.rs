@@ -15,6 +15,7 @@ pub mod base64;
 pub mod chunker;
 pub mod confidence;
 mod doclang;
+mod doclang_tree;
 pub mod doctags;
 mod document;
 mod encryption;

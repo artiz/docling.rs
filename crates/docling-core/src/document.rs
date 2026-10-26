@@ -1567,7 +1567,8 @@ impl DoclingDocument {
     /// `export_to_doclang()` with default parameters. No trailing newline; the
     /// archive writer appends exactly one.
     pub fn export_to_doclang(&self) -> String {
-        crate::doclang::export_to_doclang(&self.nodes)
+        self.export_doclang(crate::doclang::Pictures::Referenced { collect: false })
+            .0
     }
 
     /// [`Self::export_to_doclang`] plus the picture assets its
@@ -1577,7 +1578,37 @@ impl DoclingDocument {
     /// (a JPEG re-encoded from its libjpeg-decoded pixels); other encodings
     /// keep their own bytes for the archive writer to convert.
     pub fn export_to_doclang_with_assets(&self) -> (String, Vec<(String, Vec<u8>)>) {
-        crate::doclang::export_to_doclang_with_assets(&self.nodes)
+        self.export_doclang(crate::doclang::Pictures::Referenced { collect: true })
+    }
+
+    /// DocLang with docling's `image_mode` for pictures (#884):
+    /// [`ImageMode::Placeholder`] writes no `<src>` — docling-core's own
+    /// `export_to_doclang()` default, which upstream's `.dclg` fixtures hold
+    /// — [`ImageMode::Embedded`] a `data:` URI of the PNG,
+    /// [`ImageMode::Referenced`] is [`Self::export_to_doclang_with_assets`].
+    pub fn export_to_doclang_with_images(
+        &self,
+        mode: ImageMode,
+    ) -> (String, Vec<(String, Vec<u8>)>) {
+        use crate::doclang::Pictures;
+        self.export_doclang(match mode {
+            ImageMode::Placeholder => Pictures::Placeholder,
+            ImageMode::Embedded => Pictures::Embedded,
+            ImageMode::Referenced => Pictures::Referenced { collect: true },
+        })
+    }
+
+    /// An opted-in item tree's DocLang ([`crate::tree::ItemTree::doclang`]),
+    /// else — no such tree, or one the port does not cover — the nodes'.
+    fn export_doclang(
+        &self,
+        pictures: crate::doclang::Pictures,
+    ) -> (String, Vec<(String, Vec<u8>)>) {
+        self.tree
+            .as_ref()
+            .filter(|t| t.doclang)
+            .and_then(|t| crate::doclang_tree::export(t, pictures))
+            .unwrap_or_else(|| crate::doclang::render(&self.nodes, pictures))
     }
 
     /// Serialize to Markdown with an explicit picture [`ImageMode`] (mirrors

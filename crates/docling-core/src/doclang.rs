@@ -32,6 +32,20 @@ struct Out {
     /// The `(path, encoded bytes)` of each referenced asset, in `<src>` order,
     /// when the caller packages them (`export_to_doclang_with_assets`).
     assets: Option<Vec<(String, Vec<u8>)>>,
+    /// How a picture's image is written.
+    pictures: Pictures,
+}
+
+/// docling's `image_mode` for DocLang: where a picture's `<src>` points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Pictures {
+    /// No `<src>` — docling-core's `export_to_doclang()` default.
+    Placeholder,
+    /// `assets/image_{index:06}_{sha256}.png` — the archive's `document.xml`
+    /// (`save_as_doclang_archive`); `collect` gathers the asset bytes.
+    Referenced { collect: bool },
+    /// A `data:` URI of the PNG docling re-encodes.
+    Embedded,
 }
 
 impl Out {
@@ -77,7 +91,7 @@ impl Out {
 /// Surrogates cannot occur in a Rust `str`, so the Python pattern's surrogate
 /// range has no counterpart here. Borrows when nothing needs replacing (the
 /// overwhelmingly common case).
-fn sanitize_xml_illegal(text: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn sanitize_xml_illegal(text: &str) -> std::borrow::Cow<'_, str> {
     let illegal = |c: char| matches!(c, '\u{00}'..='\u{08}' | '\u{0B}' | '\u{0C}' | '\u{0E}'..='\u{1F}' | '\u{FFFE}' | '\u{FFFF}');
     if !text.contains(illegal) {
         return std::borrow::Cow::Borrowed(text);
@@ -545,7 +559,7 @@ fn emit_text_node(out: &mut Out, depth: i32, text: &str) {
 /// Unicode-table crate into a wasm-compiled, MSRV-1.85 crate for one predicate
 /// is not worth it). Every assigned RTL script block is covered; the
 /// approximation only shows up on unassigned code points inside them.
-fn is_rtl(text: &str) -> bool {
+pub(crate) fn is_rtl(text: &str) -> bool {
     let mut chars = text.chars();
     let Some(first) = chars.next() else {
         return false;
@@ -585,7 +599,7 @@ fn is_strong_rtl(c: char) -> bool {
 /// and the JSON export) to the DocLang recommended (Linguist) label. Returns
 /// `None` for unknown/absent languages — matching docling's AUTO `label_mode`,
 /// which omits the `<label>` when the resolved label would be `undefined`.
-fn code_lang_label(lang: &str) -> Option<&'static str> {
+pub(crate) fn code_lang_label(lang: &str) -> Option<&'static str> {
     // Fold the raw fence string (e.g. "python") onto the canonical docling
     // `CodeLanguageLabel` value ("Python") first — the same normalization the
     // JSON export uses — then map that to the DocLang (Linguist) label.
@@ -879,24 +893,25 @@ fn emit_cell_text(out: &mut Out, depth: i32, text: &str) {
     emit_runs(out, depth, runs);
 }
 
-/// Serialize the node stream to DocLang XML (no trailing newline).
-pub fn export_to_doclang(nodes: &[Node]) -> String {
-    render(nodes, false).0
+/// Serialize the node stream to DocLang XML (no trailing newline) — the
+/// archive's `document.xml`, as [`crate::DoclingDocument::export_to_doclang`]
+/// writes it.
+#[cfg(test)]
+fn export_to_doclang(nodes: &[Node]) -> String {
+    render(nodes, Pictures::Referenced { collect: false }).0
 }
 
-/// [`export_to_doclang`] plus the asset parts its `<src>` references name —
-/// `(assets/image_….png, bytes)` in document order, PNG for PNG and JPEG
-/// sources ([`crate::pixel_digest::asset_png`]), the original encoding for
-/// the rest (the archive writer converts those).
-pub fn export_to_doclang_with_assets(nodes: &[Node]) -> (String, Vec<(String, Vec<u8>)>) {
-    render(nodes, true)
-}
-
-fn render(nodes: &[Node], collect_assets: bool) -> (String, Vec<(String, Vec<u8>)>) {
+/// Serialize the node stream to DocLang XML (no trailing newline), pictures
+/// written per `pictures`, plus the asset parts a `Referenced { collect }`
+/// run's `<src>` references name — `(assets/image_….png, bytes)` in document
+/// order, PNG for PNG and JPEG sources ([`crate::pixel_digest::asset_png`]),
+/// the original encoding for the rest (the archive writer converts those).
+pub(crate) fn render(nodes: &[Node], pictures: Pictures) -> (String, Vec<(String, Vec<u8>)>) {
     let mut out = Out {
         lines: Vec::new(),
         pic_index: 0,
-        assets: collect_assets.then(Vec::new),
+        assets: matches!(pictures, Pictures::Referenced { collect: true }).then(Vec::new),
+        pictures,
     };
     out.push(0, "<doclang version=\"0.7\">".to_string());
     let mut i = 0usize;
@@ -1692,7 +1707,10 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
                 out.push(depth + 1, "</caption>".to_string());
             }
             // The `<src>` is the picture's body: after the head's caption.
-            if let Some(img) = image {
+            if let Some(img) = image
+                .as_ref()
+                .filter(|_| out.pictures != Pictures::Placeholder)
+            {
                 // docling embeds the PIL-re-encoded PNG; a JPEG is re-encoded
                 // here too, any other source keeps its own type in the URI.
                 let (_, uri) = crate::pixel_digest::docling_data_uri(img);
@@ -1739,7 +1757,12 @@ fn emit_picture(
     // `_with_pictures_refs` bumps `img_count` per `PictureItem`, not per image.
     let idx = out.pic_index;
     out.pic_index += 1;
-    let src = image.map(|img| {
+    let src = image.and_then(|img| {
+        match out.pictures {
+            Pictures::Placeholder => return None,
+            Pictures::Embedded => return Some(crate::pixel_digest::docling_data_uri(img).1),
+            Pictures::Referenced { .. } => {}
+        }
         let path = format!(
             "assets/image_{idx:06}_{}.png",
             crate::pixel_digest::image_digest(&img.data)
@@ -1749,7 +1772,7 @@ fn emit_picture(
                 crate::pixel_digest::asset_png(&img.data).unwrap_or_else(|| img.data.clone());
             assets.push((path.clone(), bytes));
         }
-        path
+        Some(path)
     });
     if location.is_none() && caption.is_none() && src.is_none() {
         out.push(depth, "<picture></picture>".to_string());

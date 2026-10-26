@@ -781,6 +781,61 @@ pub(crate) struct TableData {
     grid: Vec<GridSlot>,
 }
 
+/// One position of docling's `TableData.grid`, as the DocLang tree
+/// serializer reads it (`doclang_tree.rs`): the covering cell's anchor,
+/// text and header roles — an empty filler where no cell covers the
+/// position, which is what docling's computed `grid` holds there.
+pub(crate) struct GridPos<'a> {
+    pub(crate) start_row: usize,
+    pub(crate) start_col: usize,
+    pub(crate) text: &'a str,
+    pub(crate) column_header: bool,
+    pub(crate) row_header: bool,
+    pub(crate) row_section: bool,
+}
+
+/// [`TableData`] of a backend-built tree's table (raw cell text).
+pub(crate) fn raw_table_data(t: &Table) -> TableData {
+    table_data_with(t, true)
+}
+
+impl TableData {
+    /// `(num_rows, num_cols)`.
+    pub(crate) fn dims(&self) -> (usize, usize) {
+        (self.num_rows, self.num_cols)
+    }
+
+    /// Whether `table_cells` holds any cell.
+    pub(crate) fn has_cells(&self) -> bool {
+        !self.cells.is_empty()
+    }
+
+    /// The grid position `(r, c)`.
+    pub(crate) fn at(&self, r: usize, c: usize) -> GridPos<'_> {
+        match self.grid[r * self.num_cols + c] {
+            GridSlot::Cell(i) => {
+                let cell = &self.cells[i];
+                GridPos {
+                    start_row: cell.start_row,
+                    start_col: cell.start_col,
+                    text: &cell.text,
+                    column_header: cell.column_header,
+                    row_header: cell.row_header,
+                    row_section: cell.row_section,
+                }
+            }
+            GridSlot::Filler | GridSlot::Null => GridPos {
+                start_row: r,
+                start_col: c,
+                text: "",
+                column_header: false,
+                row_header: false,
+                row_section: false,
+            },
+        }
+    }
+}
+
 impl TableData {
     fn slot_cell(
         &self,

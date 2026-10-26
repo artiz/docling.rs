@@ -63,7 +63,7 @@ reproduce it byte for byte (see "Conformance & fixtures").
 
 | Crate | What it is |
 | --- | --- |
-| `crates/docling-core` | `DoclingDocument` model, Markdown/JSON/DCLX serializers, `MarkdownStreamer`, chunkers; `tree::ItemTree` — docling's item tree a backend can hand the JSON export when the flat nodes cannot express upstream's structure (HTML via `html_tree.rs`, DOCX via `docx_tree.rs`) |
+| `crates/docling-core` | `DoclingDocument` model, Markdown/JSON/DCLX serializers, `MarkdownStreamer`, chunkers; `tree::ItemTree` — docling's item tree a backend can hand the JSON export when the flat nodes cannot express upstream's structure (HTML via `html_tree.rs`, DOCX via `docx_tree.rs`), and — opted in with `ItemTree::doclang` (LaTeX, #884) — the DocLang export too (`doclang_tree.rs`, docling-core's serializer ported over the tree; verify with docling-core's `export_to_doclang()` of our JSON) |
 | `crates/docling` | `DocumentConverter` (format routing), declarative backends (`src/backend/`), streaming (`src/stream.rs`), video (`src/video.rs`) |
 | `crates/docling-pdf` | ML pipeline: lopdf object model + pure-Rust page renderer (`render/`) / raster (`raster/`) + RT-DETR layout + TableFormer + PP-OCRv3 + enrichment (`ml` feature; pdfium only behind the opt-in `pdfium` feature); pure-Rust text-layer path compiles for wasm without it |
 | `crates/docling-onnx` | Shared ONNX Runtime execution-provider selection (`DOCLING_RS_EP`, `cuda`/`tensorrt`/`directml`/`coreml`/`xnnpack` features) and the one `session_builder()` every session starts from (`load-dynamic` feature, #504: ORT `dlopen`ed at run time — `ORT_DYLIB_PATH`, `.models/onnxruntime/`, search path — for s390x and self-built runtimes) for docling-pdf/docling-asr/docling-rag |
