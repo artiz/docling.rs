@@ -202,32 +202,39 @@ def main() -> None:
         n = md_exact = md_norm = json_ok = errors = 0
         for src in sorted(glob.glob(str(ROOT / "tests/data" / fmt / "sources" / "*"))):
             path = Path(src)
-            if path.is_dir() or path.name.endswith(".layout.json"):
+            name = path.name
+            if path.is_dir():
+                # A LaTeX arXiv project is converted from its `main.tex`, the
+                # file upstream's groundtruth is named after.
+                if fmt != "latex" or not (path / "main.tex").is_file():
+                    continue
+                path, name = path / "main.tex", f"{path.name}/main.tex"
+            if path.name.endswith(".layout.json"):
                 continue
             try:
                 ref = upstream(path)
             except (Exception, SystemExit) as exc:  # noqa: BLE001 — upstream's failure is the datum
-                rows.append((fmt, path.name, "UPSTREAM-ERR", str(exc)[:90]))
+                rows.append((fmt, name, "UPSTREAM-ERR", str(exc)[:90]))
                 errors += 1
                 continue
             if ref is None:
                 continue
             ref_md, ref_json = ref
             n += 1
-            ours_md = run_cli(src)
+            ours_md = run_cli(str(path))
             strict = diff_lines(ours_md.rstrip("\n"), ref_md.rstrip("\n"))
             loose = diff_lines(norm(ours_md), norm(ref_md))
             md_exact += strict == 0
             md_norm += loose == 0
             json_state = "n/a"
             if ref_json is not None:
-                ours = image_presence(drop_documented(strip(json.loads(run_cli("--to", "json", src) or "{}"))))
+                ours = image_presence(drop_documented(strip(json.loads(run_cli("--to", "json", str(path)) or "{}"))))
                 want = image_presence(strip(ref_json))
                 ours.pop("name", None)
                 want.pop("name", None)
                 json_state = "ok" if ours == want else "DIFF"
                 json_ok += json_state == "ok"
-            rows.append((fmt, path.name, f"md={strict}/{loose}", f"json={json_state}"))
+            rows.append((fmt, name, f"md={strict}/{loose}", f"json={json_state}"))
         summary.append((fmt, n, md_exact, md_norm, json_ok, errors))
 
     print(f"{'format':12s} {'files':>5s} {'md-exact':>9s} {'md-norm':>8s} {'json':>5s} {'err':>4s}")

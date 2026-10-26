@@ -1896,6 +1896,17 @@ impl Builder {
                         merged.insert("annotations".into(), d["annotations"].take());
                         meta = Some(Value::Object(merged));
                     }
+                    // The source of a picture no engine rendered (a LaTeX
+                    // `tikzpicture`): `PictureMeta.code`.
+                    if let Some((text, language)) = &item.code_meta {
+                        let code = json!({ "text": text, "language": language });
+                        match meta.as_mut() {
+                            Some(Value::Object(m)) => {
+                                m.insert("code".into(), code);
+                            }
+                            _ => meta = Some(json!({ "code": code })),
+                        }
+                    }
                     let prov = self.take_prov(0);
                     let r = self.push_picture(
                         prov,

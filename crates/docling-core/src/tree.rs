@@ -212,6 +212,10 @@ pub struct TreeItem {
     /// AST wraps the run in `Span .insertion` / `.deletion` (`_revision`
     /// on that path); docling's JSON has no field for it.
     pub revision: Option<crate::Revision>,
+    /// A picture's `meta.code` — docling's `CodeMetaField` (`text`,
+    /// `language`): the LaTeX backend keeps a `tikzpicture`'s source there
+    /// when no engine renders it (`("…", "Tikz")`).
+    pub code_meta: Option<(String, String)>,
 }
 
 /// A note call inside a text item ([`TreeItem::notes`]).
@@ -318,6 +322,7 @@ impl ItemTree {
             anchors: Vec::new(),
             number: None,
             revision: None,
+            code_meta: None,
         });
         match parent {
             Some(p) => self.items[p].children.push(id),

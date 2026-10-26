@@ -124,6 +124,9 @@ ego-tree = "0.11"
 # `<meta charset>` / windows-1252 fallback, the way BeautifulSoup's
 # UnicodeDammit reads bytes for docling. Already in the tree via calamine.
 encoding_rs = "0.8"
+# NFC composition of LaTeX accent macros (`\'e` → é), as pylatexenc's
+# latex2text does with `unicodedata.normalize` (docling#4517).
+unicode-normalization = "0.1"
 # Statistical charset detection for text inputs that are neither UTF-8 nor
 # plainly windows-1252 (#675): Firefox's detector, on top of encoding_rs.
 chardetng = "1"

@@ -338,10 +338,10 @@ docling-core 2.103.1 it locks, over its mirrored test corpus
 | CSV | 9 | ✅ all | ✅ all | AsciiDoc | 5 | ✅ all | ✅ all |
 | Markdown | 11 | 10 ⁵ | 10 ⁵ | USPTO | 9 | ✅ all | ✅ all |
 | DeepSeek-OCR Markdown | 3 | ✅ all | n/a | EPUB | 1 | ✅ all | ✅ all |
-| WebVTT | 4 | ✅ all | ✅ all | LaTeX | 8 | 1 ¹ | 0 ¹ |
+| WebVTT | 4 | ✅ all | ✅ all | LaTeX | 8 | ✅ all | 7 ¹ |
 | Email (`.eml`) | 2 | ✅ all | ✅ all |  |  |  |  |
 
-¹ docling 2.142 rewrote its LaTeX backend (docling#4817); the port is still on the previous one, which matched docling 2.130–2.141 on 8/8 (Markdown) and 7/8 (JSON).
+¹ Deliberate: in `1706.03762` a `\multirow` / `\multicolumn` cell's `row_span` / `col_span` agree with its offsets, where upstream leaves them at 1 (docling#4817's LaTeX rewrite is ported in full, PDF figures rendered at 144 dpi like upstream's).
 
 ² `xlsx_02_sample_sales_data`: 20 date cells print by docling PR #4628's number-format rules (#634), which the released docling does not apply yet.
 
