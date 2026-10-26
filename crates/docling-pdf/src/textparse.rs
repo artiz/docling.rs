@@ -1597,8 +1597,8 @@ fn page_glyphs_and_inks(
 ) -> (Vec<Glyph>, Vec<crate::checkbox::Ink>) {
     let mut out = Vec::new();
     let mut inks = Vec::new();
-    // lopdf 0.44: get_page_content returns the assembled content-stream bytes
-    // directly (an empty Vec when the page has none).
+    // get_page_content returns the assembled content-stream bytes directly
+    // (an empty Vec when the page has none).
     let content_bytes = doc.get_page_content(page_id);
     let Ok(content) = lopdf::content::Content::decode(&content_bytes) else {
         return (out, inks);
@@ -2845,6 +2845,7 @@ mod glyph_names {
 #[cfg(test)]
 mod page_box_frame {
     use super::*;
+    use lopdf::dictionary;
 
     /// One page, `boxes` spliced into the page dictionary verbatim, one text
     /// run at user-space `(x, y)`.
@@ -2885,6 +2886,51 @@ mod page_box_frame {
             )
             .as_bytes(),
         );
+        out
+    }
+
+    /// One page whose `/Contents` is an array of separate streams.
+    fn pdf_content_streams(contents: &[&[u8]]) -> Vec<u8> {
+        let mut doc = Document::with_version("1.5");
+        let streams = contents
+            .iter()
+            .map(|content| {
+                Object::Reference(
+                    doc.add_object(lopdf::Stream::new(Dictionary::new(), content.to_vec())),
+                )
+            })
+            .collect::<Vec<_>>();
+        let font_id = doc.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Helvetica",
+        });
+        let resources_id = doc.add_object(dictionary! {
+            "Font" => dictionary! { "F1" => Object::Reference(font_id) },
+        });
+        let pages_id = doc.new_object_id();
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => Object::Reference(pages_id),
+            "MediaBox" => vec![0.into(), 0.into(), 300.into(), 400.into()],
+            "Contents" => streams,
+            "Resources" => Object::Reference(resources_id),
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![Object::Reference(page_id)],
+                "Count" => 1,
+            }),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => Object::Reference(pages_id),
+        });
+        doc.trailer.set("Root", Object::Reference(catalog_id));
+        let mut out = Vec::new();
+        doc.save_to(&mut out).expect("save synthetic PDF");
         out
     }
 
@@ -2951,6 +2997,17 @@ mod page_box_frame {
             "BT /F1 14 Tf 200 250 Td (Crossing the right edge) Tj ET\n",
         ));
         assert_eq!(text(&g), "Crossing the rig");
+    }
+
+    #[test]
+    fn leading_comment_content_stream_does_not_hide_later_text() {
+        // The comment has its own EOL; lopdf inserts another while assembling
+        // the streams, which is the boundary its 0.44 parser stopped at.
+        let (_, glyphs) = only_page(&pdf_content_streams(&[
+            b"% CANON_PFINF_TYPE2_TEXTOFF\n",
+            b"BT /F1 14 Tf 40 300 Td (Second stream text) Tj ET",
+        ]));
+        assert_eq!(text(&glyphs), "Second stream text");
     }
 
     /// The containment test is docling-parse's: the whole char box (advance
@@ -3044,12 +3101,11 @@ mod xref_repair {
     }
 
     /// A 19-byte cross-reference entry (a bare LF where the spec wants a
-    /// two-byte EOL) makes lopdf reject the whole file, so a readable text
-    /// layer used to look exactly like a scan — in the browser that meant ten
-    /// seconds of OCR for nothing. The repair must recover *the same* parse the
-    /// well-formed file gives.
+    /// two-byte EOL) used to make lopdf reject the whole file. Lopdf 0.45
+    /// accepts it directly, so exercise the fallback itself and prove it still
+    /// produces the exact 20-byte entries lopdf 0.44 needed.
     #[test]
-    fn short_xref_entries_still_parse() {
+    fn short_xref_entries_are_padded_for_fallback() {
         let good = pdf_with_xref(true);
         let broken = pdf_with_xref(false);
         assert!(
@@ -3061,8 +3117,15 @@ mod xref_repair {
             "the control file must load unaided"
         );
         assert!(
-            lopdf::Document::load_mem(&broken).is_err(),
-            "lopdf rejects 19-byte entries — if this ever passes, drop the repair"
+            lopdf::Document::load_mem(&broken).is_ok(),
+            "lopdf 0.45 should accept 19-byte entries"
+        );
+
+        let repaired = super::pad_short_xref_entries(&broken).expect("repair short entries");
+        assert_eq!(repaired, good, "repair should recreate the valid xref");
+        assert!(
+            lopdf::Document::load_mem(&repaired).is_ok(),
+            "the bytes produced for lopdf 0.44 must load"
         );
 
         let cells = |b: &[u8]| -> Vec<String> {
@@ -3077,18 +3140,17 @@ mod xref_repair {
             "control text: {from_good:?}"
         );
         assert_eq!(
-            cells(&broken),
+            cells(&repaired),
             from_good,
             "repair must match the good parse"
         );
     }
 
-    /// The same generator overstates `/Length`, so lopdf reads past the data,
-    /// misses `endstream` and drops the stream — the object comes back as a
-    /// bare dictionary and the page has no content at all. Trust `endstream`
-    /// instead, and do it without moving a single byte.
+    /// The same generator overstates `/Length`. Lopdf 0.45 recovers at
+    /// `endstream`, so exercise our fallback directly and prove it still writes
+    /// the exact length lopdf 0.44 needed without moving any bytes.
     #[test]
-    fn overstated_stream_length_still_yields_content() {
+    fn overstated_stream_length_is_fixed_for_fallback() {
         let good = pdf_with_xref(true);
         // Inflate the content stream's /Length by one, exactly as the invoice
         // that prompted this does.
@@ -3110,14 +3172,27 @@ mod xref_repair {
             b
         };
         assert_eq!(broken.len(), good.len(), "the defect must not move bytes");
-        // lopdf alone loses the stream: the page parses but carries no content.
+        // Lopdf 0.45 keeps the stream despite the overstated length.
         let raw = lopdf::Document::load_mem(&broken).expect("still loads");
         assert!(
             raw.get_pages()
                 .into_values()
-                .all(|p| raw.get_page_content(p).is_empty()),
-            "lopdf should drop the stream — if it stops, drop this repair"
+                .any(|p| !raw.get_page_content(p).is_empty()),
+            "lopdf 0.45 should recover content at endstream"
         );
+
+        let repaired = super::fix_stream_lengths(&broken);
+        assert_eq!(repaired.len(), broken.len(), "repair must preserve offsets");
+        assert_eq!(repaired, good, "repair should restore the true length");
+        let repaired_doc = lopdf::Document::load_mem(&repaired).expect("repaired PDF loads");
+        assert!(
+            repaired_doc
+                .get_pages()
+                .into_values()
+                .any(|p| !repaired_doc.get_page_content(p).is_empty()),
+            "the bytes produced for lopdf 0.44 must retain page content"
+        );
+
         // Ours recovers the same text the well-formed file gives.
         let text = |b: &[u8]| -> Vec<String> {
             super::pdf_textlines(b)
@@ -3127,7 +3202,7 @@ mod xref_repair {
         };
         let expected = text(&good);
         assert!(!expected.is_empty(), "control must produce text");
-        assert_eq!(text(&broken), expected);
+        assert_eq!(text(&repaired), expected);
     }
 
     /// The repair only fires where padding cannot move an object: it declines a
