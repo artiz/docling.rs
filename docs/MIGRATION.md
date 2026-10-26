@@ -247,7 +247,7 @@ escaped text (§ Markdown) — the sweep runs with the lock:
 | PPTX | 8 | **8** | **8** | — |
 | XLSX | 14 | 13 | 13 | `xlsx_02_sample_sales_data`: 20 date cells print `2024-01-01 0:00:00` by docling PR #4628's rules (#634, `h` unpadded), where the released docling still writes `str(value)` — exact again once that PR merges |
 | CSV | 9 | **9** | **9** | — |
-| Markdown | 11 | 10 | 10 | `inline_and_formatting`: docling#4488's formatted table cells print as plain text on the flat Markdown path; `escaped_characters`: its code spans keep their literal `&amp; &lt;`, which upstream's HTML detour decodes (a divergence, § Markdown) |
+| Markdown | 11 | **11** | 10 | `escaped_characters`: its code spans keep their literal `&amp; &lt;`, which upstream's HTML detour decodes (a divergence, § Markdown) |
 | DeepSeek-OCR Markdown | 3 | **3** | n/a | — (2.129's first-row-only `column_header` for HTML tables ported) |
 | AsciiDoc | 5 | **5** | **5** | — (JSON: docling's `parents`/`indents` tree — title root, headings at their level, nested `list` groups, body-level captions) |
 | LaTeX | 8 | **8** | 7 | docling 2.142's rewrite (docling#4817) ported in full — see § LaTeX. `1706.03762` differs in one `tabular` only: upstream writes a span into the cell's end offsets but leaves `row_span`/`col_span` at 1, here the two agree (a deliberate divergence). Upstream's 213 test-suite inputs (`tests/test_latex`) convert identically too, bar the same span fields (3) and, in Markdown only, the Python repr of a TikZ picture's `meta.code` docling-core prints (8) |
@@ -298,7 +298,7 @@ converted once more as that format with a warning.
 #### Markdown
 
 **Backend:** `markdown.rs` (pulldown-cmark)\
-**Status:** vs docling 2.142.1 (with the docling-core 2.103.1 it locks): **10/11 exact** Markdown, **JSON structurally identical on 10/11** — `inline_and_formatting` is docling#4488's formatted table cells, which the flat Markdown path prints as plain text (below); `escaped_characters`' code spans keep their literal `&amp; &lt;` (below)
+**Status:** vs docling 2.142.1 (with the docling-core 2.103.1 it locks): **11/11 exact** Markdown, **JSON structurally identical on 10/11** — `escaped_characters`' code spans keep their literal `&amp; &lt;` (below)
 
 - `md_tree.rs` rebuilds marko's element tree from a second pulldown parse with the GFM extension as docling configures it (docling#4488, 2.135: tables, `~~strikethrough~~` by marko's own rule — two tildes, none inside or around, no flanking, so `~x~` stays text — and bare URLs) and ports `MarkdownDocumentBackend._iterate_elements` call for call:
   - a heading or list item is created lazily on its first run (`title`/`section_header` of level − 1; `list_item` with `enumerated` and a `{start + count}.` marker)
@@ -309,7 +309,7 @@ converted once more as that format with a warning.
   - an image a `picture` whose `"title"` is a body-level caption and whose alt runs follow as text
   - a nested list hangs off the outer list's last item
   - a GFM table (one that may interrupt a paragraph, as docling's `_GfmParagraph` lets it) sits under the current parent — a list group, the body — with row 0 the column header, rows cut/padded to the header's width and each cell's text its stripped plain text
-  - a formatted cell (emphasis, code span, link, image, strikethrough) a `RichTableCell` whose runs are items of an `inline` group under a `rich_cell_group_{table}_{col}_{row}` group of the table (`_parse_gfm_table` / `_iterate_cell_inline`; the flat Markdown still prints such a cell's plain text, and drops a table inside a list item)
+  - a formatted cell (emphasis, code span, link, image, strikethrough) a `RichTableCell` whose runs are items of an `inline` group under a `rich_cell_group_{table}_{col}_{row}` group of the table (`_parse_gfm_table` / `_iterate_cell_inline`; the flat Markdown prints the cell with its formatting — `**bold**`, `` `code` ``, `~~struck~~`, links — as docling's serializer does)
   - `~~x~~` a `strikethrough` run
   - hard/soft breaks merge the next run into the previous text (`\n` / space) within one paragraph only (docling#4525)
 - A document with a raw HTML block takes upstream's detour for its JSON: each block a `code` item of its source between docling's two markers, the tree exported to HTML (`serialize_markdown_for_html`: every picture an `<img>` keyed by its `self_ref`, resolved back to its image), the markers cut with the `<pre><code>` around them, and the HTML backend's tree over the result (no furniture inference, no `<title>` item) — so the HTML is parsed (a `<table>` a table, everything nested under its heading) as upstream has it. The five files that take it used to keep the flat export's JSON. The flat Markdown path stays the source of the Markdown, which agrees with upstream on them.
@@ -331,6 +331,7 @@ converted once more as that format with a warning.
   - two runs of the same formatting merge into one item across the break (`**Bold A**` ⏎ `**Bold B**` → `**Bold A Bold B**`)
   - differently formatted ones stay separate items with the `\n` on the second
 - docling#4313/#4371: a `\|` and every character-reference spelling of `|` (`&#x7C;`, `&verbar;`) is cell content — carried as `&#124;` until the row is split, so it neither opens a table nor adds a column, and in prose stays a literal pipe (`escaped_pipes.md` is our own fixture)
+- a list item's blocks after its text — another paragraph, a code block, a quote, a table, raw HTML — follow the item in the flat Markdown as the blocks they are (they were dropped); the JSON already held them as the item's children. **Divergence (whitespace only):** they are blank-line separated from the item and the next one, where docling prints them on the very next line — `1. one⏎extra para` reads back as one item `one extra para` in any CommonMark renderer, so the blank lines keep the paragraph a paragraph; the list numbering goes on after them
 - docling#4318 (2.130.0-33): a table cell's text is its plain text stripped as a whole, so `**C** Cadre` keeps its space.
 - **Beyond docling**: a `$$…$$` paragraph of its own (one line or several — a notebook's or a README's equation) is a `formula` item — `$$latex$$` in Markdown, a `formula` text item in JSON, MathML in HTML — while inline `$x$`, a `$$…$$` inside prose or a link (`inline_and_formatting.md`'s `[$$E=mc^2$$](…)`) and a price (`$5`) stay the text they were, run for run, so the corpus output is unchanged.
 - #773 (docling#4791, 2.139): an autolink (`<https://…>`, `<me@x.y>` as a `mailto:` link) and a GFM bare URL (`https://…`, `www.…` linked as `http://www.…`, an e-mail address) keep their hyperlink in headings, paragraphs and list items — marko's `Url` rule ported (the lookbehind, the domain check, the single trailing-punctuation trim, a URL whose trim leaves it touching emphasis markup not linked), and a link in a table cell prints as `[label](url)` like docling 2.140's
