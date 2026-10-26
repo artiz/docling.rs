@@ -279,10 +279,19 @@ impl DeclarativeBackend for JatsBackend {
             });
             out.text(root, "paragraph", &joined, None, None, None, None);
         }
+        // Figure images resolve against the source *file's* directory only
+        // (docling's `base_path`: its `source_uri` or the path it was opened
+        // from) — an in-memory source, or one fetched from a URL, embeds none,
+        // as docling's does (`_load_figure_image` requires a local base).
+        let fig_base = if self.images.sources.local() {
+            source.base_dir()
+        } else {
+            None
+        };
         for abs in parse_abstracts(&dom) {
             // docling skips an abstract with neither plain paragraphs nor
             // sections (`_add_abstract`, docling#4172).
-            if abs.plain.is_empty() && abs.sections.is_empty() {
+            if abs.paragraphs.is_empty() && abs.sections.is_empty() {
                 continue;
             }
             let label = if abs.label.is_empty() {
@@ -299,33 +308,42 @@ impl DeclarativeBackend for JatsBackend {
                 text: escape_text(label),
             });
             let abs_heading = Some(out.heading(root, label, 1));
-            if abs.sections.is_empty() {
-                // A plain abstract: its paragraphs joined into one text item.
-                out.doc.push(Node::Paragraph {
-                    text: escape_text(&abs.plain),
-                });
-                out.text(abs_heading, "text", &abs.plain, None, None, None, None);
-            } else {
-                // A structured abstract (docling#4172): each `<sec>` is a
-                // heading one level below the abstract's — none when it has
-                // no title — with one text item per `<p>`. Plain paragraphs
-                // beside sections are dropped, as docling drops them.
-                for (title, paragraphs) in &abs.sections {
-                    let section_parent = if title.is_empty() {
-                        abs_heading
-                    } else {
-                        out.doc.push(Node::Heading {
-                            level: 3,
-                            text: escape_text(title),
-                        });
-                        Some(out.heading(abs_heading, title, 2))
-                    };
-                    for p in paragraphs {
-                        out.doc.push(Node::Paragraph {
-                            text: escape_text(p),
-                        });
-                        out.text(section_parent, "text", p, None, None, None, None);
-                    }
+            // Each paragraph is walked like a body paragraph, its styling
+            // kept (docling#4361) — the plain ones first, then each `<sec>`
+            // of a structured abstract (docling#4172) as a heading one level
+            // below the abstract's, none when it has no title.
+            let mut no_sections = 0;
+            for p in &abs.paragraphs {
+                walk_linear(
+                    *p,
+                    abs_heading,
+                    Fmt::default(),
+                    None,
+                    &mut no_sections,
+                    fig_base,
+                    &mut out,
+                );
+            }
+            for (title, paragraphs) in &abs.sections {
+                let section_parent = if title.is_empty() {
+                    abs_heading
+                } else {
+                    out.doc.push(Node::Heading {
+                        level: 3,
+                        text: escape_text(title),
+                    });
+                    Some(out.heading(abs_heading, title, 2))
+                };
+                for p in paragraphs {
+                    walk_linear(
+                        *p,
+                        section_parent,
+                        Fmt::default(),
+                        None,
+                        &mut no_sections,
+                        fig_base,
+                        &mut out,
+                    );
                 }
             }
         }
@@ -333,18 +351,14 @@ impl DeclarativeBackend for JatsBackend {
         // --- body + back ----------------------------------------------------
         // `hlevel` is a running section depth carried across body and back
         // (docling's `self.hlevel`); it is balanced by each `<sec>`.
-        // Figure images resolve against the source *file's* directory only
-        // (docling's `base_path`: its `source_uri` or the path it was opened
-        // from) — an in-memory source, or one fetched from a URL, embeds none,
-        // as docling's does (`_load_figure_image` requires a local base).
-        let fig_base = if self.images.sources.local() {
-            source.base_dir()
-        } else {
-            None
-        };
         let mut hlevel: i32 = 0;
+        // The article's own body and back matter — not a sub-article's
+        // (docling#4826) — then each top-level sub-article.
         for tag in ["body", "back"] {
-            if let Some(node) = dom.descendants().find(|n| n.has_tag_name(tag)) {
+            if let Some(node) = dom
+                .descendants()
+                .find(|n| n.has_tag_name(tag) && !in_sub_article(*n))
+            {
                 walk_linear(
                     node,
                     root,
@@ -356,9 +370,85 @@ impl DeclarativeBackend for JatsBackend {
                 );
             }
         }
+        let subs: Vec<XmlNode> = dom
+            .descendants()
+            .filter(|n| is_sub_article(*n) && !in_sub_article(*n))
+            .collect();
+        for sub in subs {
+            add_sub_article(sub, root, &mut hlevel, fig_base, &mut out);
+        }
         let tree = out.tree;
         doc.tree = Some(tree);
         Ok(doc)
+    }
+}
+
+/// `<sub-article>` / `<response>`: a whole article inside another one — a
+/// decision letter, an author reply (JATS 1.3, docling's `_SUB_ARTICLE_TAGS`).
+fn is_sub_article(n: XmlNode) -> bool {
+    n.has_tag_name("sub-article") || n.has_tag_name("response")
+}
+
+/// Whether `n` lies inside a sub-article.
+fn in_sub_article(n: XmlNode) -> bool {
+    n.ancestors().skip(1).any(is_sub_article)
+}
+
+/// docling's `_add_sub_article` (docling#4826): a sub-article's body and back
+/// matter, like a `<sec>`, under a heading with its title when it has one;
+/// a nested sub-article under the heading of the one that holds it. They
+/// were dropped — the decision letter and the author response of an eLife
+/// paper.
+fn add_sub_article(
+    node: XmlNode,
+    parent: Option<usize>,
+    hlevel: &mut i32,
+    fig_base: Option<&std::path::Path>,
+    out: &mut Out,
+) {
+    let title = node
+        .children()
+        .filter(|c| c.has_tag_name("front-stub") || c.has_tag_name("front"))
+        .flat_map(|front| {
+            let meta = if front.has_tag_name("front") {
+                front.children().find(|c| c.has_tag_name("article-meta"))
+            } else {
+                Some(front)
+            };
+            meta.into_iter()
+                .flat_map(|m| m.children().filter(|c| c.has_tag_name("title-group")))
+                .flat_map(|g| g.children().filter(|c| c.has_tag_name("article-title")))
+        })
+        .next();
+    let text = title.map(|t| normalize(&get_text(t))).unwrap_or_default();
+    let mut new_parent = parent;
+    if !text.is_empty() {
+        *hlevel += 1;
+        out.doc.push(Node::Heading {
+            level: fw_level(*hlevel),
+            text: escape_text(&text),
+        });
+        new_parent = Some(out.heading(parent, &text, *hlevel));
+    }
+    for child in node
+        .children()
+        .filter(|c| c.has_tag_name("body") || c.has_tag_name("back"))
+    {
+        walk_linear(
+            child,
+            new_parent,
+            Fmt::default(),
+            None,
+            hlevel,
+            fig_base,
+            out,
+        );
+    }
+    for child in node.children().filter(|c| is_sub_article(*c)) {
+        add_sub_article(child, new_parent, hlevel, fig_base, out);
+    }
+    if !text.is_empty() {
+        *hlevel -= 1;
     }
 }
 
@@ -625,30 +715,33 @@ fn contrib_name(contrib: XmlNode) -> String {
 }
 
 /// One `<abstract>`, as docling's `_parse_abstract` reads it (docling#4172).
-struct Abstract {
+struct Abstract<'a, 'i> {
     /// Its `title` or `label` child (the first in document order), or empty.
     label: String,
-    /// The direct `<p>` children joined by a space (docling's `content`).
-    plain: String,
+    /// The direct `<p>` children with text, walked at emit time so their
+    /// styling stays (docling#4361).
+    paragraphs: Vec<XmlNode<'a, 'i>>,
     /// The direct `<sec>` children that hold paragraphs: `(title, paragraphs)`.
     /// A section's title is its `title`/`label`; its paragraphs are its
     /// direct `<p>` children only — a nested `<sec>` is not descended into.
-    sections: Vec<(String, Vec<String>)>,
+    sections: Vec<(String, Vec<XmlNode<'a, 'i>>)>,
 }
 
-fn parse_abstracts(dom: &Document) -> Vec<Abstract> {
+/// A `<p>` whose text (`"".join(itertext())`) is not blank.
+fn has_text(p: XmlNode) -> bool {
+    p.descendants()
+        .filter(|n| n.is_text())
+        .any(|n| n.text().is_some_and(|t| !t.trim().is_empty()))
+}
+
+fn parse_abstracts<'a, 'i>(dom: &'a Document<'i>) -> Vec<Abstract<'a, 'i>> {
     let mut out = Vec::new();
     for abs in dom.descendants().filter(|n| n.has_tag_name("abstract")) {
-        let mut plain = Vec::new();
+        let mut paragraphs = Vec::new();
         let mut sections = Vec::new();
         for child in abs.children().filter(XmlNode::is_element) {
             match child.tag_name().name() {
-                "p" => {
-                    let t = node_text(child);
-                    if !t.is_empty() {
-                        plain.push(t);
-                    }
-                }
+                "p" if has_text(child) => paragraphs.push(child),
                 "sec" => {
                     let section = abstract_section(child);
                     if !section.1.is_empty() {
@@ -660,7 +753,7 @@ fn parse_abstracts(dom: &Document) -> Vec<Abstract> {
         }
         out.push(Abstract {
             label: title_or_label(abs),
-            plain: normalize(&plain.join(" ")),
+            paragraphs,
             sections,
         });
     }
@@ -668,12 +761,10 @@ fn parse_abstracts(dom: &Document) -> Vec<Abstract> {
 }
 
 /// docling's `_parse_abstract_section`: `(title, paragraphs)` of one `<sec>`.
-fn abstract_section(section: XmlNode) -> (String, Vec<String>) {
+fn abstract_section<'a, 'i>(section: XmlNode<'a, 'i>) -> (String, Vec<XmlNode<'a, 'i>>) {
     let paragraphs = section
         .children()
-        .filter(|c| c.has_tag_name("p"))
-        .map(node_text)
-        .filter(|t| !t.is_empty())
+        .filter(|c| c.has_tag_name("p") && has_text(*c))
         .collect();
     (title_or_label(section), paragraphs)
 }
@@ -779,7 +870,7 @@ fn walk_linear(
     let mut segments: Vec<Seg> = Vec::new();
     if node_tag != "term" {
         if let Some(t) = node.text() {
-            append_run(&mut segments, &t.replace('\n', " "), current, current_link);
+            append_run(&mut segments, &t, current, current_link);
         }
     }
 
@@ -903,12 +994,7 @@ fn walk_linear(
         }
 
         if let Some(tail) = child.tail() {
-            append_run(
-                &mut segments,
-                &tail.replace('\n', " "),
-                current,
-                current_link,
-            );
+            append_run(&mut segments, &tail, current, current_link);
         }
     }
 
@@ -927,7 +1013,7 @@ fn walk_inline_formula(node: XmlNode, fmt: Fmt, hyperlink: Option<&str>) -> Vec<
     let current = fmt.with_tag(node.tag_name().name());
     let mut segments = Vec::new();
     if let Some(t) = node.text() {
-        append_run(&mut segments, &t.replace('\n', " "), current, hyperlink);
+        append_run(&mut segments, &t, current, hyperlink);
     }
     for child in node.children().filter(XmlNode::is_element) {
         if child.tag_name().name() == "tex-math" {
@@ -946,7 +1032,7 @@ fn walk_inline_formula(node: XmlNode, fmt: Fmt, hyperlink: Option<&str>) -> Vec<
             );
         }
         if let Some(tail) = child.tail() {
-            append_run(&mut segments, &tail.replace('\n', " "), current, hyperlink);
+            append_run(&mut segments, &tail, current, hyperlink);
         }
     }
     segments
@@ -980,10 +1066,32 @@ fn extract_tex_math(node: XmlNode) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
+/// docling's `_normalize_xml_line_breaks`: the source's line breaks and the
+/// indentation around them collapse to one space — a line break's leading
+/// and trailing blanks go, blank inner lines drop out.
+fn xml_line_breaks(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('\n') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let chunks: Vec<&str> = text.split('\n').collect();
+    let last = chunks.len() - 1;
+    let mut parts: Vec<&str> = vec![chunks[0].trim_end_matches([' ', '\t'])];
+    parts.extend(
+        chunks[1..last]
+            .iter()
+            .map(|c| c.trim_matches([' ', '\t']))
+            .filter(|c| !c.is_empty()),
+    );
+    parts.push(chunks[last].trim_start_matches([' ', '\t']));
+    std::borrow::Cow::Owned(parts.join(" "))
+}
+
 /// Append a text run, coalescing into the previous run when the formatting
-/// matches (docling's `_append_run`). `\n` was already normalized to a space by
-/// the caller.
+/// matches (docling's `_append_run`, which normalizes the run's XML line
+/// breaks first).
 fn append_run(segments: &mut Vec<Seg>, text: &str, fmt: Fmt, hyperlink: Option<&str>) {
+    let text = xml_line_breaks(text);
+    let text = text.as_ref();
     if text.is_empty() {
         return;
     }
@@ -1013,19 +1121,24 @@ fn extend_segments(segments: &mut Vec<Seg>, more: Vec<Seg>) {
     }
 }
 
+/// docling's `_strip_segments`: each run trimmed, the blank ones dropped.
+fn strip_segments(segments: Vec<Seg>) -> Vec<Seg> {
+    segments
+        .into_iter()
+        .filter_map(|s| {
+            let text = s.text.trim().to_string();
+            (!text.is_empty()).then_some(Seg { text, ..s })
+        })
+        .collect()
+}
+
 /// Emit inline runs as a paragraph, dropping blank runs and wrapping several
 /// runs in an inline group (docling's `_emit_inline` / `_strip_segments`). A
 /// formula run renders as `$…$` in Markdown and a `<formula>` in DocLang; a
 /// styled run carries its emphasis into DocLang while Markdown keeps the
 /// baked-in `*…*`/`**…**` markers.
 fn emit_inline(out: &mut Out, parent: Option<usize>, segments: Vec<Seg>) {
-    let stripped: Vec<Seg> = segments
-        .into_iter()
-        .filter_map(|s| {
-            let text = s.text.trim().to_string();
-            (!text.is_empty()).then_some(Seg { text, ..s })
-        })
-        .collect();
+    let stripped = strip_segments(segments);
     if stripped.is_empty() {
         return;
     }
@@ -1661,11 +1774,13 @@ fn row_span(cell: XmlNode) -> usize {
 
 /// A `<fn-group>` → a "Footnotes" heading and a bullet list of its `<fn>` texts.
 fn add_footnote_group(out: &mut Out, parent: Option<usize>, node: XmlNode, hlevel: i32) {
-    let footnotes: Vec<String> = node
+    // Each `<fn>`'s inline runs, its `<label>` and styling kept (docling#4361:
+    // `_walk_inline_formula` + `_strip_segments`).
+    let footnotes: Vec<Vec<Seg>> = node
         .children()
         .filter(|c| c.has_tag_name("fn"))
-        .map(norm_text)
-        .filter(|s| !s.is_empty())
+        .map(|f| strip_segments(walk_inline_formula(f, Fmt::default(), None)))
+        .filter(|segs| !segs.is_empty())
         .collect();
     if footnotes.is_empty() {
         return;
@@ -1681,19 +1796,36 @@ fn add_footnote_group(out: &mut Out, parent: Option<usize>, node: XmlNode, hleve
         text: escape_text(&title),
     });
     // Tree (docling's `_add_footnote_group`): the heading, a `footnotes`
-    // list group under it, and per note an empty list item holding an
-    // inline group with the `footnote` text.
+    // list group under it, and per note an empty list item holding its runs
+    // — one `footnote` item, or an inline group of them (formulas stay
+    // `formula` items).
     let heading = Some(out.heading(parent, &title, hlevel + 1));
     let group = Some(out.group(heading, "list", "footnotes"));
-    for item in footnotes {
+    for segs in footnotes {
         let li = Some(out.list_item(group, ""));
-        let inline = Some(out.group(li, "inline", "group"));
-        out.text(inline, "footnote", &item, None, None, None, None);
+        let container = if segs.len() > 1 {
+            Some(out.group(li, "inline", "group"))
+        } else {
+            li
+        };
+        for seg in &segs {
+            let label = if seg.formula { "formula" } else { "footnote" };
+            out.text(
+                container,
+                label,
+                &seg.text,
+                tree_formatting(seg.fmt),
+                seg.hyperlink.clone(),
+                None,
+                None,
+            );
+        }
+        let text = segs.iter().map(seg_markdown).collect::<Vec<_>>().join(" ");
         out.doc.push(Node::ListItem {
             ordered: false,
             number: 0,
             first_in_list: false,
-            text: escape_text(&item),
+            text,
             level: 0,
             marker: None,
             location: None,
@@ -2207,19 +2339,20 @@ a=b
         assert_eq!(texts[10]["text"], "Fig 1 Cap.");
         assert_eq!(v["pictures"][0]["parent"]["$ref"], "#/texts/4");
         assert_eq!(v["pictures"][0]["captions"][0]["$ref"], "#/texts/10");
-        // Footnotes: heading → `footnotes` list → empty item → inline → footnote.
+        // Footnotes: heading → `footnotes` list → empty item → its one
+        // `footnote` run directly (docling#4361's `_emit_inline`: an inline
+        // group only for several runs).
         assert_eq!(by(11), ("section_header", "#/texts/0"));
         assert_eq!(texts[11]["text"], "Footnotes");
         assert_eq!(v["groups"][2]["name"], "footnotes");
         assert_eq!(by(12), ("list_item", "#/groups/2"));
         assert_eq!(texts[12]["text"], "");
-        assert_eq!(v["groups"][3]["label"], "inline");
-        assert_eq!(by(13), ("footnote", "#/groups/3"));
+        assert_eq!(by(13), ("footnote", "#/texts/12"));
         // References: heading → `list` group → citation list item.
         assert_eq!(by(14), ("section_header", "#/texts/0"));
-        assert_eq!(v["groups"][4]["label"], "list");
-        assert_eq!(v["groups"][4]["parent"]["$ref"], "#/texts/14");
-        assert_eq!(by(15), ("list_item", "#/groups/4"));
+        assert_eq!(v["groups"][3]["label"], "list");
+        assert_eq!(v["groups"][3]["parent"]["$ref"], "#/texts/14");
+        assert_eq!(by(15), ("list_item", "#/groups/3"));
     }
 
     /// docling's `_walk_linear` sets `new_parent` once per element, so the
@@ -2281,6 +2414,28 @@ O.
         );
     }
 
+    /// docling#4826: a sub-article (a decision letter, an author response)
+    /// converts under a heading with its title, a nested one under the
+    /// heading of the one that holds it, after the article's own body —
+    /// whose lookup skips the sub-articles' bodies.
+    #[test]
+    fn sub_articles_are_converted() {
+        let md = md_of(
+            r#"<article><front><article-meta>
+            <title-group><article-title>T</article-title></title-group>
+          </article-meta></front><body><p>Main.</p></body>
+          <sub-article><front-stub><title-group><article-title>Decision letter</article-title></title-group></front-stub>
+            <body><p>Reviewed.</p></body>
+            <sub-article><front-stub><title-group><article-title>Reply</article-title></title-group></front-stub>
+              <body><p>Thanks.</p></body></sub-article>
+          </sub-article></article>"#,
+        );
+        assert_eq!(
+            md,
+            "# T\n\nMain.\n\n## Decision letter\n\nReviewed.\n\n### Reply\n\nThanks.\n"
+        );
+    }
+
     /// An abstract made only of sections emits no plain text item; one with
     /// nothing usable is skipped; a `<label>` names it like a `<title>` does.
     #[test]
@@ -2293,8 +2448,8 @@ O.
             <abstract><p>Plain.</p><sec><title>Also</title><p>Sectioned.</p></sec></abstract>
           </article-meta></front><body/></article>"#,
         );
-        // The third abstract has sections, so its plain paragraph is dropped,
-        // as docling's `_add_abstract` drops it.
+        // The third abstract has sections and a plain paragraph: the plain
+        // one comes first, then the sections (docling#4361 keeps both).
         assert_eq!(
             md,
             "# T
@@ -2304,6 +2459,8 @@ O.
 S.
 
 ## Abstract
+
+Plain.
 
 ### Also
 
