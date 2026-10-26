@@ -296,6 +296,14 @@ pub struct ItemTree {
     pub items: Vec<TreeItem>,
     /// The body's `children`, as item indices.
     pub body: Vec<usize>,
+    /// The DocLang export serializes this tree too (#884) — docling-core's
+    /// `DocLangDocSerializer` ported over the tree (`doclang_tree.rs`) —
+    /// instead of the flat nodes, which cannot carry a footnote's label, a
+    /// caption's or a cell's inline formulas, or text docling never wrote
+    /// as Markdown. Set by a backend whose tree is upstream's exact
+    /// structure (LaTeX); a tree the port does not cover falls back to the
+    /// nodes.
+    pub doclang: bool,
 }
 
 impl ItemTree {

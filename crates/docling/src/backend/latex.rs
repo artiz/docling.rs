@@ -75,7 +75,11 @@ impl DeclarativeBackend for LatexBackend {
         };
         conv.run(&text);
         let mut doc = DoclingDocument::new(&source.name);
-        let (nodes, tree) = conv.doc.finish();
+        let (nodes, mut tree) = conv.doc.finish();
+        // The tree is docling's own, so DocLang serializes it as docling-core
+        // does (#884); the flat nodes lose footnote labels, inline formulas
+        // in captions and cells, and raw text.
+        tree.doclang = true;
         doc.nodes = nodes;
         doc.tree = Some(tree);
         Ok(doc)

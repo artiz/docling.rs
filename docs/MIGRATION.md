@@ -1022,7 +1022,7 @@ converted once more as that format with a warning.
 #### LaTeX
 
 **Backend:** `latex.rs` + `latex_walker.rs`\
-**Status:** **8/8 Markdown exact, 7/8 JSON identical** vs docling 2.142.1 (docling-core 2.103.1), the six arXiv projects included; upstream's own `tests/test_latex` inputs 205/213 Markdown, 210/213 JSON, every difference one of the divergences below
+**Status:** **8/8 Markdown exact, 7/8 JSON identical, 8/8 DocLang exact** vs docling 2.142.1 (docling-core 2.103.1), the six arXiv projects included; upstream's own `tests/test_latex` inputs 205/213 Markdown, 210/213 JSON, every difference one of the divergences below
 
 - docling's `LatexDocumentBackend` ported handler for handler (#466; docling 2.142's arXiv rewrite, docling#4817, plus #4974, #4517, #4644, #4579, #4502, #4475, #4441, #4325, #4340) on a port of pylatexenc 2.11's tolerant `LatexWalker`
 - `example_01/02` plus the six arXiv projects (`1706.03762`, `2305.03393`, `2310.06825`, `2412.19437`, `2501.00089`, `arXiv-2501.01300v2`), `\input` files parsed in place and decoded like the main file (UTF-8, cp1252, latin-1)
@@ -1044,10 +1044,10 @@ converted once more as that format with a warning.
   - figures: a raster file embedded as PNG like upstream's `ImageRef.from_pil`; a PDF's first page rendered at 144 dpi, the size pypdfium2's `render(scale=2)` gives (ceiling of the scaled page) — by docling-pdf's renderer, so the pixels differ; a build without the `pdf` feature (wasm) leaves the picture without a payload
   - a `tikzpicture` is a picture carrying its source as `meta.code` (language `Tikz`), upstream's fallback without Tectonic (no engine here)
   - code environments keep their first line's indentation (docling#4502)
-- DocLang: `example_01/02` exact against docling 2.142.1's (`groundtruth_dclx` regenerated): a table has no header row (`<fcel/>`, LaTeX flags no `column_header`), and a multi-line display formula's `<content>` prints in block form as minidom writes an element child (the shared DocLang serializer)
+- DocLang (#884): the backend's item tree is serialized as docling-core's `DocLangDocSerializer` does it (`docling-core/src/doclang_tree.rs`, opted in by `ItemTree::doclang`) — the minified markup, then minidom's `toprettyxml`, the empty-line filter and the self-closing expansion — instead of the flat nodes, which cannot say a footnote is a `<footnote>`, carry a caption's or a table cell's inline formulas (`<caption><content>…</content><formula>…</formula>…`, `<fcel/><text><formula>…`), keep a list item's raw text (`weight\_decay`) or a paragraph's (`Zhang*` read as italics), or end a CDATA list item's line at the list's indentation (the list's `"\n"` record delimiter is a text node after the CDATA section). All eight `groundtruth/*.dclg` byte-exact (were 85–96% on the arXiv projects); docling-core 2.104's `export_to_doclang()` of our JSON equals our DocLang on all 253 LaTeX strings of upstream's `tests/test_latex` (the TikZ `meta.code` below aside). The `.dclg` is docling's placeholder image mode — `export_to_doclang_with_images(ImageMode::Placeholder)`; `export_to_doclang()` stays the archive's `document.xml` with its `<src uri="assets/…"/>` references, like every format (`example_01/02`'s `groundtruth_dclx` exact)
 - Deviations:
   - a spanning cell's `row_span` / `col_span` agree with its offsets, where upstream leaves them at 1 (`1706.03762`'s one table)
-  - Markdown leaves out the Python repr docling-core prints for a TikZ picture's `meta.code` (`confidence=None created_by=None text='…' language=…`); the JSON keeps the code
+  - Markdown and DocLang leave out the Python repr docling-core prints for a TikZ picture's `meta.code` (`confidence=None created_by=None text='…' language=…`; DocLang's `<custom><code>…</code></custom>`); the JSON keeps the code
   - line endings are translated for byte input too (upstream reads a path in text mode, a stream raw)
 - docling#4325 (2.130.0-33): `tabular*`, `tabularx` and `longtable` are tables (longtable with docling's own `[{` spec; `\endhead` & co. no cell content)
 

@@ -36,6 +36,7 @@ mod ipynb;
 mod iwork;
 mod jpx_pictures;
 mod json_prov;
+mod latex_upstream;
 mod md_upstream;
 mod odf_upstream;
 mod options_inventory;
