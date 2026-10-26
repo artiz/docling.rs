@@ -1245,18 +1245,33 @@ fn parse_inline(text: &str, bold: bool, italic: bool) -> Vec<Run> {
     runs
 }
 
+/// `= Title` → the title text, trimmed, its closing `=` dropped.
 fn is_title(line: &str) -> Option<&str> {
-    line.strip_prefix("= ")
+    let rest = line.strip_prefix("= ")?.trim();
+    Some(strip_closing_marker(rest, "="))
 }
 
-/// `== Section` → (number-of-`=`, text). A bare `=` (title) is excluded.
+/// `== Section` → (number-of-`=`, text trimmed, closing marks dropped). A
+/// bare `=` (title) is excluded.
 fn section_header(line: &str) -> Option<(u8, String)> {
     if !line.starts_with("==") {
         return None;
     }
     let caps = cached_regex!(r"^(=+)\s+(.*)").captures(line)?;
-    let level = caps.get(1)?.as_str().len() as u8;
-    Some((level, caps.get(2)?.as_str().to_string()))
+    let marker = caps.get(1)?.as_str();
+    let text = strip_closing_marker(caps.get(2)?.as_str().trim(), marker);
+    Some((marker.len() as u8, text.to_string()))
+}
+
+/// docling's `_strip_closing_marker` (docling#4938): Asciidoctor accepts a
+/// symmetric title, closed by the same marks that open it after whitespace
+/// (`== Intro ==`), and leaves them out of the text; marks of another
+/// length are part of the title (`=== Details ==`).
+fn strip_closing_marker<'a>(text: &'a str, marker: &str) -> &'a str {
+    match text.strip_suffix(marker) {
+        Some(head) if head.ends_with([' ', '\t']) => head.trim_end_matches([' ', '\t']),
+        _ => text,
+    }
 }
 
 /// A parsed list item, docling's `_parse_list_item`.
@@ -1676,6 +1691,29 @@ mod tests {
             md("// note\n[NOTE]\n////\nhidden\n////\n:attr: x\ntext\n"),
             "text\n"
         );
+    }
+
+    /// docling#4938: a symmetric title drops its closing marks; marks of
+    /// another length are part of the title, as in Asciidoctor.
+    #[test]
+    fn symmetric_titles_drop_their_closing_marks() {
+        let v = json("= Doc =\n\n== Intro ==\n\ntext\n\n=== Details ==\n");
+        let headings: Vec<(&str, &str)> = v["texts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["label"] == "title" || t["label"] == "section_header")
+            .map(|t| (t["label"].as_str().unwrap(), t["text"].as_str().unwrap()))
+            .collect();
+        assert_eq!(
+            headings,
+            [
+                ("title", "Doc"),
+                ("section_header", "Intro"),
+                ("section_header", "Details ==")
+            ]
+        );
+        assert!(md("== Intro ==\n").starts_with("## Intro\n"));
     }
 
     /// The texts of the notes-layer items (the comments).
