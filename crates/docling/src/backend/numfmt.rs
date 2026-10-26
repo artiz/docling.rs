@@ -498,6 +498,22 @@ pub(crate) fn raw_text(value: &Data, is_1904: bool) -> String {
     }
 }
 
+/// A chart data cell (docling's `_chart_cell_text`, docling#4812): a date
+/// in ISO 8601 — the date alone at midnight, else to the second
+/// (`datetime_to_iso`) — anything else `str(value)`.
+pub(crate) fn chart_text(value: &Data, is_1904: bool) -> String {
+    match value {
+        Data::DateTime(dt) if !dt.is_duration() => match cell_value(dt, is_1904) {
+            CellValue::DateTime(y, mo, d, 0, 0, 0, 0) => format!("{y:04}-{mo:02}-{d:02}"),
+            CellValue::DateTime(y, mo, d, h, m, s, _) => {
+                format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}")
+            }
+            other => python_str(other),
+        },
+        other => raw_text(other, is_1904),
+    }
+}
+
 fn cell_value(dt: &calamine::ExcelDateTime, is_1904: bool) -> CellValue {
     if dt.is_duration() {
         duration_from_excel(dt.as_f64())

@@ -30,9 +30,6 @@
         "$ref": "#/groups/3"
       },
       {
-        "$ref": "#/groups/3"
-      },
-      {
         "$ref": "#/groups/4"
       }
     ],

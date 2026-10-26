@@ -223,19 +223,28 @@ impl DeclarativeBackend for XlsxBackend {
                 return Vec::new();
             };
             let sheet: String = sheet.unwrap_or_else(|| own_sheet.to_string());
-            let Some((range, _, formats)) = ranges.get(&sheet) else {
+            let Some((range, _, _)) = ranges.get(&sheet) else {
                 return Vec::new();
             };
             let (rs_r, rs_c) = range.start().unwrap_or((0, 0));
+            // A range stops at its sheet's last used row and column — a
+            // whole-column `$B:$B`, or one declared to row 1,048,576, reads
+            // the cells there are (docling#4812); past them every cell is
+            // empty, which the chart table trims anyway.
+            let (re_r, re_c) = range.end().unwrap_or((0, 0));
+            let max_r = max_r.min(re_r as usize);
+            let max_c = max_c.min(re_c as usize);
             let mut out = Vec::new();
             for r in min_r..=max_r {
                 for c in min_c..=max_c {
                     let rr = (r as u32).wrapping_sub(rs_r) as usize;
                     let cc = (c as u32).wrapping_sub(rs_c) as usize;
+                    // A chart's data is the cell's value, not its display:
+                    // `str(value)`, a date as ISO 8601 (docling#4812).
                     let v = if r as u32 >= rs_r && c as u32 >= rs_c {
                         range
                             .get((rr, cc))
-                            .map(|d| numfmt::displayed_text(d, formats.at(r, c), is_1904))
+                            .map(|d| numfmt::chart_text(d, is_1904))
                             .unwrap_or_default()
                     } else {
                         String::new()
@@ -654,7 +663,9 @@ fn sheet_items<F: Fn(&str, &str) -> Vec<String> + Sync>(ctx: SheetCtx<'_, F>) ->
                         items.push((
                             item.bbox,
                             Node::Chart {
-                                kind: spec.kind.to_string(),
+                                // The back-most plot's label: one prediction,
+                                // where docling gives one per plot type.
+                                kind: spec.kinds[0].to_string(),
                                 table,
                                 caption: spec.title.clone(),
                                 location: None,
@@ -741,8 +752,11 @@ fn cell_ref_pub(cell: &str) -> Option<(usize, usize)> {
     Some((c, r))
 }
 
-/// docling's `_chart_to_table_data`: categories down the first column (row
-/// headers), one column per series (column headers), the top-left cell empty.
+/// docling's `_chart_to_table_data` (docling#4812): the series of every
+/// plot as columns, the categories of the first series with a category
+/// reference down the first column under its plot's category axis title,
+/// laid out by `build_chart_table`. Each reference reads at most its share
+/// of the table's cell cap.
 fn chart_table(
     spec: &xlsx_drawings::ChartSpec,
     own_sheet: &str,
@@ -751,32 +765,37 @@ fn chart_table(
     if spec.series.is_empty() {
         return None;
     }
-    let mut categories: Vec<String> = Vec::new();
-    for s in &spec.series {
-        if let Some(cat) = &s.cat_ref {
-            categories = resolve_ref(cat, own_sheet);
-            if !categories.is_empty() {
-                break;
-            }
-        }
-    }
-    let mut columns: Vec<(String, Vec<String>)> = Vec::new();
-    for s in &spec.series {
-        let values = s
-            .val_ref
-            .as_deref()
-            .map(|r| resolve_ref(r, own_sheet))
-            .unwrap_or_default();
-        let name = match &s.name_ref {
-            Some(r) => resolve_ref(r, own_sheet)
-                .into_iter()
-                .next()
-                .unwrap_or_default(),
-            None => s.name_lit.clone().unwrap_or_default(),
-        };
-        columns.push((name, values));
-    }
-    xlsx_drawings::chart_table_from_columns(categories, columns)
+    let column_cells = (xlsx_drawings::MAX_CHART_TABLE_CELLS / (1 + spec.series.len())).max(1);
+    let read = |reference: &str, max: usize| {
+        let mut cells = resolve_ref(reference, own_sheet);
+        cells.truncate(max);
+        cells
+    };
+    let (categories, corner) = spec
+        .series
+        .iter()
+        .find_map(|s| {
+            let r = s.cat_ref.as_deref()?;
+            Some((read(r, column_cells), s.axis_title.clone()))
+        })
+        .unwrap_or_default();
+    let columns: Vec<(String, Vec<String>)> = spec
+        .series
+        .iter()
+        .map(|s| {
+            let values = s
+                .val_ref
+                .as_deref()
+                .map(|r| read(r, column_cells))
+                .unwrap_or_default();
+            let name = match &s.name_ref {
+                Some(r) => read(r, 1).into_iter().next().unwrap_or_default(),
+                None => s.name_lit.clone().unwrap_or_default(),
+            };
+            (name, values)
+        })
+        .collect();
+    xlsx_drawings::build_chart_table(categories, columns, corner)
 }
 
 /// Parse `<sheet name="…" r:id="…">` entries from `workbook.xml`, in order.

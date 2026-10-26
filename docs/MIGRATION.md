@@ -336,11 +336,10 @@ converted once more as that format with a warning.
 #### CSV
 
 **Backend:** `csv.rs` (`csv` crate)\
-**Status:** **9/9 exact**
+**Status:** **9/9 exact**, **JSON 9/9 structurally identical** (vs docling 2.142.1)
 
-- re-verified vs docling 2.129
 - docling#4260: Python's `strict=True` quoting errors — a closing quote followed by text, a quote left open at EOF — are load errors here too, checked up front since the `csv` crate is lenient about both
-- JSON 6/9 — for a ragged file we record an empty `TableCell` for a missing trailing cell where docling records none, the `grid` agrees
+- a ragged file's short rows hold only the cells they have, as docling adds one `TableCell` per value read; the grid's missing slots are its empty fillers (an empty `TableCell` was recorded for each)
 - `.tsv` routes here too (#208 — the delimiter sniffing already covers tabs; a docling.rs extension, upstream accepts only `.csv`)
 - #319: a quoted field spanning lines no longer defeats delimiter sniffing (4 KiB fallback sample, docling#3985) and an Excel-style leading BOM stays out of the first header cell (docling#4098)
 
@@ -447,7 +446,10 @@ converted once more as that format with a warning.
 #### XLSX
 
 **Backend:** `xlsx.rs` (calamine)\
-**Status:** **13/13 exact** Markdown vs docling 2.127.0 (groundtruth refreshed to it, the #395 reporter's file mirrored as `xlsx_empty_merge_before_data`), and the **JSON is structurally identical for 13/13**
+**Status:** vs docling 2.142.1 (the mirrored corpus is 2.142.1's): **13/14 exact** Markdown, **JSON structurally identical for 13/14** — `xlsx_02_sample_sales_data` is the 20 date cells PR #4628's number formats print (below), still unmerged upstream
+
+- docling#4812 (2.142): a chart's data table holds the series of **every plot** of a combination chart (a column + line chart kept only its columns), the top-left cell is the title of its category axis (`col-1`, `Year` in `xlsx_01`/`_03`/`_04`), a date is ISO 8601 (`2012-01-01`, with a time `2012-01-01T12:30:00`) and every cell its value, not its displayed text; a cell-linked chart or axis title reads its cached text, a whole-column range (`$B:$B`) reads the used rows (it lost the chart), each range stops at its sheet's last used row and the table is trimmed and capped at 100,000 cells as the PPTX one is (one `build_chart_table` for both). The cached points of a DOCX/PPTX chart land at their index with the gaps empty, `ptCount` long — they were packed, shifting every value after a gap into the wrong row — and inline `numLit`/`strLit` data is read too. **Limit:** a combination chart's `classification` is its back-most plot's label alone, where docling lists one prediction per plot type (no fixture has one)
+- a threaded comment's `comment_section` group is one child of the body however many messages it holds (it was listed once per message, `xlsx_comments`)
 
 - re-verified against docling 2.129: the flat `Node::Prov` stream already yields upstream's shape, so the spreadsheet backend needs no item tree
 - everything but `origin`/`version` and, where a sheet holds a raster image, the PNG bytes PIL re-encodes

@@ -102,8 +102,13 @@ pub fn parse_drawing(xml: &str) -> Vec<DrawingItem> {
 /// A chart's declarative content: docling's classification label, the title
 /// (caption), and the series with their workbook references.
 pub struct ChartSpec {
+    /// The chart's main label: the back-most plot's.
     pub kind: &'static str,
+    /// One label per plot type, back-most first (docling#4812's
+    /// `_chart_classifications`; a combination chart has several).
+    pub kinds: Vec<&'static str>,
     pub title: Option<String>,
+    /// The series of every plot, in drawing order (docling#4812).
     pub series: Vec<SeriesSpec>,
 }
 
@@ -121,6 +126,10 @@ pub struct SeriesSpec {
     pub val_cache: Vec<String>,
     /// Cached series name (the `c:tx` reference's `strCache`).
     pub name_cache: Option<String>,
+    /// The title of the axis that holds the series' plot's categories (the
+    /// plot's x axis; none for a pie or doughnut) — the top-left cell of an
+    /// XLSX chart's data table (docling#4812).
+    pub axis_title: String,
 }
 
 /// docling's `_CHART_TAGNAME_TO_CLASSIFICATION`.
@@ -135,29 +144,42 @@ fn classification(tag: &str) -> Option<&'static str> {
     })
 }
 
-/// Parse `xl/charts/chartN.xml` into a [`ChartSpec`]. The chart *kind* comes
-/// from the first plot-area child docling's map knows (unknown kinds fall back
-/// to `other_chart` when any `*Chart` element exists).
+/// Parse `chartN.xml` into a [`ChartSpec`]. Every plot of `c:plotArea`
+/// counts (a combination chart has one per chart type, docling#4812): its
+/// label, its series and its category axis. Unknown plot kinds fall back to
+/// `other_chart`.
 pub fn parse_chart(xml: &str) -> Option<ChartSpec> {
     let dom = Document::parse(xml).ok()?;
-    let plot = dom.descendants().find(|n| n.has_tag_name("plotArea"))?;
-    let chart_el = plot
+    let plot_area = dom.descendants().find(|n| n.has_tag_name("plotArea"))?;
+    let plots: Vec<XmlNode> = plot_area
         .children()
-        .find(|n| n.tag_name().name().ends_with("Chart"))?;
-    let kind = classification(chart_el.tag_name().name()).unwrap_or("other_chart");
+        .filter(|n| n.tag_name().name().ends_with("Chart"))
+        .collect();
+    if plots.is_empty() {
+        return None;
+    }
+    let mut kinds: Vec<&'static str> = Vec::new();
+    for plot in &plots {
+        let label = classification(plot.tag_name().name()).unwrap_or("other_chart");
+        if !kinds.contains(&label) {
+            kinds.push(label);
+        }
+    }
+    // The DOCX and PPTX backends classify by the first plot docling's map
+    // knows; the XLSX one by the back-most plot. They agree but for a
+    // combination chart whose first plot is of an unknown kind.
+    let kind = plots
+        .iter()
+        .find_map(|p| classification(p.tag_name().name()))
+        .unwrap_or("other_chart");
 
-    // Title: all `<a:t>` runs under `c:title`, concatenated.
+    // `c:chart/c:title`: its rich-text runs, else a cell-linked title's
+    // cached text (`c:strRef`) — never an axis title.
     let title = dom
         .descendants()
-        .find(|n| n.has_tag_name("title"))
-        .map(|t| {
-            t.descendants()
-                .filter(|n| n.has_tag_name("t"))
-                .filter_map(|n| n.text())
-                .collect::<String>()
-        })
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+        .find(|n| n.has_tag_name("chart"))
+        .and_then(|c| c.children().find(|n| n.has_tag_name("title")))
+        .and_then(title_text);
 
     // A reference formula from a `c:tx`/`c:cat`/`c:val`-style node: its
     // `numRef`/`strRef` child's `c:f` text (docling's `_ref_formula`).
@@ -171,71 +193,150 @@ pub fn parse_chart(xml: &str) -> Option<ChartSpec> {
     };
 
     let mut series = Vec::new();
-    for ser in chart_el.children().filter(|n| n.has_tag_name("ser")) {
-        let child = |tag: &str| ser.children().find(|c| c.has_tag_name(tag));
-        let name_ref = child("tx").and_then(ref_formula);
-        let name_lit = child("tx")
-            .and_then(|tx| tx.children().find(|c| c.has_tag_name("v")))
-            .and_then(|v| v.text())
-            .map(str::to_string);
-        let cat_ref = child("cat")
-            .and_then(ref_formula)
-            .or_else(|| child("xVal").and_then(ref_formula));
-        let val_ref = child("val")
-            .and_then(ref_formula)
-            .or_else(|| child("yVal").and_then(ref_formula));
-        let cat_cache = child("cat")
-            .map(cache_points)
-            .filter(|v| !v.is_empty())
-            .or_else(|| child("xVal").map(cache_points))
+    for plot in &plots {
+        let axis_title = x_axis(plot_area, *plot)
+            .and_then(|axis| axis.children().find(|n| n.has_tag_name("title")))
+            .and_then(title_text)
             .unwrap_or_default();
-        let val_cache = child("val")
-            .map(cache_points)
-            .filter(|v| !v.is_empty())
-            .or_else(|| child("yVal").map(cache_points))
-            .unwrap_or_default();
-        let name_cache = child("tx")
-            .map(cache_points)
-            .and_then(|v| v.into_iter().next());
-        series.push(SeriesSpec {
-            name_ref,
-            name_lit,
-            cat_ref,
-            val_ref,
-            cat_cache,
-            val_cache,
-            name_cache,
-        });
+        for ser in plot.children().filter(|n| n.has_tag_name("ser")) {
+            let child = |tag: &str| ser.children().find(|c| c.has_tag_name(tag));
+            let name_ref = child("tx").and_then(ref_formula);
+            let name_lit = child("tx")
+                .and_then(|tx| tx.children().find(|c| c.has_tag_name("v")))
+                .and_then(|v| v.text())
+                .map(str::to_string);
+            let cat_ref = child("cat")
+                .and_then(ref_formula)
+                .or_else(|| child("xVal").and_then(ref_formula));
+            let val_ref = child("val")
+                .and_then(ref_formula)
+                .or_else(|| child("yVal").and_then(ref_formula));
+            let cat_cache = child("cat")
+                .or_else(|| child("xVal"))
+                .map(cache_points)
+                .unwrap_or_default();
+            let val_cache = child("val")
+                .or_else(|| child("yVal"))
+                .map(cache_points)
+                .unwrap_or_default();
+            let name_cache = child("tx")
+                .map(cache_points)
+                .and_then(|v| v.into_iter().next());
+            series.push(SeriesSpec {
+                name_ref,
+                name_lit,
+                cat_ref,
+                val_ref,
+                cat_cache,
+                val_cache,
+                name_cache,
+                axis_title: axis_title.clone(),
+            });
+        }
     }
     Some(ChartSpec {
         kind,
+        kinds,
         title,
         series,
     })
 }
 
-/// The cached points under a `c:cat`/`c:val`/`c:tx` node: every `c:pt`'s
-/// `c:v` inside its `strCache`/`numCache`, ordered by the point index.
-/// Numbers render openpyxl-style (no trailing `.0`), matching the cell
-/// formatter — DOCX/PPTX charts carry their data only in these caches.
-fn cache_points(node: XmlNode) -> Vec<String> {
-    let Some(cache) = node
+/// openpyxl's `plot.x_axis`: the axis the plot's first `c:axId` names — a
+/// category or date axis, a scatter or bubble plot's x value axis. A pie or
+/// doughnut plot has none (docling's `_category_axis_title`).
+fn x_axis<'a, 'i>(plot_area: XmlNode<'a, 'i>, plot: XmlNode) -> Option<XmlNode<'a, 'i>> {
+    if matches!(
+        plot.tag_name().name(),
+        "pieChart" | "pie3DChart" | "doughnutChart" | "ofPieChart"
+    ) {
+        return None;
+    }
+    let id = plot
+        .children()
+        .find(|n| n.has_tag_name("axId"))?
+        .attribute("val")?;
+    plot_area.children().find(|axis| {
+        matches!(
+            axis.tag_name().name(),
+            "catAx" | "dateAx" | "valAx" | "serAx"
+        ) && axis
+            .children()
+            .find(|n| n.has_tag_name("axId"))
+            .and_then(|n| n.attribute("val"))
+            == Some(id)
+    })
+}
+
+/// A chart or axis title's text (docling's `_title_text`): its rich-text
+/// runs joined, else a cell-linked title's cached text; `None` when empty.
+fn title_text(title: XmlNode) -> Option<String> {
+    let runs: String = title
         .descendants()
-        .find(|c| matches!(c.tag_name().name(), "strCache" | "numCache"))
+        .filter(|n| n.has_tag_name("t"))
+        .filter_map(|n| n.text())
+        .collect();
+    let text = match runs.trim() {
+        "" => cache_points(title)
+            .into_iter()
+            .filter(|v| !v.is_empty())
+            .collect::<String>(),
+        runs => runs.to_string(),
+    };
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+/// The cached points under a `c:cat`/`c:val`/`c:tx` node (docling's
+/// `_read_chart_cache`): the first `numCache`, `strCache`, `numLit` or
+/// `strLit` under it, each `c:pt`'s `c:v` at its `@idx`, the gaps empty and
+/// the list `c:ptCount` long — so every series keeps its rows aligned (the
+/// points used to be packed, shifting the values after a gap). Numbers
+/// render openpyxl-style (no trailing `.0`) — DOCX/PPTX charts carry their
+/// data only in these caches.
+fn cache_points(node: XmlNode) -> Vec<String> {
+    let Some(cache) = ["numCache", "strCache", "numLit", "strLit"]
+        .iter()
+        .find_map(|tag| node.descendants().find(|c| c.has_tag_name(*tag)))
     else {
         return Vec::new();
     };
-    let mut pts: Vec<(usize, String)> = cache
+    let mut points: Vec<(usize, String)> = Vec::new();
+    for pt in cache.children().filter(|c| c.has_tag_name("pt")) {
+        let Some(idx) = pt.attribute("idx").unwrap_or("0").parse::<usize>().ok() else {
+            continue;
+        };
+        let v = pt
+            .children()
+            .find(|c| c.has_tag_name("v"))
+            .and_then(|v| v.text())
+            .map(format_cached_value)
+            .unwrap_or_default();
+        // A repeated index keeps its last value, as a dict does.
+        match points.iter_mut().find(|(i, _)| *i == idx) {
+            Some(slot) => slot.1 = v,
+            None => points.push((idx, v)),
+        }
+    }
+    if points.is_empty() {
+        return Vec::new();
+    }
+    let count = cache
         .children()
-        .filter(|c| c.has_tag_name("pt"))
-        .filter_map(|pt| {
-            let idx: usize = pt.attribute("idx")?.parse().ok()?;
-            let v = pt.children().find(|c| c.has_tag_name("v"))?.text()?;
-            Some((idx, format_cached_value(v)))
-        })
-        .collect();
-    pts.sort_by_key(|(i, _)| *i);
-    pts.into_iter().map(|(_, v)| v).collect()
+        .find(|c| c.has_tag_name("ptCount"))
+        .and_then(|c| c.attribute("val"))
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
+    // A crafted `ptCount` or `@idx` cannot allocate past the table's cell
+    // cap; points beyond it are dropped, as the table would cut them.
+    let last = points.iter().map(|(i, _)| i + 1).max().unwrap_or(0);
+    let mut out = vec![String::new(); last.max(count).min(MAX_CHART_TABLE_CELLS)];
+    for (i, v) in points {
+        if let Some(slot) = out.get_mut(i) {
+            *slot = v;
+        }
+    }
+    out
 }
 
 /// A cached value, numbers normalized like openpyxl's `str(value)` (an
@@ -248,6 +349,51 @@ fn format_cached_value(v: &str) -> String {
         Ok(f) => format!("{f}"),
         Err(_) => v.to_string(),
     }
+}
+
+/// docling's `MAX_CHART_TABLE_CELLS` (`backend/utils/charts.py`): the most
+/// cells one chart's data table holds.
+pub const MAX_CHART_TABLE_CELLS: usize = 100_000;
+
+/// docling's `build_chart_table` (`backend/utils/charts.py`, shared by the
+/// PPTX and XLSX backends since docling#4812): trailing rows with no
+/// category and no value are dropped (interior gaps stay), the table is
+/// capped at [`MAX_CHART_TABLE_CELLS`], then laid out by [`chart_table`].
+pub fn build_chart_table(
+    mut categories: Vec<String>,
+    mut columns: Vec<(String, Vec<String>)>,
+    corner: String,
+) -> Option<docling_core::Table> {
+    let declared = columns
+        .iter()
+        .map(|(_, v)| v.len())
+        .chain([categories.len()])
+        .max()
+        .unwrap_or(0);
+    let populated = (0..declared)
+        .rev()
+        .find(|&row| {
+            categories.get(row).is_some_and(|c| !c.is_empty())
+                || columns
+                    .iter()
+                    .any(|(_, v)| v.get(row).is_some_and(|s| !s.is_empty()))
+        })
+        .map_or(0, |row| row + 1);
+    if populated == 0 {
+        return None;
+    }
+    let num_cols = 1 + columns.len();
+    let rows = if populated * num_cols > MAX_CHART_TABLE_CELLS {
+        (MAX_CHART_TABLE_CELLS / num_cols).max(1)
+    } else {
+        populated
+    };
+    categories.truncate(rows);
+    categories.resize(rows, String::new());
+    for (_, values) in &mut columns {
+        values.truncate(rows);
+    }
+    chart_table(categories, columns, corner)
 }
 
 /// docling's `_chart_to_table_data` grid from resolved series columns:
@@ -361,15 +507,33 @@ pub fn parse_range_ref(reference: &str) -> Option<(Option<String>, RangeBounds)>
         None => (None, reference),
     };
     let mut corners = cells.split(':');
-    let a = cell_ref(corners.next()?)?;
+    let start = corners.next()?;
+    let a = cell_ref(start).or_else(|| Some((column_ref(start)?, 0)))?;
     let b = match corners.next() {
-        Some(c) => cell_ref(c)?,
+        // A whole-column reference (`$B:$B`) runs to Excel's last row; the
+        // reader stops at the sheet's last used one (docling#4812).
+        Some(c) => cell_ref(c).or_else(|| Some((column_ref(c)?, EXCEL_MAX_ROW)))?,
         None => a,
     };
     Some((
         sheet,
         (a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1)),
     ))
+}
+
+/// Excel's last row, 0-based.
+const EXCEL_MAX_ROW: usize = 1_048_575;
+
+/// `$B` → the 0-based column of a whole-column reference.
+fn column_ref(s: &str) -> Option<usize> {
+    let s = s.replace('$', "");
+    if s.is_empty() || !s.chars().all(|c| c.is_ascii_alphabetic()) || s.len() > 3 {
+        return None;
+    }
+    let col = s.chars().fold(0usize, |acc, c| {
+        acc * 26 + (c.to_ascii_uppercase() as usize - 'A' as usize + 1)
+    });
+    Some(col - 1)
 }
 
 /// `$B$7` → 0-based `(col, row)`.
@@ -626,6 +790,35 @@ mod tests {
             Some((Some("Sheet1".to_string()), (0, 0, 0, 0)))
         );
         assert_eq!(cell_ref("$AB$10"), Some((27, 9)));
+        // A whole-column reference runs to Excel's last row (docling#4812).
+        assert_eq!(
+            parse_range_ref("Sheet1!$B:$B"),
+            Some((Some("Sheet1".to_string()), (1, 0, 1, EXCEL_MAX_ROW)))
+        );
+    }
+
+    /// docling's `_read_chart_cache`: points land at their `@idx`, the gaps
+    /// empty and the list `ptCount` long, so a series keeps its rows.
+    #[test]
+    fn chart_cache_keeps_gaps() {
+        let xml = r#"<c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart>
+            <c:title><c:tx><c:strRef><c:f>S!$A$1</c:f><c:strCache><c:ptCount val="1"/>
+              <c:pt idx="0"><c:v>Linked title</c:v></c:pt></c:strCache></c:strRef></c:tx></c:title>
+            <c:plotArea>
+            <c:barChart><c:ser><c:tx><c:v>s1</c:v></c:tx>
+              <c:val><c:numRef><c:f>S!$B$2:$B$5</c:f><c:numCache><c:ptCount val="4"/>
+                <c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="2"><c:v>3.5</c:v></c:pt>
+              </c:numCache></c:numRef></c:val></c:ser><c:axId val="7"/><c:axId val="8"/></c:barChart>
+            <c:lineChart><c:ser><c:val><c:numLit><c:ptCount val="1"/><c:pt idx="0"><c:v>9</c:v></c:pt></c:numLit></c:val></c:ser><c:axId val="7"/></c:lineChart>
+            <c:catAx><c:axId val="7"/><c:title><c:tx><c:rich><a:p><a:r><a:t>Year</a:t></a:r></a:p></c:rich></c:tx></c:title></c:catAx>
+            </c:plotArea></c:chart></c:chartSpace>"#;
+        let spec = parse_chart(xml).expect("chart");
+        assert_eq!(spec.kinds, ["bar_chart", "line_chart"]);
+        assert_eq!(spec.title.as_deref(), Some("Linked title"));
+        assert_eq!(spec.series.len(), 2, "every plot's series");
+        assert_eq!(spec.series[0].val_cache, ["1", "", "3.5", ""]);
+        assert_eq!(spec.series[1].val_cache, ["9"]);
+        assert_eq!(spec.series[0].axis_title, "Year");
     }
 
     #[test]

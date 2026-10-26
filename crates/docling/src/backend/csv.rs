@@ -6,7 +6,7 @@
 //! the widest row (ragged rows are padded). Row 0 is the header.
 
 use csv::ReaderBuilder;
-use docling_core::{DoclingDocument, Node, Table};
+use docling_core::{DoclingDocument, Node, Table, TableCell};
 
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
@@ -43,6 +43,27 @@ impl DeclarativeBackend for CsvBackend {
         let mut doc = DoclingDocument::new(&source.name);
         if !rows.is_empty() {
             let num_cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+            // A ragged file's short rows hold only the cells they have, as
+            // docling adds a `TableCell` per value read (its grid fills the
+            // rest); the text grid is padded for the serializers.
+            let cells = rows.iter().any(|r| r.len() != num_cols).then(|| {
+                rows.iter()
+                    .enumerate()
+                    .flat_map(|(r, row)| {
+                        row.iter().enumerate().map(move |(c, text)| TableCell {
+                            text: text.clone(),
+                            bbox: None,
+                            start_row: r,
+                            start_col: c,
+                            row_span: 1,
+                            col_span: 1,
+                            column_header: r == 0,
+                            row_header: false,
+                            row_section: false,
+                        })
+                    })
+                    .collect()
+            });
             for row in &mut rows {
                 row.resize(num_cols, String::new());
             }
@@ -51,7 +72,7 @@ impl DeclarativeBackend for CsvBackend {
                 location: None,
                 structure: None,
                 cell_blocks: None,
-                cells: None,
+                cells,
                 caption: None,
                 caption_parent: Default::default(),
                 caption_location: None,
