@@ -35,7 +35,10 @@
 //! Several anchored drawings in one paragraph become one picture, as
 //! upstream renders them (one `_handle_drawingml` per paragraph), placed by
 //! their `wp:posOffset`s when every one is positioned against the same
-//! frame, else stacked.
+//! frame, else stacked. An inline drawing among anchored ones sits where the
+//! paragraph's text starts, so it shares their space when they are placed
+//! against the column and the paragraph (or line) — the origin of that flow —
+//! and the anchored shapes keep their offsets around it (#886).
 //!
 //! The shape model this builds ([`Shape`]: identity, text, connection sites
 //! and arrow ends) is what the opt-in Mermaid extraction reads.
@@ -345,17 +348,32 @@ pub(super) fn render(drawings: &[XmlNode], theme: &Theme) -> Option<Rendered> {
     // Where each drawing lands on the canvas: by its offsets when every
     // drawing is anchored against the same frames (Word positions them in
     // the same space then), else stacked top to bottom.
-    let positioned = frames.len() == 1
-        || (frames.iter().all(|f| f.pos.is_some())
-            && frames.iter().all(|f| f.relative == frames[0].relative));
+    let anchored: Vec<&Frame> = frames.iter().filter(|f| f.pos.is_some()).collect();
+    let same_frames = anchored.iter().all(|f| f.relative == anchored[0].relative);
+    let positioned = frames.len() == 1 || (anchored.len() == frames.len() && same_frames);
+    // #886: anchored and inline drawings mixed in one paragraph. An inline
+    // drawing starts the paragraph's flow — the column's left edge and the
+    // paragraph's (first line's) top — so anchors offset from the column
+    // and the paragraph or line share its space: the inline ones sit at
+    // that origin (one below the other when there are several) and the
+    // anchored ones at their offsets. Anchored against anything else (the
+    // page, the margins, a character), the spaces cannot be matched and the
+    // drawings stack as before; so do paragraphs of inline drawings alone.
+    let mixed = !positioned
+        && !anchored.is_empty()
+        && same_frames
+        && anchored[0].relative.0 == "column"
+        && matches!(anchored[0].relative.1.as_str(), "paragraph" | "line");
     let mut placed: Vec<(f64, f64)> = Vec::with_capacity(frames.len());
     let mut y_cursor = 0.0;
     for f in &frames {
-        if positioned {
-            placed.push(f.pos.unwrap_or((0.0, 0.0)));
-        } else {
-            placed.push((0.0, y_cursor));
-            y_cursor += f.cy;
+        match f.pos {
+            Some(pos) if positioned || mixed => placed.push(pos),
+            _ if positioned => placed.push((0.0, 0.0)),
+            _ => {
+                placed.push((0.0, y_cursor));
+                y_cursor += f.cy;
+            }
         }
     }
     let min_x = placed.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
@@ -1975,6 +1993,82 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The drawings of one paragraph given as `w:drawing` bodies, rendered.
+    fn render_drawings(bodies: &[String]) -> Rendered {
+        let xml = format!(
+            r#"<w:p xmlns:w="w" xmlns:wp="wp" xmlns:a="a" xmlns:wps="wps">{}</w:p>"#,
+            bodies
+                .iter()
+                .map(|b| format!("<w:r><w:drawing>{b}</w:drawing></w:r>"))
+                .collect::<String>()
+        );
+        let dom = roxmltree::Document::parse(&xml).unwrap();
+        let drawings: Vec<XmlNode> = dom
+            .descendants()
+            .filter(|n| n.has_tag_name("drawing"))
+            .collect();
+        render(&drawings, &Theme::default()).expect("a rendered drawing")
+    }
+
+    /// A 96×96 px rectangle shape as a drawing's `a:graphic`.
+    const BOX: &str = r#"<a:graphic><a:graphicData><wps:wsp><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"/></wps:spPr></wps:wsp></a:graphicData></a:graphic>"#;
+
+    fn inline_box() -> String {
+        format!(r#"<wp:inline><wp:extent cx="914400" cy="914400"/>{BOX}</wp:inline>"#)
+    }
+
+    fn anchored_box(h_from: &str, x: i64, v_from: &str, y: i64) -> String {
+        format!(
+            r#"<wp:anchor><wp:positionH relativeFrom="{h_from}"><wp:posOffset>{x}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="{v_from}"><wp:posOffset>{y}</wp:posOffset></wp:positionV><wp:extent cx="914400" cy="914400"/>{BOX}</wp:anchor>"#
+        )
+    }
+
+    fn size(r: &Rendered) -> (u32, u32) {
+        (r.image.width, r.image.height)
+    }
+
+    /// #886: a paragraph mixing anchored shapes with an inline group places
+    /// them in one space — the inline one at the start of the paragraph's
+    /// flow, the anchored ones at their column / paragraph offsets — so the
+    /// reporter's arrow starts at the source box (y 96 px), not 96 px
+    /// further down, and the canvas is the inline group's height (708 px),
+    /// not every drawing's stacked (804 px).
+    #[test]
+    fn anchored_and_inline_drawings_share_one_space() {
+        let r = rendered("drawingml_anchor_inline_mixed.docx");
+        let svg = String::from_utf8(r.image.data.clone()).unwrap();
+        assert_eq!(size(&r), (672, 708));
+        assert!(
+            svg.contains(r#"<path d="M83.87 96 L83.94 131.94""#),
+            "{svg}"
+        );
+        // The anchored box keeps its horizontal offset (36 px), not x = 0.
+        assert!(svg.contains(r#"<path d="M36 6.53 "#), "{svg}");
+
+        // Anchored against the column and the paragraph (or line), an
+        // anchor 2 boxes right and 1 down of an inline box: side by side.
+        let mixed = render_drawings(&[
+            inline_box(),
+            anchored_box("column", 1828800, "paragraph", 914400),
+        ]);
+        assert_eq!(size(&mixed), (288, 192));
+        let line = render_drawings(&[anchored_box("column", 914400, "line", 0), inline_box()]);
+        assert_eq!(size(&line), (192, 96));
+    }
+
+    /// The fallbacks stay: inline drawings alone stack one below the other,
+    /// and an anchor whose frame the inline flow does not share (the page)
+    /// stacks with them.
+    #[test]
+    fn inline_only_and_page_anchored_drawings_still_stack() {
+        assert_eq!(
+            size(&render_drawings(&[inline_box(), inline_box()])),
+            (96, 192)
+        );
+        let page = render_drawings(&[inline_box(), anchored_box("page", 1828800, "page", 914400)]);
+        assert_eq!(size(&page), (96, 192));
     }
 
     /// The paragraph's drawings of a fixture, rendered through the shape
