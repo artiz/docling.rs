@@ -41,6 +41,7 @@
 use serde_json::Value;
 
 use crate::document::{ContentLayers, DoclingDocument, HtmlExportOptions};
+use crate::json::{TableData, TableView};
 use crate::markdown::ImageMode;
 
 /// docling-core's `_get_css_for_single_column()`, verbatim.
@@ -222,13 +223,16 @@ pub fn to_html(
     doc: &DoclingDocument,
     options: &HtmlExportOptions,
 ) -> (String, Vec<(String, Vec<u8>)>) {
-    let json = doc.export_to_json_value();
+    // The tables stay typed (#875): a `Value` per cell was most of an HTML
+    // export's peak on a large sheet.
+    let (json, tables) = crate::json::to_json_typed_tables(doc, false);
     let alt_text_meta = doc.picture_alt_text;
     // The walk recurses per nesting level (an item renders its children
     // inside itself), and an XBRL instance nests thousands deep — more than
     // a 2 MB test-thread stack holds — so it runs on a thread of its own.
     let render = || {
         let mut ser = Serializer::new(&json, options);
+        ser.tables = &tables;
         ser.alt_text_meta = alt_text_meta;
         let body = ser.serialize_body();
         let name = json.get("name").and_then(Value::as_str).unwrap_or_default();
@@ -372,10 +376,11 @@ impl Fmt {
     }
 }
 
-/// A grid position of a table: the cell covering it and where that cell
-/// starts, as docling's `TableData.grid` exposes them.
-struct GridCell<'a> {
-    cell: &'a Value,
+/// A grid position of a table: the cell covering it (its index in the
+/// [`TableView`]) and where that cell starts, as docling's `TableData.grid`
+/// exposes them.
+struct GridCell {
+    cell: usize,
     start_row: usize,
     start_col: usize,
     row_span: usize,
@@ -384,6 +389,9 @@ struct GridCell<'a> {
 
 struct Serializer<'a> {
     json: &'a Value,
+    /// The document's typed tables, which its table items name
+    /// ([`crate::json::to_json_typed_tables`]); empty for a JSON read in.
+    tables: &'a [TableData],
     image_mode: ImageMode,
     /// Render pictures' alt text (#676: the document's `picture_alt_text`)
     /// — the `<img alt>` and the visible meta text. Off, the HTML is
@@ -455,6 +463,7 @@ impl<'a> Serializer<'a> {
         }
         Self {
             json,
+            tables: &[],
             image_mode: options.image_mode,
             alt_text_meta: false,
             artifacts_dir: options.artifacts_dir.clone(),
@@ -880,26 +889,19 @@ impl<'a> Serializer<'a> {
     /// and a position no cell covers holds an empty one-by-one placeholder
     /// (upstream fills the grid with empty `TableCell`s first), which the
     /// serializer writes as `<td></td>`.
-    fn grid(data: &'a Value) -> Vec<Vec<Option<GridCell<'a>>>> {
-        let num_rows = data.get("num_rows").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let num_cols = data.get("num_cols").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let mut grid: Vec<Vec<Option<GridCell<'a>>>> = (0..num_rows)
+    fn grid(table: &TableView<'_>) -> Vec<Vec<Option<GridCell>>> {
+        let (num_rows, num_cols) = (table.num_rows, table.num_cols);
+        let mut grid: Vec<Vec<Option<GridCell>>> = (0..num_rows)
             .map(|_| (0..num_cols).map(|_| None).collect())
             .collect();
-        for cell in data
-            .get("table_cells")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let get = |k: &str| cell.get(k).and_then(Value::as_u64).unwrap_or(0) as usize;
-            let (r0, c0) = (get("start_row_offset_idx"), get("start_col_offset_idx"));
-            let (r1, c1) = (get("end_row_offset_idx"), get("end_col_offset_idx"));
-            let (row_span, col_span) = (get("row_span").max(1), get("col_span").max(1));
+        for (i, cell) in table.cells.iter().enumerate() {
+            let (r0, c0) = (cell.start_row, cell.start_col);
+            let (r1, c1) = (cell.end_row, cell.end_col);
+            let (row_span, col_span) = (cell.row_span.max(1), cell.col_span.max(1));
             for row in grid.iter_mut().take(r1.min(num_rows)).skip(r0) {
                 for slot in row.iter_mut().take(c1.min(num_cols)).skip(c0) {
                     *slot = Some(GridCell {
-                        cell,
+                        cell: i,
                         start_row: r0,
                         start_col: c0,
                         row_span,
@@ -937,7 +939,8 @@ impl<'a> Serializer<'a> {
     /// The `<tr>` rows of a `TableData` (shared with the tabular-chart meta).
     fn table_body(&mut self, data: &'a Value) -> String {
         let mut body = String::new();
-        for (i, row) in Self::grid(data).iter().enumerate() {
+        let table = crate::json::table_view(data, self.tables);
+        for (i, row) in Self::grid(&table).iter().enumerate() {
             body.push_str("<tr>");
             for (j, slot) in row.iter().enumerate() {
                 let Some(g) = slot else {
@@ -947,12 +950,8 @@ impl<'a> Serializer<'a> {
                 if g.start_row != i || g.start_col != j {
                     continue;
                 }
-                let content = match g
-                    .cell
-                    .get("ref")
-                    .and_then(|r| r.get("$ref"))
-                    .and_then(Value::as_str)
-                {
+                let cell = &table.cells[g.cell];
+                let content = match cell.cell_ref {
                     Some(cref) => match self.resolve(cref) {
                         Some(target) => {
                             self.visited.insert(cref.to_string());
@@ -960,17 +959,9 @@ impl<'a> Serializer<'a> {
                         }
                         None => String::new(),
                     },
-                    None => escape(
-                        g.cell
-                            .get("text")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .trim(),
-                        true,
-                    ),
+                    None => escape(cell.text.trim(), true),
                 };
-                let flag = |k: &str| g.cell.get(k).and_then(Value::as_bool).unwrap_or(false);
-                let tag = if flag("column_header") || flag("row_header") || flag("row_section") {
+                let tag = if cell.column_header || cell.row_header || cell.row_section {
                     "th"
                 } else {
                     "td"

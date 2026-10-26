@@ -230,21 +230,22 @@ transcript only; `DOCLING_RS_DEBUG=1` shows the message.
 ## Conformance with Microsoft MarkItDown
 
 [MarkItDown](https://github.com/microsoft/markitdown) converts the same kinds
-of documents to Markdown for LLMs. Measured side by side — MarkItDown 0.1.8
-(`markitdown[all]`) and docling.rs 2.33.0 (release build), 4 vCPU, no GPU —
-on this repository's test corpus and on MarkItDown's own OCR test set
+of documents to Markdown for LLMs. Measured side by side — MarkItDown 0.1.9
+(`markitdown[all]`) and docling.rs master after 2.51.3 (release build), 4 vCPU,
+no GPU, 2026-10-25 — on this repository's test corpus and on MarkItDown's own
+OCR test set
 ([`scripts/conformance/markitdown_compare.py`](./scripts/conformance/markitdown_compare.py)):
 
 | Corpus (files) | MarkItDown, warm | docling.rs, warm | Cold CLI call, MarkItDown / docling.rs | Word F1 | Table-cell recall | Heading recall |
 |---|---|---|---|---|---|---|
-| DOCX (38) | 4.22 s | **0.44 s** | 1102 / **14** ms | 0.93 / **1.00** | 0.81 / **1.00** | 0.78 / **1.00** |
-| PPTX (8) | 0.30 s | **0.02 s** | 974 / **6** ms | 0.81 / **0.97** | 0.62 / **1.00** | 0.86 / **1.00** |
-| XLSX (14) | 0.87 s | **0.15 s** | 849 / **7** ms | 0.60 / **0.95** | 0.78 / **0.98** | — ¹ |
-| HTML (32) | 0.34 s | **0.05 s** | 900 / **6** ms | 0.98 / **1.00** | 0.89 / **1.00** | 0.96 / **1.00** |
-| CSV (9) | 0.04 s | **0.01 s** | 900 / **4** ms | 1.00 / 1.00 | 0.78 / **1.00** | — |
-| EPUB (1) | 0.06 s | **0.01 s** | 897 / **10** ms | 0.99 / **1.00** | — | 1.00 / 1.00 |
-| PDF (18), full layout + tables + OCR | **7.6 s** | 38.4 s | 984 / **830** ms | 0.63 / **0.997** | 0.31 / **0.94** | 0.00 / **0.91** |
-| PDF (18), text layer only (`--text-layer-only`) | 7.6 s | **0.5 s** | — | 0.63 / **0.97** | 0.31 / 0.00 | 0.00 / 0.00 |
+| DOCX (38) | 9.32 s | **0.57 s** | 1360 / **31** ms | 0.93 / **1.00** | 0.81 / **1.00** | 0.78 / **1.00** |
+| PPTX (8) | 0.28 s | **0.04 s** | 1277 / **11** ms | 0.81 / **0.97** | 0.62 / **1.00** | 0.86 / **1.00** |
+| XLSX (14) | 2.44 s | **0.30 s** | 1472 / **14** ms | 0.60 / **0.95** | 0.78 / **0.98** | — ¹ |
+| HTML (32) | 0.53 s | **0.05 s** | 1248 / **11** ms | 0.98 / **1.00** | 0.88 / **1.00** | 0.96 / **1.00** |
+| CSV (9) | 0.07 s | **0.01 s** | 1250 / **6** ms | 1.00 / 1.00 | 0.78 / **1.00** | — |
+| EPUB (1) | 0.07 s | **0.02 s** | 1473 / **17** ms | 0.99 / **1.00** | — | 1.00 / 1.00 |
+| PDF (18), full layout + tables + OCR | **19.0 s** | 60.3 s | **1442** / 1652 ms | 0.63 / **0.997** | 0.31 / **0.94** | 0.00 / **0.91** |
+| PDF (18), text layer only (`--text-layer-only`) | 19.0 s | **0.8 s** | — | 0.63 / **0.97** | 0.31 / 0.00 | 0.00 / 0.00 |
 
 Accuracy is scored against Python docling's groundtruth, which favours
 docling.rs by construction; the timings do not depend on it. Text drawn into
@@ -258,22 +259,27 @@ OCR comparison: [`docs/MARKITDOWN.md`](./docs/MARKITDOWN.md#how-the-comparison-i
 converts PDFs and, through a PDF render, Office files to Markdown for LLMs
 with a layout model and OCR. Measured side by side — Marker 2.0.0
 (`marker-pdf[full]`, its CPU default `fast` mode, llama.cpp for its OCR) and
-docling.rs 2.46.2 (release build), 4 vCPU, no GPU — on this repository's test corpus
+docling.rs master after 2.51.3 (release build), 4 vCPU, no GPU, 2026-10-25 ³ —
+on this repository's test corpus
 ([`scripts/conformance/marker_compare.py`](./scripts/conformance/marker_compare.py)):
 
 | Corpus (files) | Marker, warm | docling.rs, warm | Cold CLI call, Marker / docling.rs | Peak RSS, Marker (client + servers) / docling.rs | Word F1 | Table-cell recall | Heading recall |
 |---|---|---|---|---|---|---|---|
-| PDF (18), full layout + tables + OCR | 1312 s | **41 s** | 22.0 s / **1.0 s** | 10.5 GB / **3.1 GB** | 0.93 / **0.997** | 0.41 / **0.94** | 0.66 / **0.91** |
-| PDF (18), text layer only (`--text-layer-only`) | 1312 s | **0.44 s** | — | — / 79 MB | 0.93 / **0.97** | 0.41 / 0.00 | 0.66 / 0.00 |
-| DOCX (38) | 654 s (1 failed) | **0.56 s** | 23.4 s / **15 ms** | 8.6 GB / **41 MB** | 0.89 / **1.00** | 0.57 / **1.00** | 0.73 / **1.00** |
-| PPTX (8) | 3.4 s (3 failed) | **0.02 s** | 21.8 s / **9 ms** | 2.6 GB / **20 MB** | 0.49 / **0.97** | 0.41 / **1.00** | 0.43 / **1.00** |
-| XLSX (14) | 164 s (2 failed) | **0.24 s** | 22.8 s / **10 ms** | 12.9 GB / **53 MB** | 0.64 / **0.95** | 0.57 / **0.98** | — ¹ |
-| HTML (32) | 1514 s | **0.06 s** | 29 min ² / **8 ms** | 8.8 GB / **21 MB** | 0.94 / **1.00** | 0.50 / **1.00** | 0.84 / **1.00** |
-| EPUB (1) | 10.5 s | **0.02 s** | 60.7 s / **13 ms** | 6.8 GB / **19 MB** | 0.98 / **1.00** | — | 1.00 / 1.00 |
+| PDF (18), full layout + tables + OCR | 1356 s | **64 s** | 32.6 s / **1.5 s** | 10.3 GB / **2.8 GB** | 0.93 / **0.997** | 0.41 / **0.94** | 0.66 / **0.91** |
+| PDF (18), text layer only (`--text-layer-only`) | 1356 s | **0.75 s** | — | — / 74 MB | 0.93 / **0.97** | 0.41 / 0.00 | 0.66 / 0.00 |
+| DOCX (38) | 707 s (1 failed) | **0.54 s** | 36.3 s / **23 ms** | 7.7 GB / **41 MB** | 0.89 / **1.00** | 0.57 / **1.00** | 0.73 / **1.00** |
+| PPTX (8) | 4.6 s (3 failed) | **0.03 s** | 33.7 s / **13 ms** | 2.7 GB / **20 MB** | 0.49 / **0.97** | 0.41 / **1.00** | 0.43 / **1.00** |
+| XLSX (14) | 379 s (2 failed) | **0.33 s** | 34.4 s / **12 ms** | 17.2 GB / **53 MB** | 0.66 / **0.95** | 0.58 / **0.98** | — ¹ |
+| HTML (32) ³ | 1514 s | **0.06 s** | 29 min ² / **8 ms** | 8.8 GB / **21 MB** | 0.94 / **1.00** | 0.50 / **1.00** | 0.84 / **1.00** |
+| EPUB (1) | 13.5 s | **0.08 s** | 69.9 s / **21 ms** | 6.0 GB / **19 MB** | 0.98 / **1.00** | — | 1.00 / 1.00 |
 
 A failed file scores 0. ¹ Only one XLSX groundtruth carries a heading.
 ² The median HTML file needs OCR in Marker: a cold call starts its llama.cpp
 server and loads the 1.2 GB OCR model first.
+³ The HTML row is the earlier run's (docling.rs 2.46.2, another host): its
+re-run here was stopped after 3 h 45 min — its warm pass done, the first cold
+`marker_single` call had spent 97 minutes on one 855-byte file, Marker's OCR model
+looping on one render (5,000+ tokens for a single block).
 
 Accuracy is scored against Python docling's groundtruth, which favours
 docling.rs by construction; the timings and memory do not depend on it.
@@ -292,26 +298,26 @@ a GPU. Method, caveats and the API map:
 images and Office files to Markdown and JSON for LLMs in four tiers — `flash`
 (text layer, no models), `basic` (ONNX layout / table / OCR models),
 `standard` and `advanced` (a vision-language model through llama.cpp).
-Measured side by side — MinerU 4.0.12 and docling.rs 2.46.2 (release build),
-4 vCPU, no GPU — on this repository's test corpus
+Measured side by side — MinerU 4.0.12 and docling.rs master after 2.51.3
+(release build), 4 vCPU, no GPU, 2026-10-25 — on this repository's test corpus
 ([`scripts/conformance/mineru_compare.py`](./scripts/conformance/mineru_compare.py)):
 
 | Corpus (files) | MinerU `flash`, warm | MinerU `basic`, warm | docling.rs, warm | Cold CLI call, MinerU `flash` / `basic` / docling.rs | Peak RSS, MinerU `flash` / `basic` / docling.rs | Word F1 (`flash` / `basic` / docling.rs) | Table-cell recall | Heading recall |
 |---|---|---|---|---|---|---|---|---|
-| PDF (18), full layout + tables + OCR | 22.3 s | 123 s (+ 67 s model load) | **44.0 s** | 3.6 s / 6.5 s / **1.2 s** | 1.4 GB / 4.6 GB / 3.1 GB | 0.87 / 0.74 / **0.997** | 0.28 / 0.44 / **0.94** | 0.57 / 0.58 / **0.91** |
-| PDF (18), text layer only (`--text-layer-only`) | 22.3 s | — | **0.69 s** | — / — / — | — / — / 80 MB | 0.87 / — / **0.97** | 0.28 / — / 0.00 | 0.57 / — / 0.00 |
-| DOCX (38) | 6.36 s | flash only | **0.59 s** | 2355 ms / — / **15 ms** | 179 MB / — / **41 MB** | 0.97 / — / **1.00** | 0.82 / — / **1.00** | 0.96 / — / **1.00** |
-| PPTX (8) | 0.21 s (1 failed) | flash only | **0.05 s** | 2199 ms / — / **9 ms** | 122 MB / — / **20 MB** | 0.79 / — / **0.97** | 0.91 / — / **1.00** | 1.00 / — / 1.00 |
-| XLSX (14) | 0.68 s | flash only | **0.19 s** | 978 ms / — / **14 ms** | 140 MB / — / **55 MB** | 0.83 / — / **0.95** | 0.77 / — / **0.98** | — ¹ |
-| HTML (32) | 0.89 s | flash only | **0.10 s** | 2015 ms / — / **10 ms** | 157 MB / — / **21 MB** | 0.94 / — / **1.00** | 0.81 / — / **1.00** | 0.96 / — / **1.00** |
-| EPUB (1) | 0.09 s | flash only | **0.02 s** | 1909 ms / — / **16 ms** | 99 MB / — / **19 MB** | 1.00 / 1.00 | — | 1.00 / 1.00 |
+| PDF (18), full layout + tables + OCR | 38.8 s | 190 s (+ 78 s model load) | **62.7 s** | 5.7 s / 11.1 s / **1.7 s** | 1.4 GB / 4.4 GB / 2.9 GB | 0.87 / 0.74 / **0.997** | 0.28 / 0.44 / **0.94** | 0.57 / 0.58 / **0.91** |
+| PDF (18), text layer only (`--text-layer-only`) | 38.8 s | — | **0.82 s** | — / — / — | — / — / 73 MB | 0.87 / — / **0.97** | 0.28 / — / 0.00 | 0.57 / — / 0.00 |
+| DOCX (38) | 4.36 s | flash only | **0.70 s** | 3331 ms / — / **23 ms** | 164 MB / — / **41 MB** | 0.97 / — / **1.00** | 0.82 / — / **1.00** | 0.96 / — / **1.00** |
+| PPTX (8) | 0.26 s (1 failed) | flash only | **0.02 s** | 3340 ms / — / **11 ms** | 110 MB / — / **20 MB** | 0.79 / — / **0.97** | 0.91 / — / **1.00** | 1.00 / — / 1.00 |
+| XLSX (14) | 1.00 s | flash only | **0.20 s** | 1519 ms / — / **13 ms** | 130 MB / — / **55 MB** | 0.83 / — / **0.95** | 0.77 / — / **0.98** | — ¹ |
+| HTML (32) | 1.07 s | flash only | **0.07 s** | 3039 ms / — / **9 ms** | 141 MB / — / **22 MB** | 0.94 / — / **1.00** | 0.80 / — / **1.00** | 0.96 / — / **1.00** |
+| EPUB (1) | 0.12 s | flash only | **0.03 s** | 3144 ms / — / **24 ms** | 89 MB / — / **19 MB** | 1.00 / 1.00 | — | 1.00 / 1.00 |
 
 A failed file scores 0. ¹ Only one XLSX groundtruth carries a heading.
 
 Accuracy is scored against Python docling's groundtruth, which favours
 docling.rs by construction; the timings and memory do not depend on it.
 MinerU parses Office files, HTML and EPUB at `flash` only; `basic` is its
-model tier on CPU; its `standard` tier (a 1.2 B vision-language model through llama.cpp) took 138 s for one page on this CPU and is not in the table. Method, caveats and the API map:
+model tier on CPU; its `standard` tier (a 1.2 B vision-language model through llama.cpp) took 138 s for one page on a 4 vCPU CPU in the earlier run and is not in the table. Method, caveats and the API map:
 [`docs/MINERU.md`](./docs/MINERU.md#how-the-comparison-is-scored).
 
 ## Conformance with Python docling
@@ -347,25 +353,27 @@ scored against docling's groundtruth in
 
 One fixture per format through published Python docling and the Rust release
 binary (`scripts/test/performance.sh`); docling ÷ docling.rs, so bigger means
-Rust wins by more.
+Rust wins by more. Measured 2026-10-25: docling 2.142.1 (the default PyPI
+install, torch included) against docling.rs master after 2.51.3, 4 vCPU, no
+GPU.
 
 | File | Size | Peak-memory ratio | CPU ratio | Warm-conversion speedup |
 |---|---:|---:|---:|---:|
-| `picture_classification.pdf` (PDF) | 208 KB | **6.5× less** | 0.8× | 10.6× |
-| `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **39× less** | 1.2× | 19× |
-| `wiki_duck.html` (HTML) | 240 KB | **57× less** | 1.3× | 47× |
-| `elife-56337.nxml` (JATS XML) | 180 KB | **59× less** | 1.2× | 10× |
-| `xlsx_04_inflated.xlsx` (XLSX) | 168 KB | **51× less** | 0.9× | 18× |
-| `powerpoint_with_image.pptx` (PPTX) | 80 KB | **55× less** | 1.2× | 3.1× |
-| `wiki.md` (Markdown) | 8 KB | **57× less** | 1.2× | 1.2× |
-| `csv-comma.csv` (CSV) | 4 KB | **64× less** | 1.2× | 0.6× † |
+| `picture_classification.pdf` (PDF) | 208 KB | **4.8× less** | 0.7× | 11.6× |
+| `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **28× less** | 1.1× | 12× |
+| `wiki_duck.html` (HTML) | 240 KB | **33× less** | 1.1× | 27× |
+| `elife-56337.nxml` (JATS XML) | 180 KB | **39× less** | 1.2× | 11× |
+| `xlsx_04_inflated.xlsx` (XLSX) | 168 KB | **32× less** | 0.9× | 11× |
+| `powerpoint_with_image.pptx` (PPTX) | 80 KB | **36× less** | 1.1× | 2.7× |
+| `wiki.md` (Markdown) | 8 KB | **43× less** | 1.1× | 2.3× |
+| `csv-comma.csv` (CSV) | 4 KB | **44× less** | 1.3× | 0.4× † |
 
 † A 4 KB CSV converts in microseconds, so Rust's own process startup dominates
-its number; end to end it is 870× faster.
+its number; end to end it is 780× faster.
 
-Declarative formats hold a few MB against docling's ~750 MB (it imports torch
-even for them) and finish 300–870× sooner end to end; the PDF peaks at
-0.37 GB against 2.4 GB and converts 28.5× faster end to end. Where the time
+Declarative formats hold 17–28 MB against docling's 750–780 MB (it imports
+torch even for them) and finish 200–890× sooner end to end; the PDF peaks at
+0.46 GB against 2.2 GB and converts 19× faster end to end. Where the time
 goes, and what was measured not to help:
 [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md#where-the-time-goes).
 

@@ -69,6 +69,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use serde_json::Value;
 
 use crate::document::{ContentLayers, DoclingDocument};
+use crate::json::{TableData, TableView};
 use crate::markdown::ImageMode;
 use crate::TrackChanges;
 
@@ -231,8 +232,10 @@ pub fn to_pandoc(
     doc: &DoclingDocument,
     options: &PandocExportOptions,
 ) -> Result<PandocOutput, PandocError> {
-    // The JSON with the note calls docling's model has no field for (#538).
-    from_docling_json(&crate::json::to_json_with_notes(doc), options)
+    // The JSON with the note calls docling's model has no field for (#538),
+    // its tables typed (#875).
+    let (json, tables) = crate::json::to_json_with_notes(doc);
+    render_json(&json, &tables, options)
 }
 
 /// [`to_pandoc`] for a document already in docling's JSON wire format —
@@ -242,6 +245,16 @@ pub fn from_docling_json(
     json: &Value,
     options: &PandocExportOptions,
 ) -> Result<PandocOutput, PandocError> {
+    render_json(json, &[], options)
+}
+
+/// [`from_docling_json`] with the typed tables the JSON's table items name
+/// ([`crate::json::to_json_typed_tables`]).
+fn render_json(
+    json: &Value,
+    tables: &[TableData],
+    options: &PandocExportOptions,
+) -> Result<PandocOutput, PandocError> {
     if let Some(v) = &options.api_version {
         check_api_version(v)?;
     }
@@ -249,6 +262,7 @@ pub fn from_docling_json(
     // deep, so it runs on a big-stack thread like the HTML serializer.
     let render = || {
         let mut ser = Serializer::new(json, options);
+        ser.tables = tables;
         let blocks = ser.body();
         let doc = ast::document_with_meta(meta_of(json), blocks);
         (
@@ -297,31 +311,50 @@ pub fn auto_identifier(text: &str) -> String {
 
 /// The Pandoc AST constructors (`Text.Pandoc.Definition`, JSON per
 /// `Text.Pandoc.JSON`): every node this module writes is built here.
+///
+/// Every constructor moves the nodes it is given into the new one:
+/// `json!` would deep-copy each interpolated `Value` (`to_value`), so a
+/// table cell's content was copied again by its row, its table and the
+/// document — on a 640,000-cell table most of the export's time and
+/// twice its AST in peak memory (#875). Literal-only fragments still use
+/// `json!`.
 pub mod ast {
     use serde_json::{json, Value};
 
     use super::PANDOC_API_VERSION;
+
+    /// A JSON array of the given nodes, moved in.
+    fn arr<const N: usize>(items: [Value; N]) -> Value {
+        Value::Array(items.into())
+    }
 
     pub fn document(blocks: Vec<Value>) -> Value {
         document_with_meta(json!({}), blocks)
     }
     /// A document with its `Meta` (#836).
     pub fn document_with_meta(meta: Value, blocks: Vec<Value>) -> Value {
-        json!({ "pandoc-api-version": PANDOC_API_VERSION, "meta": meta, "blocks": blocks })
+        let mut m = serde_json::Map::with_capacity(3);
+        m.insert("pandoc-api-version".into(), json!(PANDOC_API_VERSION));
+        m.insert("meta".into(), meta);
+        m.insert("blocks".into(), Value::Array(blocks));
+        Value::Object(m)
     }
     pub fn meta_inlines(inlines: Vec<Value>) -> Value {
-        node("MetaInlines", json!(inlines))
+        node("MetaInlines", Value::Array(inlines))
     }
     pub fn meta_string(s: &str) -> Value {
         node("MetaString", json!(s))
     }
     pub fn meta_list(items: Vec<Value>) -> Value {
-        node("MetaList", json!(items))
+        node("MetaList", Value::Array(items))
     }
     /// `Span Attr [Inline]` with key-value attributes.
     pub fn span(classes: &[&str], attrs: &[(String, String)], inlines: Vec<Value>) -> Value {
         let kv: Vec<Value> = attrs.iter().map(|(k, v)| json!([k, v])).collect();
-        node("Span", json!([["", classes, kv], inlines]))
+        node(
+            "Span",
+            arr([json!(["", classes, kv]), Value::Array(inlines)]),
+        )
     }
 
     /// `Attr`: identifier, classes, key-value pairs.
@@ -330,23 +363,32 @@ pub mod ast {
     }
 
     fn node(t: &str, c: Value) -> Value {
-        json!({ "t": t, "c": c })
+        let mut m = serde_json::Map::with_capacity(2);
+        m.insert("t".into(), Value::String(t.into()));
+        m.insert("c".into(), c);
+        Value::Object(m)
     }
 
     // --- blocks -------------------------------------------------------------
 
     pub fn para(inlines: Vec<Value>) -> Value {
-        node("Para", json!(inlines))
+        node("Para", Value::Array(inlines))
     }
     pub fn plain(inlines: Vec<Value>) -> Value {
-        node("Plain", json!(inlines))
+        node("Plain", Value::Array(inlines))
     }
     pub fn header(level: usize, inlines: Vec<Value>) -> Value {
-        node("Header", json!([level, attr(&[]), inlines]))
+        node(
+            "Header",
+            arr([level.into(), attr(&[]), Value::Array(inlines)]),
+        )
     }
     /// A `Header` with an identifier (#849: a bookmarked heading).
     pub fn header_with_id(level: usize, id: &str, inlines: Vec<Value>) -> Value {
-        node("Header", json!([level, [id, [], []], inlines]))
+        node(
+            "Header",
+            arr([level.into(), json!([id, [], []]), Value::Array(inlines)]),
+        )
     }
     /// An empty `Span` carrying an identifier and the class `anchor` — the
     /// link destination Pandoc's docx reader writes for a bookmark (#849).
@@ -355,10 +397,13 @@ pub mod ast {
     }
     pub fn code_block(language: Option<&str>, text: &str) -> Value {
         let classes: Vec<&str> = language.into_iter().collect();
-        node("CodeBlock", json!([attr(&classes), text]))
+        node("CodeBlock", arr([attr(&classes), text.into()]))
     }
     pub fn bullet_list(items: Vec<Vec<Value>>) -> Value {
-        node("BulletList", json!(items))
+        node(
+            "BulletList",
+            Value::Array(items.into_iter().map(Value::Array).collect()),
+        )
     }
     /// `OrderedList ListAttributes [[Block]]`: `style` a `ListNumberStyle`
     /// (`Decimal`, `LowerAlpha`, `UpperRoman`, …), `delim` a
@@ -366,7 +411,10 @@ pub mod ast {
     pub fn ordered_list(start: u64, style: &str, delim: &str, items: Vec<Vec<Value>>) -> Value {
         node(
             "OrderedList",
-            json!([[start, { "t": style }, { "t": delim }], items]),
+            arr([
+                json!([start, { "t": style }, { "t": delim }]),
+                Value::Array(items.into_iter().map(Value::Array).collect()),
+            ]),
         )
     }
     pub fn definition_list(entries: Vec<(Vec<Value>, Vec<Vec<Value>>)>) -> Value {
@@ -375,7 +423,12 @@ pub mod ast {
             Value::Array(
                 entries
                     .into_iter()
-                    .map(|(term, defs)| json!([term, defs]))
+                    .map(|(term, defs)| {
+                        arr([
+                            Value::Array(term),
+                            Value::Array(defs.into_iter().map(Value::Array).collect()),
+                        ])
+                    })
                     .collect(),
             ),
         )
@@ -386,21 +439,30 @@ pub mod ast {
         node("RawBlock", json!([format, text]))
     }
     pub fn div(classes: &[&str], blocks: Vec<Value>) -> Value {
-        node("Div", json!([attr(classes), blocks]))
+        node("Div", arr([attr(classes), Value::Array(blocks)]))
     }
     /// `Caption`: no short caption, the long one as blocks.
     pub fn caption(blocks: Vec<Value>) -> Value {
-        json!([null, blocks])
+        arr([Value::Null, Value::Array(blocks)])
     }
     pub fn figure(classes: &[&str], caption: Value, blocks: Vec<Value>) -> Value {
-        node("Figure", json!([attr(classes), caption, blocks]))
+        node(
+            "Figure",
+            arr([attr(classes), caption, Value::Array(blocks)]),
+        )
     }
     /// A table cell: `Cell Attr Alignment RowSpan ColSpan [Block]`.
     pub fn cell(row_span: usize, col_span: usize, blocks: Vec<Value>) -> Value {
-        json!([attr(&[]), { "t": "AlignDefault" }, row_span, col_span, blocks])
+        arr([
+            attr(&[]),
+            json!({ "t": "AlignDefault" }),
+            row_span.into(),
+            col_span.into(),
+            Value::Array(blocks),
+        ])
     }
     pub fn row(cells: Vec<Value>) -> Value {
-        json!([attr(&[]), cells])
+        arr([attr(&[]), Value::Array(cells)])
     }
     /// `Table Attr Caption [ColSpec] TableHead [TableBody] TableFoot`.
     pub fn table(caption: Value, num_cols: usize, head: Vec<Value>, body: Vec<Value>) -> Value {
@@ -409,13 +471,13 @@ pub mod ast {
             .collect();
         node(
             "Table",
-            json!([
+            arr([
                 attr(&[]),
                 caption,
-                colspecs,
-                [attr(&[]), head],
-                [[attr(&[]), 0, [], body]],
-                [attr(&[]), []]
+                Value::Array(colspecs),
+                arr([attr(&[]), Value::Array(head)]),
+                arr([arr([attr(&[]), 0.into(), json!([]), Value::Array(body)])]),
+                arr([attr(&[]), json!([])]),
             ]),
         )
     }
@@ -433,17 +495,20 @@ pub mod ast {
     }
     /// `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`.
     pub fn wrap(t: &str, inlines: Vec<Value>) -> Value {
-        node(t, json!(inlines))
+        node(t, Value::Array(inlines))
     }
     pub fn code(text: &str) -> Value {
-        node("Code", json!([attr(&[]), text]))
+        node("Code", arr([attr(&[]), text.into()]))
     }
     pub fn math(display: bool, tex: &str) -> Value {
         let kind = if display { "DisplayMath" } else { "InlineMath" };
         node("Math", json!([{ "t": kind }, tex]))
     }
     pub fn link(inlines: Vec<Value>, url: &str) -> Value {
-        node("Link", json!([attr(&[]), inlines, [url, ""]]))
+        node(
+            "Link",
+            arr([attr(&[]), Value::Array(inlines), json!([url, ""])]),
+        )
     }
     pub fn image(classes: &[&str], alt: Vec<Value>, src: &str) -> Value {
         image_sized(classes, &[], alt, src)
@@ -456,10 +521,17 @@ pub mod ast {
         src: &str,
     ) -> Value {
         let kv: Vec<Value> = attrs.iter().map(|(k, v)| json!([k, v])).collect();
-        node("Image", json!([["", classes, kv], alt, [src, ""]]))
+        node(
+            "Image",
+            arr([
+                json!(["", classes, kv]),
+                Value::Array(alt),
+                json!([src, ""]),
+            ]),
+        )
     }
     pub fn note(blocks: Vec<Value>) -> Value {
-        node("Note", json!(blocks))
+        node("Note", Value::Array(blocks))
     }
 }
 
@@ -836,8 +908,9 @@ fn list_attributes(markers: &[&str]) -> (u64, &'static str, &'static str) {
     }
 }
 
-struct GridCell<'a> {
-    cell: &'a Value,
+struct GridCell {
+    /// The covering cell's index in the [`TableView`].
+    cell: usize,
     start_row: usize,
     start_col: usize,
     row_span: usize,
@@ -846,6 +919,9 @@ struct GridCell<'a> {
 
 struct Serializer<'a> {
     json: &'a Value,
+    /// The document's typed tables, which its table items name; empty for
+    /// a JSON read in ([`from_docling_json`]).
+    tables: &'a [TableData],
     image_mode: ImageMode,
     artifacts_dir: String,
     layers: ContentLayers,
@@ -886,6 +962,7 @@ impl<'a> Serializer<'a> {
         }
         Self {
             json,
+            tables: &[],
             image_mode: options.image_mode,
             artifacts_dir: options.artifacts_dir.clone(),
             layers: options.layers,
@@ -1629,16 +1706,14 @@ impl<'a> Serializer<'a> {
     }
 
     /// docling's `TableData.grid`: each position → the cell covering it.
-    fn grid(data: &'a Value) -> (usize, Vec<Vec<Option<GridCell<'a>>>>) {
-        let num_rows = data.get("num_rows").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let num_cols = data.get("num_cols").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let mut grid: Vec<Vec<Option<GridCell<'a>>>> = (0..num_rows)
+    fn grid(table: &TableView<'_>) -> (usize, Vec<Vec<Option<GridCell>>>) {
+        let (num_rows, num_cols) = (table.num_rows, table.num_cols);
+        let mut grid: Vec<Vec<Option<GridCell>>> = (0..num_rows)
             .map(|_| (0..num_cols).map(|_| None).collect())
             .collect();
-        for cell in Self::array(data.get("table_cells")) {
-            let get = |k: &str| cell.get(k).and_then(Value::as_u64).unwrap_or(0) as usize;
-            let (r0, c0) = (get("start_row_offset_idx"), get("start_col_offset_idx"));
-            let (r1, c1) = (get("end_row_offset_idx"), get("end_col_offset_idx"));
+        for (i, cell) in table.cells.iter().enumerate() {
+            let (r0, c0) = (cell.start_row, cell.start_col);
+            let (r1, c1) = (cell.end_row, cell.end_col);
             if r0 >= num_rows || c0 >= num_cols {
                 continue;
             }
@@ -1646,7 +1721,7 @@ impl<'a> Serializer<'a> {
             for row in grid.iter_mut().take(r1).skip(r0) {
                 for slot in row.iter_mut().take(c1).skip(c0) {
                     *slot = Some(GridCell {
-                        cell,
+                        cell: i,
                         start_row: r0,
                         start_col: c0,
                         row_span: r1 - r0,
@@ -1659,11 +1734,11 @@ impl<'a> Serializer<'a> {
     }
 
     fn table_from_data(&mut self, data: &'a Value, caption: Value) -> Option<Value> {
-        let (num_cols, grid) = Self::grid(data);
+        let table = crate::json::table_view(data, self.tables);
+        let (num_cols, grid) = Self::grid(&table);
         if grid.is_empty() || num_cols == 0 {
             return None;
         }
-        let flag = |c: &Value, k: &str| c.get(k).and_then(Value::as_bool).unwrap_or(false);
         let mut rows: Vec<(bool, Value)> = Vec::new();
         for (i, row) in grid.iter().enumerate() {
             let mut cells = Vec::new();
@@ -1680,13 +1755,9 @@ impl<'a> Serializer<'a> {
                     continue;
                 }
                 anchored += 1;
-                all_header &= flag(g.cell, "column_header");
-                let blocks = match g
-                    .cell
-                    .get("ref")
-                    .and_then(|r| r.get("$ref"))
-                    .and_then(Value::as_str)
-                {
+                let cell = &table.cells[g.cell];
+                all_header &= cell.column_header;
+                let blocks = match cell.cell_ref {
                     Some(cref) => match self.resolve(cref) {
                         Some(target) => {
                             self.visited.insert(cref.to_string());
@@ -1695,8 +1766,7 @@ impl<'a> Serializer<'a> {
                         None => Vec::new(),
                     },
                     None => {
-                        let inl =
-                            text_inlines(g.cell.get("text").and_then(Value::as_str).unwrap_or(""));
+                        let inl = text_inlines(cell.text);
                         if inl.is_empty() {
                             Vec::new()
                         } else {

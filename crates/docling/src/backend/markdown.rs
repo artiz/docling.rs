@@ -179,16 +179,31 @@ fn find_bare_urls(
     run: std::ops::Range<usize>,
     in_table: bool,
 ) -> Vec<(usize, usize, BareUrl)> {
-    let url = cached_regex!(r"(?:https?|ftp)://([\w.\-]*?\.[\w.\-]+)[^<\s]*");
-    let www = cached_regex!(r"www\.([\w.\-]*?\.[\w.\-]+)[^<\s]*");
-    let email = cached_regex!(r"[\w.\-+]+@[\w.\-]*?\.[\w.\-]*[a-zA-Z0-9]");
-    let email_whole = cached_regex!(r"^[\w.\-+]+@[\w.\-]*?\.[\w.\-]*[a-zA-Z0-9]$");
-    let entity_tail = cached_regex!(r"&[a-zA-Z]+;$");
     // A URL holds no whitespace: nothing past the next one can be part of a
     // match that starts inside the run.
     let hay_end = text[run.end..]
         .find(|c: char| c.is_whitespace() || c == '<')
         .map_or(text.len(), |k| run.end + k);
+    // Each pattern needs a literal — `://`, `www.`, `@` — inside its match,
+    // and every match lies in `run.start..hay_end`: a pattern whose literal
+    // is absent there cannot match, so it is neither compiled nor run. The
+    // Unicode `\w` / `\s` classes make these four regexes ~20M
+    // instructions to build — 5 ms, a third of a small Markdown file's
+    // whole conversion — which a document without a bare URL never pays.
+    let scope = &text[run.start..hay_end];
+    let (has_url, has_www, has_email) = (
+        scope.contains("://"),
+        scope.contains("www."),
+        scope.contains('@'),
+    );
+    if !(has_url || has_www || has_email) {
+        return Vec::new();
+    }
+    let url = || cached_regex!(r"(?:https?|ftp)://([\w.\-]*?\.[\w.\-]+)[^<\s]*");
+    let www = || cached_regex!(r"www\.([\w.\-]*?\.[\w.\-]+)[^<\s]*");
+    let email = || cached_regex!(r"[\w.\-+]+@[\w.\-]*?\.[\w.\-]*[a-zA-Z0-9]");
+    let email_whole = || cached_regex!(r"^[\w.\-+]+@[\w.\-]*?\.[\w.\-]*[a-zA-Z0-9]$");
+    let entity_tail = cached_regex!(r"&[a-zA-Z]+;$");
     // The lookbehind `(?:^|(?<=[\s*_~(\uff00-\uffef]))`; a table cell's text
     // starts after its `|`.
     let starts_ok = |at: usize| match text[..at].chars().next_back() {
@@ -209,7 +224,7 @@ fn find_bare_urls(
     let email_end = |start: usize, end: usize| -> Option<usize> {
         (start + 1..=end).rev().find(|&e| {
             text.is_char_boundary(e)
-                && email_whole.is_match(&text[start..e])
+                && email_whole().is_match(&text[start..e])
                 && text[e..]
                     .chars()
                     .next()
@@ -227,21 +242,24 @@ fn find_bare_urls(
         // The leftmost candidate of the three patterns (an `http` URL before
         // an address at the same spot, as the alternation orders them).
         let candidates = [
-            url.captures(hay).map(|c| {
+            has_url.then(|| url().captures(hay)).flatten().map(|c| {
                 (
                     c.get(0).unwrap(),
                     c.get(1).map(|d| d.as_str()),
                     BareUrl::Url,
                 )
             }),
-            www.captures(hay).map(|c| {
+            has_www.then(|| www().captures(hay)).flatten().map(|c| {
                 (
                     c.get(0).unwrap(),
                     c.get(1).map(|d| d.as_str()),
                     BareUrl::Www,
                 )
             }),
-            email.find(hay).map(|m| (m, None, BareUrl::Email)),
+            has_email
+                .then(|| email().find(hay))
+                .flatten()
+                .map(|m| (m, None, BareUrl::Email)),
         ];
         let Some((m, domain, kind)) = candidates
             .into_iter()

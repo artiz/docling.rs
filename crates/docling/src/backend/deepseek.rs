@@ -32,7 +32,10 @@ fn annotation_re() -> &'static Regex {
 
 /// True when the Markdown carries DeepSeek-OCR annotation tokens.
 pub fn is_deepseek_markdown(text: &str) -> bool {
-    text.lines().any(|l| annotation_re().is_match(l.trim()))
+    // Every annotation holds a literal `[[`: without one the Unicode-`\w`
+    // regex is never compiled — that alone cost every Markdown conversion
+    // ~3M instructions.
+    text.contains("[[") && text.lines().any(|l| annotation_re().is_match(l.trim()))
 }
 
 /// `<|det|>label [x1, y1, x2, y2]<|/det|>content` — the Unlimited-OCR
@@ -44,7 +47,7 @@ fn unlimited_annotation_re() -> &'static Regex {
 
 /// True when the text carries Unlimited-OCR grounding annotations (#322).
 pub fn is_unlimited_ocr_markdown(text: &str) -> bool {
-    unlimited_annotation_re().is_match(text)
+    text.contains("<|det|>") && unlimited_annotation_re().is_match(text)
 }
 
 /// docling's `normalize_unlimited_ocr_annotations`: rewrite the Unlimited-OCR
