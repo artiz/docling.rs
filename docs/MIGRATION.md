@@ -349,6 +349,7 @@ converted once more as that format with a warning.
 - a ragged file's short rows hold only the cells they have, as docling adds one `TableCell` per value read; the grid's missing slots are its empty fillers (an empty `TableCell` was recorded for each)
 - `.tsv` routes here too (#208 — the delimiter sniffing already covers tabs; a docling.rs extension, upstream accepts only `.csv`)
 - #319: a quoted field spanning lines no longer defeats delimiter sniffing (4 KiB fallback sample, docling#3985) and an Excel-style leading BOM stays out of the first header cell (docling#4098)
+- docling#4896 (docling `main` after 2.142.1): a header holding two candidate delimiters — a comma inside a semicolon file's `Weight (kg, net)`, the colons of a comma file's `Time (hh:mm:ss)` — is sniffed from its occurrences outside brackets; docling re-sniffs the following rows with `csv.Sniffer` instead, and this count-based sniff reaches the same split on all fifteen of its test cases
 
 #### HTML
 
@@ -401,6 +402,7 @@ converted once more as that format with a warning.
 
 - the 42 documents upstream's `test_backend_asciidoc.py` converts are mirrored in `crates/docling/tests/data/asciidoc/upstream/` with docling's Markdown and JSON — all re-run through 2.142.1, where only the two comment documents moved (their JSON is 2.142.1's) — and match **42/42** in both, as do our 15 `edge_*` probes.
 - **comments (#863, docling#4663, 2.141)**: a run of consecutive `//` lines is one comment and everything between two `////` lines another (an unclosed `////` runs to the end, as Asciidoctor reads it); each becomes a `text` item on the **notes** layer under the open list item, else under the current section, without ending the list or the paragraph it sits in — a comment between two lines of a paragraph lands before the paragraph. A comment block is checked ahead of every other construct (a `----` inside `////` is comment text, not a listing), and the lines inside an example / sidebar / quote / open / passthrough block now run through the same loop, so a comment there is one too. Exports leave the notes layer out by default, so the default Markdown is unchanged. In the flat outputs (Markdown / LaTeX / DocLang with the notes layer included) a comment met inside a list is printed after the list, not between its items — a node there would split the list the default Markdown prints; the JSON keeps it under its item.
+- docling `main` after 2.142.1: only exactly two slashes start a line comment — `///` and `//// text` are body text — and a comment block opened by four or more slashes closes only on an identical line (docling#4394); a symmetric title drops its closing marks, `== Intro ==` → `Intro`, while marks of another length stay (`=== Details ==`, docling#4938)
 - The parser follows `_parse` / `_iter_blocks` step for step and builds docling's item tree alongside the flat nodes, mirroring the `parents` / `indents` / `list_kinds` bookkeeping:
   - the title is the root
   - a heading is parented to the nearest present ancestor level (docling 2.127+) and clears the deeper ones
@@ -833,6 +835,7 @@ converted once more as that format with a warning.
 - Ported from docling 2.138–2.140 and checked document by document against it (`tests/data/odf/upstream`, `odf_upstream`):
   - a hidden section (`text:display="none"`), hidden slide (`presentation:visibility="hidden"`) or hidden sheet is kept on the invisible layer, in Markdown too (docling#4767, docling#4860, #753)
   - a picture in an ODS cell is added once, in its rich cell, and the pictures anchored to the sheet (`table:shapes`) are kept (docling#4678, #758)
+  - a blank merged range none of whose rows holds a value is a separator: it no longer joins the tables above and below it into one (docling#4992, docling `main` after 2.142.1); every other merge keeps continuing its table
   - a list item holding only an image, a chart or a note keeps its number and its nested list, with an empty text (docling#4693, #759), and a marker other than `N.` (`1)`) prints behind a bullet as docling-core does (`- 1) text`)
 - #823 (docling#4750): a `<text:table-of-content>` and the other index containers (`alphabetical-index`, `illustration-index`, `table-index`, `object-index`, `user-index`, `bibliography`) are transparent like a section — their `index-body` / `index-title` children walk as body blocks in document order (the TOC title and entries, and whatever LibreOffice left inside the index body converting a Word file with an unclosed TOC field: headings, paragraphs, tables), a hidden one on the invisible layer
   - the `*-source` template is not content (`odt_toc_index_body.odt`, its `.docx` twin's Markdown byte for byte)
