@@ -140,6 +140,9 @@ struct Walker {
     last_numid: Option<String>,
     cache: Option<ListCache>,
     layer: Option<ContentLayer>,
+    /// The layer around a hidden paragraph while it is added (docling#4958):
+    /// the list groups it opens stay on it.
+    layer_around_hidden: Option<Option<ContentLayer>>,
     history: Vec<Hist>,
     /// Which parsed document the node ids below belong to (0 = the body).
     doc_tag: usize,
@@ -204,7 +207,7 @@ pub(super) fn build_tree(
     // `_add_footnotes_and_endnotes` (docling#4374): after the comments, each
     // note's body a furniture-layer `footnote` text on the body.
     let mut bodies: HashMap<(&'static str, String), (usize, String)> = HashMap::new();
-    for note in footnote_texts(pkg) {
+    for note in footnote_texts(pkg, ctx.hidden) {
         let id = w.add(
             None,
             Some(ContentLayer::Furniture),
@@ -494,6 +497,7 @@ impl Walker {
             last_numid: None,
             cache: None,
             layer: None,
+            layer_around_hidden: None,
             history: vec![Hist::default()],
             doc_tag: 0,
             processed_textbox: HashSet::new(),
@@ -653,7 +657,11 @@ impl Walker {
                 break;
             }
         }
-        let g = self.add(parent, self.layer, group_kind("list", "list"));
+        let g = self.add(
+            parent,
+            self.layer_around_hidden.unwrap_or(self.layer),
+            group_kind("list", "list"),
+        );
         refs.push(g);
         self.cache = Some(ListCache {
             group: g,
@@ -1775,6 +1783,20 @@ impl Walker {
 
     /// `_handle_text_elements`.
     fn handle_text_elements(&mut self, p: XmlNode, ctx: &Ctx, skip_empty_text: bool) -> Vec<usize> {
+        // docling#4958: a fully hidden paragraph (marked by `docx_hidden`)
+        // goes to the `invisible` layer — kept, like a hidden slide, but out
+        // of the default exports. List groups stay on the layer around it,
+        // so a hidden first item does not hide the shown items after it.
+        if super::docx_hidden::is_hidden_paragraph(p) && self.layer != Some(ContentLayer::Invisible)
+        {
+            let around = self.layer;
+            self.layer_around_hidden = Some(around);
+            self.layer = Some(ContentLayer::Invisible);
+            let refs = self.handle_text_elements(p, ctx, skip_empty_text);
+            self.layer = around;
+            self.layer_around_hidden = None;
+            return refs;
+        }
         let calls = note_references(p);
         let first_new = self.tree.items.len();
         let refs = self.handle_text_elements_inner(p, ctx, skip_empty_text);
@@ -2152,9 +2174,11 @@ impl Walker {
         // `numbered_heading_text` writes `<number> <text>`.
         let number = (is_numbered && text.len() > authored_len + 1)
             .then(|| text[..text.len() - authored_len - 1].to_string());
+        // On the paragraph's layer (docling#4958 passes it: a hidden heading
+        // is invisible, a header part's heading furniture).
         let hd = self.add(
             self.parent_at(parent_level),
-            None,
+            self.layer,
             TreeKind::Text {
                 label: "section_header".into(),
                 text,
@@ -2282,7 +2306,7 @@ impl Walker {
             for i in (self.slot_for(pi) + 1)..(self.slot_for(ilevel) + 1) {
                 let g = self.add(
                     self.sub_list_parent(self.parent_at(i - 1)),
-                    self.layer,
+                    self.layer_around_hidden.unwrap_or(self.layer),
                     group_kind("list", "list"),
                 );
                 self.set_parent(i, Some(g));
@@ -2384,9 +2408,9 @@ impl Walker {
 
     /// `_add_formatted_list_item`: one element → the list item carries the
     /// text, formatting and hyperlink; several → an empty list item over an
-    /// inline group of text items. (`add_list_item` and that inline group
-    /// take no content layer upstream, so they sit on the body layer even
-    /// inside a header/footer.)
+    /// inline group of text items — on the paragraph's layer, as docling
+    /// passes it since docling#4958 (a hidden item is invisible, a header
+    /// part's item furniture).
     fn add_formatted_list_item(
         &mut self,
         elements: &[Part],
@@ -2404,7 +2428,7 @@ impl Walker {
             if !e.text.is_empty() {
                 let item = self.add(
                     parent,
-                    None,
+                    self.layer,
                     TreeKind::Text {
                         label: "list_item".into(),
                         text: e.text.clone(),
@@ -2420,7 +2444,7 @@ impl Walker {
         } else {
             let item = self.add(
                 parent,
-                None,
+                self.layer,
                 TreeKind::Text {
                     label: "list_item".into(),
                     text: String::new(),
@@ -2431,7 +2455,7 @@ impl Walker {
                     list,
                 },
             );
-            let inline = self.add(Some(item), None, group_kind("inline", "group"));
+            let inline = self.add(Some(item), self.layer, group_kind("inline", "group"));
             for e in elements {
                 if !e.text.is_empty() {
                     self.add(
@@ -2465,7 +2489,7 @@ impl Walker {
         }
         let item = self.add(
             parent,
-            None,
+            self.layer,
             TreeKind::Text {
                 label: "list_item".into(),
                 text: String::new(),
@@ -2501,6 +2525,7 @@ impl Walker {
                 continue;
             };
             let xml = super::mc::resolve_alternate_content(&xml);
+            let xml = super::docx_hidden::resolve_hidden(&xml, ctx.hidden, false);
             let Ok(dom) = Document::parse(&xml) else {
                 continue;
             };

@@ -5,7 +5,8 @@
 //! `tests/data/pptx/charts/<name>.{md,json}` is **not** our output: it is
 //! what docling 2.140.0's PowerPoint backend writes for `<name>.pptx`
 //! (`MsPowerpointDocumentBackend(...).convert()`, then `export_to_markdown()`
-//! and `export_to_dict()`). The decks are upstream's test decks, rebuilt by
+//! and `export_to_dict()`) — `combo_stock` is docling `main`'s at 90234a7
+//! (docling#4811 reads its stock plot's series too). The decks are upstream's test decks, rebuilt by
 //! `make_decks.py` next to them. Re-create a reference with upstream's
 //! backend, never from our own output.
 use std::fs;

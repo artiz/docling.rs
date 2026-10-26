@@ -25,7 +25,9 @@
 //! were re-run through docling 2.142.1: only the two comment documents
 //! (`comment_block_hides_content`, `line_comments_not_body_text`) moved —
 //! their comments are notes-layer items since docling#4663 (2.141, #863) —
-//! and those two JSON references are 2.142.1's.
+//! and those two JSON references are 2.142.1's. `edge_comments_in_blocks_and_lists`
+//! is docling `main`'s at 90234a7: its `/////` comment block closes only on
+//! an identical line since docling#4394, so it runs to the end.
 use std::fs;
 use std::path::{Path, PathBuf};
 

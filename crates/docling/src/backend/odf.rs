@@ -2397,12 +2397,17 @@ fn add_ods_sheet(table: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
     // `number-{rows,columns}-repeated` (empty repeats only advance the index, so a
     // sheet padded to millions of empty cells stays cheap).
     let mut cells: HashMap<(usize, usize), String> = HashMap::new();
+    // docling#4992: the rows holding a value, and the blank merged ranges
+    // (inclusive row/column bounds) — see below.
+    let mut rows_with_values: HashSet<usize> = HashSet::new();
+    let mut blank_spans: Vec<(usize, usize, usize, usize)> = Vec::new();
     let mut row_idx = 0usize;
     for row in table.children().filter(|c| c.has_tag_name("table-row")) {
         let rrep = repeat(row, "number-rows-repeated");
         let mut row_cells: Vec<(usize, String)> = Vec::new();
         let mut col_idx = 0usize;
         let mut row_has_content = false;
+        let mut row_has_value = false;
         for cell in row
             .children()
             .filter(|c| c.has_tag_name("table-cell") || c.has_tag_name("covered-table-cell"))
@@ -2416,6 +2421,20 @@ fn add_ods_sheet(table: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
             } else {
                 ods_cell_text(cell)
             };
+            if !text.is_empty() {
+                row_has_value = true;
+            } else if !covered {
+                let rows = repeat(cell, "number-rows-spanned");
+                let cols = repeat(cell, "number-columns-spanned");
+                if rows > 1 || cols > 1 {
+                    for r in 0..rrep.min(1024) {
+                        for c in 0..crep.min(1024) {
+                            let (top, left) = (row_idx + r, col_idx + c * cols);
+                            blank_spans.push((top, top + rows - 1, left, left + cols - 1));
+                        }
+                    }
+                }
+            }
             if !text.is_empty() || covered {
                 row_has_content = true;
                 for c in 0..crep.min(1024) {
@@ -2431,7 +2450,23 @@ fn add_ods_sheet(table: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
                 }
             }
         }
+        if row_has_value {
+            rows_with_values.extend(row_idx..row_idx + rrep.min(1024));
+        }
         row_idx += rrep;
+    }
+    // A covered cell continues its merge and counts as content — but a blank
+    // merged range none of whose rows holds a value is a separator row: it
+    // does not join the tables above and below it (docling#4992). Only the
+    // positions the grid holds are visited, so an oversized declared span
+    // stays cheap.
+    for (top, bottom, left, right) in blank_spans {
+        if rows_with_values.iter().any(|r| (top..=bottom).contains(r)) {
+            continue;
+        }
+        cells.retain(|&(r, c), text| {
+            !(text.is_empty() && (top..=bottom).contains(&r) && (left..=right).contains(&c))
+        });
     }
     emit_sheet_regions(&cells, doc);
     // `_find_images_in_sheet`: the pictures anchored to the sheet itself, in
@@ -3409,6 +3444,50 @@ mod tests {
         assert_eq!(tables[0].rows, vec![vec!["Title".to_string()]]);
         assert_eq!(tables[1].rows.len(), 2, "header + one data row");
         assert_eq!(tables[1].rows[0], vec!["H1".to_string(), "H2".to_string()]);
+    }
+
+    /// docling#4992: a blank merged row spanning the sheet only separates
+    /// the tables above and below it; a value in its row makes it part of
+    /// one table again.
+    #[test]
+    fn blank_merged_separator_row_splits_tables() {
+        let shapes = |note: &str| {
+            let cell = |t: &str| {
+                if t.is_empty() {
+                    "<table:table-cell/>".to_string()
+                } else {
+                    format!("<table:table-cell><text:p>{t}</text:p></table:table-cell>")
+                }
+            };
+            let row = |cells: &[&str]| {
+                format!(
+                    "<table:table-row>{}</table:table-row>",
+                    cells.iter().map(|t| cell(t)).collect::<String>()
+                )
+            };
+            let xml = format!(
+                r#"<root xmlns:table="t" xmlns:text="x"><table:table>{}{}{}<table:table-row><table:table-cell table:number-columns-spanned="3"/><table:covered-table-cell/><table:covered-table-cell/>{}</table:table-row>{}{}</table:table></root>"#,
+                row(&["", "2025", "2026"]),
+                row(&["GDP", "1.5", "2"]),
+                row(&["CPI", "3.1", "2.9"]),
+                cell(note),
+                row(&["", "Q1", "Q2"]),
+                row(&["Profits", "384", "276.9"]),
+            );
+            let dom = Document::parse(&xml).unwrap();
+            let table = dom.descendants().find(|n| n.has_tag_name("table")).unwrap();
+            let mut doc = DoclingDocument::new("t");
+            add_ods_sheet(table, &parse_styles(&dom, None), &mut doc);
+            doc.nodes
+                .iter()
+                .filter_map(|n| match n {
+                    Node::Table(t) => Some((t.rows.len(), t.rows[0].len())),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(shapes(""), [(3, 3), (2, 3)]);
+        assert_eq!(shapes("note"), [(6, 4)]);
     }
 
     #[test]

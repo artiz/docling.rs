@@ -39,6 +39,7 @@ mod docx;
 #[cfg(test)]
 mod docx_chain_parity;
 mod docx_drawingml;
+mod docx_hidden;
 mod docx_tree;
 #[cfg(test)]
 mod docx_upstream_unit;

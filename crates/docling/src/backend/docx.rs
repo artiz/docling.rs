@@ -86,6 +86,11 @@ impl DeclarativeBackend for DocxBackend {
         // Settle every `mc:AlternateContent` on the chosen branch first
         // (#572), so the walks below see one document without alternatives.
         let document = super::mc::resolve_alternate_content(&document);
+        // Hidden text (`w:vanish`, docling#4958) settled the same way: a
+        // fully hidden paragraph marked for the `invisible` layer, a hidden
+        // run of a shown one cut out.
+        let hidden = super::docx_hidden::HiddenStyles::parse(&styles, MAX_STYLE_INHERITANCE_DEPTH);
+        let document = super::docx_hidden::resolve_hidden(&document, &hidden, false);
         let dom =
             Document::parse(&document).map_err(|e| ConversionError::with_source("docx", e))?;
         let ctx = Ctx {
@@ -98,6 +103,7 @@ impl DeclarativeBackend for DocxBackend {
             not_paragraph_styles: &sm.not_paragraph,
             num_levels: &num_levels,
             style_left_ind: &sm.left_inds,
+            hidden: &hidden,
             rels: &rels,
             images: &images,
             charts: &charts,
@@ -163,7 +169,7 @@ impl DeclarativeBackend for DocxBackend {
         // a `w:footnoteReference` in the body carries no text of its own, so
         // without reading `word/footnotes.xml` / `word/endnotes.xml` the
         // notes were silently dropped.
-        for note in footnote_texts(&mut pkg) {
+        for note in footnote_texts(&mut pkg, ctx.hidden) {
             doc.nodes.push(Node::Furniture {
                 layer: docling_core::ContentLayer::Furniture,
                 inner: Box::new(Node::Paragraph {
@@ -315,7 +321,10 @@ pub(super) struct DocxNote {
 /// one space. Each becomes a furniture-layer `footnote` item.
 /// The note's kind (`footnote` / `endnote`) and `w:id` come along: a body
 /// `w:footnoteReference` / `w:endnoteReference` names it by those (#538).
-pub(super) fn footnote_texts(pkg: &mut Package) -> Vec<DocxNote> {
+pub(super) fn footnote_texts(
+    pkg: &mut Package,
+    hidden: &super::docx_hidden::HiddenStyles,
+) -> Vec<DocxNote> {
     const SKIP_TYPES: [&str; 3] = ["separator", "continuationSeparator", "continuationNotice"];
     let mut out = Vec::new();
     for (rel_suffix, tag) in [("/footnotes", "footnote"), ("/endnotes", "endnote")] {
@@ -331,6 +340,7 @@ pub(super) fn footnote_texts(pkg: &mut Package) -> Vec<DocxNote> {
             continue;
         };
         let xml = super::mc::resolve_alternate_content(&xml);
+        let xml = super::docx_hidden::resolve_hidden(&xml, hidden, true);
         let Ok(dom) = Document::parse(&xml) else {
             eprintln!("docling: failed to parse {tag}s part");
             continue;
@@ -369,6 +379,7 @@ fn emit_header_footer_part(pkg: &mut Package, part: &str, ctx: &Ctx, doc: &mut D
         return;
     };
     let xml = super::mc::resolve_alternate_content(&xml);
+    let xml = super::docx_hidden::resolve_hidden(&xml, ctx.hidden, false);
     let Ok(dom) = Document::parse(&xml) else {
         return;
     };
@@ -532,6 +543,9 @@ pub(super) struct Ctx<'a> {
     /// `basedOn` chain (twips; `None` = none sets one), and `""` → the
     /// default paragraph style's — see [`list_left_indent`].
     pub(super) style_left_ind: &'a HashMap<String, Option<i64>>,
+    /// The styles' hidden-text settings (docling#4958) a header, footer or
+    /// notes part is resolved with — see `docx_hidden`.
+    pub(super) hidden: &'a super::docx_hidden::HiddenStyles,
     pub(super) rels: &'a HashMap<String, String>,
     pub(super) images: &'a HashMap<String, PictureImage>, // image relationship id -> extracted image
     /// Native charts by relationship id: `(classified kind, title, data grid)`
@@ -583,6 +597,7 @@ impl<'a> Ctx<'a> {
             not_paragraph_styles: self.not_paragraph_styles,
             num_levels: self.num_levels,
             style_left_ind: self.style_left_ind,
+            hidden: self.hidden,
             rels,
             images,
             charts,
@@ -963,6 +978,34 @@ fn handle_paragraph(p: XmlNode, ctx: &Ctx, state: &mut ListState, doc: &mut Docl
 /// `skip_textbox` = this paragraph is itself textbox content, so its (nested)
 /// textboxes are already covered by the enclosing paragraph's extraction.
 fn handle_paragraph_inner(
+    p: XmlNode,
+    ctx: &Ctx,
+    state: &mut ListState,
+    doc: &mut DoclingDocument,
+    rich: bool,
+    skip_textbox: bool,
+) {
+    // A fully hidden paragraph (docling#4958, `docx_hidden`) is read as any
+    // other, and what it yields goes to the `invisible` layer: kept, out of
+    // the default exports.
+    if super::docx_hidden::is_hidden_paragraph(p) {
+        let start = doc.nodes.len();
+        handle_paragraph_body(p, ctx, state, doc, rich, skip_textbox);
+        for node in &mut doc.nodes[start..] {
+            if !matches!(node, Node::Furniture { .. }) {
+                let inner = std::mem::replace(node, Node::PageBreak);
+                *node = Node::Furniture {
+                    layer: docling_core::ContentLayer::Invisible,
+                    inner: Box::new(inner),
+                };
+            }
+        }
+        return;
+    }
+    handle_paragraph_body(p, ctx, state, doc, rich, skip_textbox);
+}
+
+fn handle_paragraph_body(
     p: XmlNode,
     ctx: &Ctx,
     state: &mut ListState,

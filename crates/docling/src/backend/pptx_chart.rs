@@ -2,17 +2,22 @@
 //! through python-pptx (docling#4773, 2.139): every plot of a combination
 //! chart, not just the first.
 //!
-//! - **Plots**: the plot area's chart elements in document order. python-pptx
-//!   reads nine of them; the rest (3-D bar/line/pie, stock, surface,
-//!   bar-of-pie) are plots it "cannot read": they count as `other_chart` and
-//!   add no data, while the other plots keep theirs.
-//! - **Classification**: one label per plot type in drawing order (the
-//!   back-most plot first, so it stays the main prediction), each label once.
-//! - **Data table**: the series of every readable plot as columns, in drawing
-//!   order and each plot's `c:order`. The categories come from the first
-//!   plot that has them; on a date axis, or a text axis showing a date number
-//!   format, the cached serials read as ISO 8601 dates (1900 or 1904 system).
-//!   That plot's category axis title heads the category column.
+//! - **Plots**: the plot area's chart elements in document order — every one
+//!   of them since docling#4811: a 3-D bar/line/pie, stock, surface or
+//!   bar-of-pie plot, which python-pptx has no plot class for, was skipped
+//!   as `other_chart` without data; every `c:ser` has the same structure, so
+//!   all are read alike now.
+//! - **Classification**: one label per plot, by its tag (`bar3DChart` is a
+//!   bar chart — the Word and Excel backends' mapping), in drawing order
+//!   (the back-most plot first, so it stays the main prediction), each label
+//!   once.
+//! - **Data table**: the series of every plot as columns, in drawing order
+//!   and each plot's `c:order` (a series without one is malformed: the chart
+//!   keeps its labels and loses its table, as a value that is not a number
+//!   does). The categories come from the first plot that has them, read
+//!   from its first series; on a date axis, or a text axis showing a date
+//!   number format, the cached serials read as ISO 8601 dates (1900 or 1904
+//!   system). That plot's category axis title heads the category column.
 //! - **Title**: `c:chart/c:title`'s rich text only — an axis title is not the
 //!   chart's.
 //!
@@ -55,19 +60,21 @@ const PLOT_TAGS: [&str; 16] = [
     "surfaceChart",
 ];
 
-/// The label of a plot python-pptx can read (its `PlotFactory`), by the
-/// family of the type `PlotTypeInspector` gives it; `None` for a plot it
-/// cannot read.
-fn readable_plot_label(tag: &str) -> Option<&'static str> {
-    Some(match tag {
-        "barChart" => "bar_chart",
-        "lineChart" => "line_chart",
-        "pieChart" | "doughnutChart" => "pie_chart",
+/// docling's `_CHART_TAGNAME_TO_CLASSIFICATION` (docling#4811): a plot's
+/// label by its tag; every other plot is `other_chart`.
+fn plot_label(tag: &str) -> &'static str {
+    match tag {
+        "barChart" | "bar3DChart" => "bar_chart",
+        "lineChart" | "line3DChart" => "line_chart",
+        "pieChart" | "pie3DChart" | "doughnutChart" => "pie_chart",
         "scatterChart" => "scatter_chart",
-        // AREA…, THREE_D_AREA…, BUBBLE…, RADAR…
-        "areaChart" | "area3DChart" | "bubbleChart" | "radarChart" => "other_chart",
-        _ => return None,
-    })
+        _ => "other_chart",
+    }
+}
+
+/// `_XY_PLOT_TAGNAMES`: plots whose series keep their values in `c:yVal`.
+fn is_xy_plot(tag: &str) -> bool {
+    matches!(tag, "scatterChart" | "bubbleChart")
 }
 
 fn child<'a, 'i>(node: XmlNode<'a, 'i>, tag: &str) -> Option<XmlNode<'a, 'i>> {
@@ -89,7 +96,7 @@ pub fn parse(xml: &str) -> Option<PptxChart> {
 
     let mut labels: Vec<&'static str> = Vec::new();
     for plot in &plots {
-        let label = readable_plot_label(plot.tag_name().name()).unwrap_or("other_chart");
+        let label = plot_label(plot.tag_name().name());
         if !labels.contains(&label) {
             labels.push(label);
         }
@@ -143,22 +150,23 @@ fn chart_data(
     let mut corner = String::new();
     let mut columns: Vec<(String, Vec<String>)> = Vec::new();
     for &plot in plots {
-        if readable_plot_label(plot.tag_name().name()).is_none() {
-            continue;
-        }
         if categories.is_empty() {
             let axis = category_axis(plot_area, plot);
             categories = category_labels(plot, axis, date1904);
             corner = axis.map(axis_title).unwrap_or_default();
         }
-        let mut sers: Vec<XmlNode> = plot.children().filter(|c| c.has_tag_name("ser")).collect();
-        sers.sort_by_key(|s| {
-            child(*s, "order")
+        // `_plot_series`: sorted by `c:order`, whose absence python-pptx
+        // rejects as invalid XML — the table is dropped.
+        let mut sers: Vec<(i64, XmlNode)> = Vec::new();
+        for ser in plot.children().filter(|c| c.has_tag_name("ser")) {
+            let order = child(ser, "order")
                 .and_then(|o| o.attribute("val"))
-                .and_then(|v| v.parse::<i64>().ok())
-                .unwrap_or(0)
-        });
-        for ser in sers {
+                .and_then(|v| v.parse::<i64>().ok())?;
+            sers.push((order, ser));
+        }
+        sers.sort_by_key(|(order, _)| *order);
+        let xy = is_xy_plot(plot.tag_name().name());
+        for (_, ser) in sers {
             let name = ser
                 .children()
                 .filter(|c| c.has_tag_name("tx"))
@@ -170,7 +178,7 @@ fn chart_data(
                 .to_string();
             // A value that is not a number fails python-pptx's `float()`,
             // and docling then drops the whole table.
-            columns.push((name, series_values(ser)?));
+            columns.push((name, series_values(ser, xy)?));
         }
     }
     if columns.is_empty() {
@@ -179,12 +187,12 @@ fn chart_data(
     build_chart_table(categories, columns, corner)
 }
 
-/// A series' values as python-pptx reads them (`c:val`, else `c:yVal`): one
-/// per point of the cache's `c:ptCount`, empty where a point is missing,
-/// integer-valued numbers without `.0` (docling's `_cell_text`). `None` when
-/// a point is not a number.
-fn series_values(ser: XmlNode) -> Option<Vec<String>> {
-    let Some(val) = child(ser, "val").or_else(|| child(ser, "yVal")) else {
+/// A series' values as python-pptx reads them (`c:val`; an xy plot's
+/// `c:yVal`): one per point of the cache's `c:ptCount`, empty where a point
+/// is missing, integer-valued numbers without `.0` (docling's `_cell_text`).
+/// `None` when a point is not a number.
+fn series_values(ser: XmlNode, xy: bool) -> Option<Vec<String>> {
+    let Some(val) = child(ser, if xy { "yVal" } else { "val" }) else {
         return Some(Vec::new());
     };
     let count = val
@@ -444,6 +452,48 @@ fn axis_title(axis: XmlNode) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A chart part with one plot `tag` holding `sers` (`c:ser` bodies).
+    fn chart_xml(tag: &str, sers: &[&str]) -> String {
+        let sers: String = sers.iter().map(|s| format!("<c:ser>{s}</c:ser>")).collect();
+        format!(
+            r#"<c:chartSpace xmlns:c="c"><c:chart><c:plotArea><c:{tag}>{sers}<c:axId val="1"/></c:{tag}><c:catAx><c:axId val="1"/></c:catAx></c:plotArea></c:chart></c:chartSpace>"#
+        )
+    }
+
+    const SER_2026: &str = r#"<c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>2026</c:v></c:pt></c:strCache></c:strRef></c:tx><c:cat><c:strRef><c:strCache><c:ptCount val="3"/><c:pt idx="0"><c:v>Q1</c:v></c:pt><c:pt idx="1"><c:v>Q2</c:v></c:pt><c:pt idx="2"><c:v>Q3</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:numCache><c:ptCount val="3"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt><c:pt idx="2"><c:v>30</c:v></c:pt></c:numCache></c:numRef></c:val>"#;
+
+    /// docling#4811: a plot python-pptx has no class for (3-D bar, line,
+    /// pie, stock, surface, bar-of-pie) is read like any other and labelled
+    /// by its tag; a malformed series (no `c:order`) keeps the label and
+    /// drops the table instead of failing.
+    #[test]
+    fn every_plot_type_is_read_and_labelled_by_its_tag() {
+        for (tag, label) in [
+            ("bar3DChart", "bar_chart"),
+            ("line3DChart", "line_chart"),
+            ("pie3DChart", "pie_chart"),
+            ("area3DChart", "other_chart"),
+            ("stockChart", "other_chart"),
+            ("surfaceChart", "other_chart"),
+            ("ofPieChart", "other_chart"),
+        ] {
+            let chart = parse(&chart_xml(tag, &[SER_2026])).unwrap();
+            assert_eq!(chart.labels, [label], "{tag}");
+            let table = chart
+                .table
+                .unwrap_or_else(|| panic!("{tag}: no data table"));
+            assert_eq!(
+                table.rows,
+                [["", "2026"], ["Q1", "10"], ["Q2", "20"], ["Q3", "30"]],
+                "{tag}"
+            );
+        }
+        let no_order = SER_2026.replace(r#"<c:order val="0"/>"#, "");
+        let chart = parse(&chart_xml("bar3DChart", &[&no_order])).unwrap();
+        assert_eq!(chart.labels, ["bar_chart"]);
+        assert!(chart.table.is_none());
+    }
 
     /// docling's `test_serial_to_iso` cases.
     #[test]

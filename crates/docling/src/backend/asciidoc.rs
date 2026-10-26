@@ -51,8 +51,12 @@ const LITERAL_FENCE: &str = "....";
 /// literal block, optionally labelled by a `[source,lang]` attribute line
 /// right before it (docling#4400).
 const LISTING_FENCE: &str = "----";
-/// `////` opens and closes a comment block; `//` starts a line comment.
-const COMMENT_BLOCK: &str = "////";
+/// A line of four or more slashes opens a comment block, closed only by an
+/// identical line; exactly two slashes start a line comment — `///` and
+/// `//// text` are body text, as Asciidoctor reads them (docling#4394).
+fn is_comment_block_delimiter(stripped: &str) -> bool {
+    stripped.len() >= 4 && stripped.bytes().all(|b| b == b'/')
+}
 /// Example, sidebar, quote, open and passthrough block delimiters: consumed
 /// so they do not leak into the text — with a matching closer the lines up
 /// to it are read like any others, without one the delimiter only breaks
@@ -138,7 +142,7 @@ fn comment(lines: &[String]) -> Option<Block<'static>> {
 /// `[source,lang]` attribute line consumed right before a `----` labels the
 /// listing's language. A comment is a block of its own (#863, docling#4663,
 /// 2.141): a run of consecutive `//` lines is one comment, everything
-/// between two `////` lines another, and an unclosed `////` comments out
+/// between two identical `////`(`/`…) lines another, and an unclosed one comments out
 /// the rest of the document, as Asciidoctor reads it. A comment block hides
 /// every construct, so it is checked ahead of the block openers (a `----`
 /// between `////` delimiters is comment text). An example / sidebar / quote
@@ -158,10 +162,12 @@ fn blocks(text: &str) -> Vec<Block<'_>> {
         .map(|l| l.strip_suffix('\r').unwrap_or(l))
         .collect();
     let source_attr = cached_regex!(SOURCE_ATTR);
-    // `//` but not the `////` delimiter itself.
-    let is_line_comment = |l: &str| l.starts_with("//") && l.trim() != COMMENT_BLOCK;
+    // Exactly two slashes: `///` is text and `////` a block delimiter.
+    let is_line_comment = |l: &str| l.starts_with("//") && !l.starts_with("///");
     let mut out = Vec::new();
     let mut comment_data: Option<Vec<String>> = None;
+    // The line that opened the comment block: only an identical one closes it.
+    let mut comment_delimiter = "";
     // Content block delimiters still waiting for their closer, innermost
     // last.
     let mut open_content: Vec<&str> = Vec::new();
@@ -169,7 +175,7 @@ fn blocks(text: &str) -> Vec<Block<'_>> {
     while i < lines.len() {
         let stripped = lines[i].trim();
         if let Some(data) = comment_data.as_mut() {
-            if stripped == COMMENT_BLOCK {
+            if stripped == comment_delimiter {
                 out.extend(comment(data));
                 comment_data = None;
             } else {
@@ -178,8 +184,9 @@ fn blocks(text: &str) -> Vec<Block<'_>> {
             i += 1;
             continue;
         }
-        if stripped == COMMENT_BLOCK {
+        if is_comment_block_delimiter(stripped) {
             comment_data = Some(Vec::new());
+            comment_delimiter = stripped;
             i += 1;
             continue;
         }
@@ -1238,18 +1245,33 @@ fn parse_inline(text: &str, bold: bool, italic: bool) -> Vec<Run> {
     runs
 }
 
+/// `= Title` → the title text, trimmed, its closing `=` dropped.
 fn is_title(line: &str) -> Option<&str> {
-    line.strip_prefix("= ")
+    let rest = line.strip_prefix("= ")?.trim();
+    Some(strip_closing_marker(rest, "="))
 }
 
-/// `== Section` → (number-of-`=`, text). A bare `=` (title) is excluded.
+/// `== Section` → (number-of-`=`, text trimmed, closing marks dropped). A
+/// bare `=` (title) is excluded.
 fn section_header(line: &str) -> Option<(u8, String)> {
     if !line.starts_with("==") {
         return None;
     }
     let caps = cached_regex!(r"^(=+)\s+(.*)").captures(line)?;
-    let level = caps.get(1)?.as_str().len() as u8;
-    Some((level, caps.get(2)?.as_str().to_string()))
+    let marker = caps.get(1)?.as_str();
+    let text = strip_closing_marker(caps.get(2)?.as_str().trim(), marker);
+    Some((marker.len() as u8, text.to_string()))
+}
+
+/// docling's `_strip_closing_marker` (docling#4938): Asciidoctor accepts a
+/// symmetric title, closed by the same marks that open it after whitespace
+/// (`== Intro ==`), and leaves them out of the text; marks of another
+/// length are part of the title (`=== Details ==`).
+fn strip_closing_marker<'a>(text: &'a str, marker: &str) -> &'a str {
+    match text.strip_suffix(marker) {
+        Some(head) if head.ends_with([' ', '\t']) => head.trim_end_matches([' ', '\t']),
+        _ => text,
+    }
 }
 
 /// A parsed list item, docling's `_parse_list_item`.
@@ -1669,6 +1691,57 @@ mod tests {
             md("// note\n[NOTE]\n////\nhidden\n////\n:attr: x\ntext\n"),
             "text\n"
         );
+    }
+
+    /// docling#4938: a symmetric title drops its closing marks; marks of
+    /// another length are part of the title, as in Asciidoctor.
+    #[test]
+    fn symmetric_titles_drop_their_closing_marks() {
+        let v = json("= Doc =\n\n== Intro ==\n\ntext\n\n=== Details ==\n");
+        let headings: Vec<(&str, &str)> = v["texts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["label"] == "title" || t["label"] == "section_header")
+            .map(|t| (t["label"].as_str().unwrap(), t["text"].as_str().unwrap()))
+            .collect();
+        assert_eq!(
+            headings,
+            [
+                ("title", "Doc"),
+                ("section_header", "Intro"),
+                ("section_header", "Details ==")
+            ]
+        );
+        assert!(md("== Intro ==\n").starts_with("## Intro\n"));
+    }
+
+    /// The texts of the notes-layer items (the comments).
+    fn notes(src: &str) -> Vec<String> {
+        json(src)["texts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["content_layer"] == "notes")
+            .map(|t| t["text"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// docling#4394: only exactly two slashes start a line comment, and a
+    /// comment block opened by four or more slashes closes only on an
+    /// identical line.
+    #[test]
+    fn comment_delimiters_follow_asciidoctor() {
+        let src = "/// not a comment\n//// nor this\n\n// a note\n";
+        assert_eq!(md(src), "/// not a comment //// nor this\n");
+        assert_eq!(notes(src), ["a note"]);
+        for delimiter in ["/////", "///////"] {
+            let src = format!(
+                "before\n\n{delimiter}\nhidden\n////\nstill hidden\n{delimiter}\n\nafter\n"
+            );
+            assert_eq!(md(&src), "before\n\nafter\n");
+            assert_eq!(notes(&src), ["hidden\n////\nstill hidden"]);
+        }
     }
 
     /// docling's `elif in_table` arm consumes the line that ends a bare

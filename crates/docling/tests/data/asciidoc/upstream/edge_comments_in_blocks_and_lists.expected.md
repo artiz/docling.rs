@@ -10,9 +10,3 @@ Example text. nested sidebar
 2. step two
 
 After list.
-
-five slashes
-
-```
-code
-```

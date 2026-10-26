@@ -90,15 +90,6 @@
         },
         {
           "$ref": "#/texts/11"
-        },
-        {
-          "$ref": "#/texts/12"
-        },
-        {
-          "$ref": "#/texts/13"
-        },
-        {
-          "$ref": "#/texts/14"
         }
       ],
       "content_layer": "body",
@@ -233,48 +224,8 @@
       "content_layer": "notes",
       "label": "text",
       "prov": [],
-      "orig": "///",
-      "text": "///"
-    },
-    {
-      "self_ref": "#/texts/12",
-      "parent": {
-        "$ref": "#/texts/1"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "paragraph",
-      "prov": [],
-      "orig": "five slashes",
-      "text": "five slashes"
-    },
-    {
-      "self_ref": "#/texts/13",
-      "parent": {
-        "$ref": "#/texts/1"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "code",
-      "prov": [],
-      "orig": "code",
-      "text": "code",
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "code_language": "unknown"
-    },
-    {
-      "self_ref": "#/texts/14",
-      "parent": {
-        "$ref": "#/texts/1"
-      },
-      "children": [],
-      "content_layer": "notes",
-      "label": "text",
-      "prov": [],
-      "orig": "unclosed to the end\nTail text.",
-      "text": "unclosed to the end\nTail text."
+      "orig": "five slashes\n\n----\ncode\n----\n\n////\nunclosed to the end\nTail text.",
+      "text": "five slashes\n\n----\ncode\n----\n\n////\nunclosed to the end\nTail text."
     }
   ],
   "pictures": [],
