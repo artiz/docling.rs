@@ -5,7 +5,7 @@
 //! assigned to its best-containing region, regions are ordered in reading order
 //! (two-column aware), and each becomes a typed node by its layout label.
 
-use docling_core::{CaptionParent, Node, PictureClass, PictureImage, Table};
+use docling_core::{CaptionParent, ListItemDclx, Node, PictureClass, PictureImage, Table};
 #[cfg(any(feature = "ml", feature = "ocr-prep"))]
 use image::RgbImage;
 
@@ -1504,7 +1504,10 @@ fn split_list_marker(text: &str) -> Option<(&str, &str, bool)> {
 /// as `- a) text` / `- 1.2 text` / `- [3] text` for any other marker
 /// (`case_auto`: the serializer's `-`, then the original marker) — spelled
 /// here as a bullet item whose text carries the marker, the way the DOCX and
-/// DOC backends already spell theirs. An item without a recognizable marker is
+/// DOC backends already spell theirs: the Markdown fields then carry no
+/// marker (the serializer applies `case_auto` to a marker it is given, so it
+/// would print it a second time, `- (1) (1) text`), and the DocLang
+/// `<marker>` rides in the [`ListItemDclx`] overlay. An item without a recognizable marker is
 /// a plain bullet. The symbol-font bullets docling-parse filters out of its
 /// cells (`•◦▪·*` glued to the text) are stripped before the match, as before.
 fn list_item_node(text: &str, loc: [u16; 4], first_in_list: bool) -> Node {
@@ -1551,8 +1554,30 @@ fn list_item_node(text: &str, loc: [u16; 4], first_in_list: bool) -> Node {
                 layer: None,
             }
         }
-        // `case_auto`: a marker holding a letter or digit rides in the text.
-        Some((marker, body, true)) => bullet(format!("{marker} {body}"), marker),
+        // `case_auto`: a marker holding a letter or digit rides in the text,
+        // so not in the Markdown `marker` (docling-core's serializer would add
+        // it again); DocLang keeps it through the overlay, whose text is the
+        // node's own, so the DocLang output is what it was.
+        Some((marker, body, true)) => {
+            let text = md_escape(&format!("{marker} {body}"));
+            Node::ListItem {
+                ordered: false,
+                number: 0,
+                first_in_list,
+                text: text.clone(),
+                level: 0,
+                marker: None,
+                location: Some(loc),
+                dclx: Some(ListItemDclx {
+                    ordered: false,
+                    marker: Some(marker.to_string()),
+                    text,
+                    runs: Vec::new(),
+                }),
+                href: None,
+                layer: None,
+            }
+        }
         Some((marker, body, false)) => bullet(body.to_string(), marker),
         None => bullet(stripped.to_string(), "·"),
     }
@@ -4934,14 +4959,21 @@ mod tests {
     /// or digit stays in the text behind the bullet; no marker → plain bullet.
     #[test]
     fn list_item_markers_split_like_docling() {
+        // The marker as DocLang reads it: the overlay's, else the node's.
         let text_of = |n: &Node| match n {
             Node::ListItem {
                 ordered,
                 number,
                 text,
                 marker,
+                dclx,
                 ..
-            } => (*ordered, *number, text.clone(), marker.clone()),
+            } => (
+                *ordered,
+                *number,
+                text.clone(),
+                dclx.as_ref().map_or(marker.clone(), |d| d.marker.clone()),
+            ),
             other => panic!("{other:?}"),
         };
         let loc = [0, 0, 100, 10];
@@ -5026,6 +5058,47 @@ mod tests {
             text_of(&super::list_item_node("Plain item", loc, false)),
             (false, 0, "Plain item".into(), Some("·".into()))
         );
+    }
+
+    /// A `case_auto` marker is printed once: it rides in the item's text, so
+    /// the Markdown serializer — which applies docling-core's AUTO rule to a
+    /// marker it is handed — must not be handed it too (`- (1) (1) text`, the
+    /// four drifted PDF snapshots of the docling 2.142 serializer change).
+    /// The bullet glyph and `N.` shapes keep their Markdown marker.
+    #[test]
+    fn case_auto_marker_prints_once_in_markdown() {
+        let loc = [0, 0, 100, 10];
+        let nodes: Vec<Node> = [
+            "(1) Human annotation",
+            "[21] Peng Zhang",
+            "a) Option",
+            "• Bullet",
+            "3. Third",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, t)| super::list_item_node(t, loc, i == 0))
+        .collect();
+        for n in &nodes[..3] {
+            let Node::ListItem { marker, dclx, .. } = n else {
+                unreachable!()
+            };
+            assert_eq!(marker, &None, "{n:?}");
+            assert!(dclx.as_ref().is_some_and(|d| d.marker.is_some()), "{n:?}");
+        }
+        let mut doc = docling_core::DoclingDocument::new("t");
+        doc.nodes = nodes;
+        let md = doc.export_to_markdown();
+        for line in [
+            "- (1) Human annotation",
+            "- [21] Peng Zhang",
+            "- a) Option",
+            "- Bullet",
+            "3. Third",
+        ] {
+            assert!(md.lines().any(|l| l == line), "missing {line:?} in:\n{md}");
+        }
+        assert!(!md.contains("(1) (1)") && !md.contains("[21] [21]"), "{md}");
     }
 
     #[test]
