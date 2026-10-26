@@ -2,6 +2,8 @@
 (declarative path only — no ML models required)."""
 
 import io
+import json
+import math
 import os
 from pathlib import Path
 
@@ -47,6 +49,51 @@ def test_metadata_reaches_the_result():
     assert m["properties"]["pages"] == "2"
     with pytest.raises(Exception, match="metadata"):
         DocumentConverter(metadata="yaml")
+
+
+def test_pdf_confidence_reaches_the_result():
+    """PDF confidence is a typed docling-shaped report on the result."""
+    from docling_rs import (
+        ConfidenceReport,
+        DocumentConverter,
+        PageConfidenceScores,
+        QualityGrade,
+    )
+
+    pdf = REPO / "tests/data/pdf/sources/normal_4pages.pdf"
+    result = DocumentConverter(text_layer_only=True).convert(pdf, page_range=(1, 2))
+
+    assert isinstance(result.confidence, ConfidenceReport)
+    assert set(result.confidence.pages) == {1, 2}
+    page = result.confidence.pages[1]
+    assert isinstance(page, PageConfidenceScores)
+    assert 0.0 <= page.parse_score <= 1.0
+    assert 0.0 <= page.layout_score <= 1.0
+    assert math.isnan(page.ocr_score)
+    assert math.isnan(page.table_score)
+    dumped = json.loads(result.confidence.model_dump_json())
+    assert dumped["pages"]["1"]["table_score"] is None
+    assert dumped["pages"]["1"]["mean_grade"] in {
+        "poor", "fair", "good", "excellent", "unspecified"
+    }
+
+    empty = DocumentConverter().convert(HTML).confidence
+    assert isinstance(empty, ConfidenceReport) and not empty.pages
+    assert math.isnan(empty.mean_score)
+    assert empty.mean_grade == QualityGrade.UNSPECIFIED
+
+
+def test_warm_pdf_pipeline_confidence_reaches_the_result():
+    """The warm pipeline's separate native result path keeps confidence."""
+    from docling_rs import ConfidenceReport, DocumentConverter, InputFormat
+
+    pdf = REPO / "tests/data/pdf/sources/normal_4pages.pdf"
+    converter = DocumentConverter(text_layer_only=True)
+    converter.initialize_pipeline(InputFormat.PDF)
+    result = converter.convert(pdf, page_range=(2, 2))
+
+    assert isinstance(result.confidence, ConfidenceReport)
+    assert set(result.confidence.pages) == {2}
 
 
 def test_detect_format_reads_the_bytes():
@@ -124,6 +171,9 @@ def test_reexports_are_importable():
         "AcceleratorOptions",
         "AcceleratorDevice",
         "TableFormerMode",
+        "ConfidenceReport",
+        "PageConfidenceScores",
+        "QualityGrade",
     ):
         assert hasattr(d, name), name
 
@@ -205,13 +255,16 @@ def test_convert_all_yields_results():
 
 
 def test_convert_all_raises_on_error_false():
-    from docling_rs import DocumentConverter
+    from docling_rs import ConfidenceReport, DocumentConverter, QualityGrade
 
     missing = REPO / "tests/data/html/sources/__does_not_exist__.html"
     out = list(DocumentConverter().convert_all([HTML, missing], raises_on_error=False))
     assert len(out) == 2
     assert out[0].status == "success"
     assert out[1].status == "failure"
+    assert isinstance(out[1].confidence, ConfidenceReport) and not out[1].confidence.pages
+    assert math.isnan(out[1].confidence.mean_score)
+    assert out[1].confidence.mean_grade == QualityGrade.UNSPECIFIED
 
 
 def test_conversion_error_type():

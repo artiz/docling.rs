@@ -113,6 +113,9 @@ __all__ = [
     "ConversionResult",
     "ArchiveItem",
     "ConversionStatus",
+    "ConfidenceReport",
+    "PageConfidenceScores",
+    "QualityGrade",
     "ErrorItem",
     "ConversionError",
     "EncryptionError",
@@ -207,7 +210,10 @@ class ConversionResult:
     ``.metadata`` (#679) is the document's metadata as the JSON's
     ``metadata`` object — ``{"title": …, "authors": [...], "exif": {...}}``
     — when the converter was built with ``metadata="json"`` or
-    ``"frontmatter"`` and the file carries any, else ``None``."""
+    ``"frontmatter"`` and the file carries any, else ``None``.
+    ``.confidence`` is the PDF/image pipeline's :class:`ConfidenceReport`,
+    keyed by the real 1-based page number; conversions without scores carry
+    an empty report."""
 
     def __init__(
         self,
@@ -217,6 +223,7 @@ class ConversionResult:
         errors: Iterable[ErrorItem] = (),
         redaction: Optional[Dict[str, int]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        confidence: Optional[ConfidenceReport] = None,
     ):
         self.status = ConversionStatus(status)
         self.document = document
@@ -224,6 +231,15 @@ class ConversionResult:
         self.errors = list(errors)
         self.redaction = dict(redaction) if redaction is not None else None
         self.metadata = dict(metadata) if metadata is not None else None
+        self.confidence = confidence if confidence is not None else ConfidenceReport()
+
+
+# Imported here because datamodel re-exports ConversionResult from this module.
+from .datamodel.base_models import (  # noqa: E402
+    ConfidenceReport,
+    PageConfidenceScores,
+    QualityGrade,
+)
 
 
 def _is_api_options(pd: Any) -> bool:
@@ -1319,6 +1335,7 @@ def _wrap(native) -> ConversionResult:
     document = DoclingDocument.model_validate_json(native.document_json)
     errors = [ErrorItem(*item) for item in getattr(native, "errors", ())]
     metadata_json = getattr(native, "metadata_json", None)
+    confidence_json = getattr(native, "confidence_json", None)
     return ConversionResult(
         native.status,
         native.input_name,
@@ -1326,4 +1343,9 @@ def _wrap(native) -> ConversionResult:
         errors,
         getattr(native, "redaction", None),
         json.loads(metadata_json) if metadata_json else None,
+        (
+            ConfidenceReport.model_validate_json(confidence_json)
+            if confidence_json
+            else ConfidenceReport()
+        ),
     )

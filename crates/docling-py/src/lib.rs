@@ -112,6 +112,10 @@ struct PyNativeResult {
     /// otherwise.
     #[pyo3(get)]
     metadata_json: Option<String>,
+    /// The PDF/image pipeline's docling `ConfidenceReport` shape (#183),
+    /// kept outside the document JSON just as Python docling does.
+    #[pyo3(get)]
+    confidence_json: Option<String>,
 }
 
 /// The `metadata` object of `doc`'s JSON (#679), when its output mode
@@ -119,6 +123,10 @@ struct PyNativeResult {
 fn metadata_json(doc: &docling::DoclingDocument) -> Option<String> {
     (doc.metadata_output.in_json() && !doc.metadata.is_empty())
         .then(|| doc.metadata.to_json().to_string())
+}
+
+fn confidence_json(doc: &docling::DoclingDocument) -> Option<String> {
+    doc.confidence.as_ref().map(|r| r.to_json().to_string())
 }
 
 fn redaction_counts(
@@ -1133,6 +1141,7 @@ impl PyDocumentConverter {
                     .to_string(),
                     input_name: src.name,
                     metadata_json: metadata_json(&c.document),
+                    confidence_json: confidence_json(&c.document),
                     document_json: c.document.export_to_json(),
                     errors: error_tuples(errors),
                     redaction: redaction_counts(redaction),
@@ -1246,6 +1255,7 @@ fn native_result(r: docling::ConversionResult) -> PyNativeResult {
         status,
         input_name: r.input_name,
         metadata_json: metadata_json(&r.document),
+        confidence_json: confidence_json(&r.document),
         document_json,
         errors: error_tuples(r.errors),
         redaction: redaction_counts(r.redaction),
