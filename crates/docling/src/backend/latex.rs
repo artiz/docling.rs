@@ -3008,7 +3008,9 @@ fn find_newline(text: &[char], from: usize) -> Option<usize> {
 }
 
 fn starts_with_at(text: &[char], at: usize, pat: &str) -> bool {
-    (at..).zip(pat.chars()).all(|(i, p)| text.get(i) == Some(&p))
+    (at..)
+        .zip(pat.chars())
+        .all(|(i, p)| text.get(i) == Some(&p))
 }
 
 /// `_strip_latex_comments`: `%` comments out of a definition body; a
