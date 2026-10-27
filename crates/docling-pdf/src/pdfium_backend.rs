@@ -794,6 +794,10 @@ struct PageSources<'a> {
 #[derive(Clone)]
 pub struct PendingImage(std::sync::Arc<std::sync::Mutex<Pending>>);
 
+/// The channel a sent job's bitmap comes back through.
+#[cfg(feature = "ml")]
+type Reply = std::sync::mpsc::Receiver<Result<RgbImage, PdfError>>;
+
 /// Where a [`PendingImage`] stands: the job and the helper to send it to,
 /// plus — once sent — the reply channel and the flag that lets the helper
 /// skip it.
@@ -801,10 +805,7 @@ pub struct PendingImage(std::sync::Arc<std::sync::Mutex<Pending>>);
 struct Pending {
     spec: RenderSpec,
     tx: std::sync::mpsc::Sender<RenderJob>,
-    sent: Option<(
-        std::sync::mpsc::Receiver<Result<RgbImage, PdfError>>,
-        std::sync::Arc<std::sync::atomic::AtomicBool>,
-    )>,
+    sent: Option<(Reply, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
     taken: bool,
     /// The document's recent verdicts, which [`BitmapRender::Adaptive`]
     /// schedules by; this page's goes in once.
