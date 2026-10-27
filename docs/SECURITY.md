@@ -241,6 +241,10 @@ extracted to disk, so there is no zip-slip path.
   header (401 otherwise); `/health`, `/ready`, `/metrics` and the docs page
   stay open. Without a key, bind to loopback (the default) or place an
   authenticating/policy proxy in front before exposing it.
+- **The web UI can be left out.** `--no-ui` / `DOCLING_RS_ENABLE_UI=0`
+  (#892; upstream's `DOCLING_SERVE_ENABLE_UI=0` too) serves no page at `/`
+  — a server only machines call then shows a browser nothing but a 404
+  naming the API. It removes no API surface: the page only calls `/v1`.
 
 ### `docling-rs mcp` (Model Context Protocol server, #669)
 

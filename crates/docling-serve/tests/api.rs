@@ -326,6 +326,48 @@ async fn compact_tables_applies_to_pdf_input() {
     );
 }
 
+/// #892: `ui: Some(false)` serves the API without the page — `/` is a 404
+/// naming the API, the logo is gone, while the API description, the probes
+/// and conversions answer as before. On by default.
+#[tokio::test]
+async fn ui_can_be_switched_off_keeping_the_api() {
+    let page = app()
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK, "the UI is on by default");
+    assert!(body_string(page).await.contains("<html"));
+
+    let api_only = || {
+        router(ServeConfig {
+            ui: Some(false),
+            ..ServeConfig::default()
+        })
+    };
+    let get = |path: &'static str| async move {
+        api_only()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    };
+    let root = get("/").await;
+    assert_eq!(root.status(), StatusCode::NOT_FOUND);
+    let body = body_string(root).await;
+    assert!(!body.contains("<html"), "{body}");
+    assert!(body.contains("/openapi.yaml"), "{body}");
+    assert_eq!(get("/logo.svg").await.status(), StatusCode::NOT_FOUND);
+    for path in ["/openapi.yaml", "/health", "/ready", "/v1/config"] {
+        assert_eq!(get(path).await.status(), StatusCode::OK, "{path}");
+    }
+    let (ct, body) = multipart("note.md", b"# Title\n\nHello.\n", &[]);
+    let response = api_only()
+        .oneshot(convert_request(&ct, body, ""))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_string(response).await.contains("# Title"));
+}
+
 #[tokio::test]
 async fn converts_markdown_upload_to_markdown() {
     let (ct, body) = multipart("note.md", b"# Title\n\nHello *world*.\n", &[]);

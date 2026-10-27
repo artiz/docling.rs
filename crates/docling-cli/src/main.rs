@@ -3601,6 +3601,11 @@ fn run_serve(args: Vec<String>) -> ExitCode {
                 Some(v) if !v.is_empty() => cfg.api_key = Some(v),
                 _ => return serve_usage("--api-key needs a key"),
             },
+            // #892: the API without the web UI page (`DOCLING_RS_ENABLE_UI` /
+            // `DOCLING_SERVE_ENABLE_UI` when absent); `--enable-ui` is
+            // docling-serve's spelling of the default.
+            "--no-ui" => cfg.ui = Some(false),
+            "--enable-ui" => cfg.ui = Some(true),
             other => return serve_usage(&format!("unknown argument '{other}'")),
         }
     }
@@ -3623,7 +3628,7 @@ fn run_serve(args: Vec<String>) -> ExitCode {
 #[cfg(feature = "serve")]
 fn serve_usage(err: &str) -> ExitCode {
     eprintln!("error: {err}");
-    eprintln!("usage: docling-rs serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--idle-unload-secs N] [--allow-url-fetch] [--strict] [--api-key KEY]");
+    eprintln!("usage: docling-rs serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--idle-unload-secs N] [--allow-url-fetch] [--strict] [--api-key KEY] [--no-ui | --enable-ui]");
     ExitCode::from(2)
 }
 
