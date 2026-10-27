@@ -360,14 +360,15 @@ pub enum BitmapRender {
     /// As soon as the page leaves the walk, on the helper thread while
     /// layout runs (#682) — for a caller that reads every page's bitmap.
     Eager,
-    /// Started like [`Self::Eager`], and skipped if the page declines it
-    /// ([`PdfPage::decline_image`]) before the helper gets to it (#897).
-    /// Layout reads the separate 1x render, and a page whose detections hold
-    /// no table, picture or other bitmap consumer never needs the 2x one —
-    /// on a text-heavy document most pages. When rendering keeps up with
-    /// layout nothing changes; when it falls behind (rendering-bound
-    /// documents and machines), the declined renders are the ones dropped.
-    Speculative,
+    /// Started like [`Self::Eager`] while the document's recent pages mostly
+    /// read their bitmap, left [`Self::OnDemand`] while they mostly do not
+    /// (#897). Layout reads the separate 1x render, and a page whose
+    /// detections hold no table, picture or other bitmap consumer never
+    /// needs the 2x one: on a paper with a figure or table on most pages
+    /// the render overlaps layout as before; on prose the wasted renders go.
+    /// A started render the page then declines ([`PdfPage::decline_image`])
+    /// is still skipped if the helper has not begun it.
+    Adaptive,
     /// Only once [`PdfPage::resolve_image`] asks for it (#897): no render is
     /// ever wasted, but a page that needs one waits for it after layout
     /// instead of having it drawn meanwhile.
@@ -783,7 +784,7 @@ struct PageSources<'a> {
 
 /// A page's 2x bitmap, rendered on the walk's helper thread (#682): queued
 /// until something asks for it ([`BitmapRender::OnDemand`]) or sent at once
-/// ([`BitmapRender::Eager`], [`BitmapRender::Speculative`]), the result
+/// ([`BitmapRender::Eager`], [`BitmapRender::Adaptive`]), the result
 /// arriving through a one-shot channel. A sent job can be declined: the
 /// helper then skips it if it has not started it, and a later resolve sends
 /// it again (#897). Cloning a page clones the handle; whichever copy
@@ -805,6 +806,47 @@ struct Pending {
         std::sync::Arc<std::sync::atomic::AtomicBool>,
     )>,
     taken: bool,
+    /// The document's recent verdicts, which [`BitmapRender::Adaptive`]
+    /// schedules by; this page's goes in once.
+    stats: std::sync::Arc<Verdicts>,
+    /// This page's verdict so far (`Some(true)` = read).
+    verdict: Option<bool>,
+}
+
+/// Whether the last [`Verdicts::WINDOW`] pages that reached a verdict read
+/// their 2x bitmap — what [`BitmapRender::Adaptive`] decides a new page's
+/// render by (#897).
+#[cfg(feature = "ml")]
+#[derive(Default)]
+struct Verdicts(std::sync::Mutex<std::collections::VecDeque<bool>>);
+
+#[cfg(feature = "ml")]
+impl Verdicts {
+    const WINDOW: usize = 8;
+
+    /// Record a page's verdict, or turn a declined page's into a read one.
+    fn record(&self, read: bool, replaces_decline: bool) {
+        let mut w = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        if replaces_decline {
+            if let Some(v) = w.iter_mut().rev().find(|v| !**v) {
+                *v = true;
+            }
+            return;
+        }
+        if w.len() == Self::WINDOW {
+            w.pop_front();
+        }
+        w.push_back(read);
+    }
+
+    /// Start the next render now? Yes until a few verdicts are in (most
+    /// documents' first pages are not representative either way, and a
+    /// wrong "yes" costs one render, a wrong "no" one page's latency), then
+    /// while at least half of the window read theirs.
+    fn start_eagerly(&self) -> bool {
+        let w = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        w.len() < 3 || 2 * w.iter().filter(|v| **v).count() >= w.len()
+    }
 }
 
 #[cfg(feature = "ml")]
@@ -845,7 +887,12 @@ impl PendingImage {
     /// Nothing will read this bitmap: let the helper skip the job if it has
     /// not begun it (a job never sent stays unsent).
     fn decline(&self) {
-        if let Some((_, declined)) = &self.lock().sent {
+        let mut p = self.lock();
+        if p.verdict.is_none() {
+            p.verdict = Some(false);
+            p.stats.record(false, false);
+        }
+        if let Some((_, declined)) = &p.sent {
             declined.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
@@ -854,6 +901,10 @@ impl PendingImage {
         let mut p = self.lock();
         if p.taken {
             return Err(PdfError::Pdfium("page bitmap resolved twice".into()));
+        }
+        if p.verdict != Some(true) {
+            p.stats.record(true, p.verdict == Some(false));
+            p.verdict = Some(true);
         }
         loop {
             match &p.sent {
@@ -923,6 +974,7 @@ struct RenderJob {
 struct DeferredRender {
     tx: std::sync::mpsc::Sender<RenderJob>,
     mode: BitmapRender,
+    stats: std::sync::Arc<Verdicts>,
 }
 
 #[cfg(feature = "ml")]
@@ -935,7 +987,11 @@ impl DeferredRender {
             .name("docling-pdf-render".into())
             .spawn(move || Self::serve(&meta, rx))
             .ok()?;
-        Some(Self { tx, mode })
+        Some(Self {
+            tx,
+            mode,
+            stats: Default::default(),
+        })
     }
 
     fn submit(&self, index: i32, w: u32, h: u32, hint: f64, dw: u32, dh: u32) -> PendingImage {
@@ -952,8 +1008,15 @@ impl DeferredRender {
             tx: self.tx.clone(),
             sent: None,
             taken: false,
+            stats: self.stats.clone(),
+            verdict: None,
         })));
-        if self.mode != BitmapRender::OnDemand {
+        let start = match self.mode {
+            BitmapRender::Eager => true,
+            BitmapRender::Adaptive => self.stats.start_eagerly(),
+            BitmapRender::OnDemand => false,
+        };
+        if start {
             pending.start();
         }
         pending
@@ -1707,6 +1770,32 @@ pub(crate) use native::bind_for_tests;
 #[cfg(test)]
 mod tests {
     use super::{checked_render_dims, max_render_side, to_display_frame};
+
+    /// #897: the adaptive schedule starts renders eagerly for the first
+    /// pages, then while at least half of the last 8 verdicts read the
+    /// bitmap; a declined page that turns out to read it counts as read.
+    #[cfg(feature = "ml")]
+    #[test]
+    fn adaptive_verdicts() {
+        let v = super::Verdicts::default();
+        assert!(v.start_eagerly(), "no verdict yet");
+        v.record(false, false);
+        v.record(false, false);
+        assert!(v.start_eagerly(), "still warming up");
+        v.record(false, false);
+        assert!(!v.start_eagerly(), "three text-only pages");
+        v.record(true, true); // the last declined one was read after all
+        v.record(true, false);
+        assert!(v.start_eagerly(), "2 of 4 read");
+        for _ in 0..8 {
+            v.record(false, false);
+        }
+        assert!(!v.start_eagerly(), "the window forgets the read ones");
+        for _ in 0..4 {
+            v.record(true, false);
+        }
+        assert!(v.start_eagerly(), "4 of the last 8 read");
+    }
 
     /// The pure-Rust object model must answer exactly what pdfium answers —
     /// page count, display size, `/Rotate`, URI links — on every corpus PDF,

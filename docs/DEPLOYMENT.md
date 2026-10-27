@@ -215,6 +215,7 @@ PDF/image models have loaded (and stays 503, with the error, if loading fails).
 | `DOCLING_RS_MAX_MEMORY_MB` | `0` (or cgroup) | Memory ceiling for admission control in MiB |
 | `DOCLING_RS_MEMORY_WATERMARK_PCT` | `85` | Watermark % above which new requests get HTTP 503 Retry-After |
 | `DOCLING_RS_PDF_WORKERS` | CPU count | Worker pool size for concurrent PDF page processing |
+| `DOCLING_RS_PAGE_BITMAP` | `adaptive` | When the 2× page bitmap (TableFormer, picture crops, OCR) of a page with a text layer is rendered (#897): `adaptive` follows the document's recent pages; `eager` renders every page's during layout; `on-demand` only the ones read, after layout (least CPU) |
 | `DOCLING_RS_TF_INTRA` | auto (#262) | Derived from cgroup CPU quota (#262); explicitly narrows ONNX intra-op threads for TableFormer decoder |
 | `DOCLING_RS_GRAPH_CACHE_DIR` | `$XDG_CACHE_HOME/docling-rs/graphs` (else `~/.cache/…`) | Where ONNX Runtime's optimized graphs are cached between processes (CPU provider only; session creation for the layout model ~0.8 s → ~0.15 s) |
 | `DOCLING_RS_NO_GRAPH_CACHE` | `0` | `1` disables the optimized-graph cache (models load and optimize from scratch every process) |

@@ -2840,14 +2840,14 @@ impl Pipeline {
     }
 
     /// When the walk renders the 2x bitmaps of pages with a text layer
-    /// (#897). Speculatively by default: each starts on the helper thread as
-    /// the page leaves the walk, overlapping layout (#682), and a page whose
-    /// detections turn out not to read it declines it — skipped when the
-    /// helper has not got to it, which is when rendering is the bottleneck.
-    /// Page images read every bitmap, so nothing is declined there.
-    /// `DOCLING_RS_PAGE_BITMAP` picks one explicitly: `eager` (every bitmap,
-    /// the #682 schedule), `speculative`, `on-demand` (only the bitmaps read
-    /// — the least CPU, with the render after layout instead of during it).
+    /// (#897). Adaptively by default: while the document's recent pages read
+    /// theirs, each starts on the helper thread as the page leaves the walk,
+    /// overlapping layout (#682); while they do not (prose), only a page that
+    /// reads it renders it, after layout. Page images read every bitmap, so
+    /// they keep the #682 schedule. `DOCLING_RS_PAGE_BITMAP` picks one
+    /// explicitly: `eager` (every bitmap, during layout), `adaptive`,
+    /// `on-demand` (only the bitmaps read — the least CPU, with every render
+    /// after layout).
     fn bitmap_render(&self) -> pdfium_backend::BitmapRender {
         use pdfium_backend::BitmapRender;
         match env::nonempty("DOCLING_RS_PAGE_BITMAP")
@@ -2857,7 +2857,7 @@ impl Pipeline {
             Some("eager") => BitmapRender::Eager,
             Some("on-demand" | "ondemand" | "lazy") => BitmapRender::OnDemand,
             _ if self.images.page_images => BitmapRender::Eager,
-            _ => BitmapRender::Speculative,
+            _ => BitmapRender::Adaptive,
         }
     }
 
