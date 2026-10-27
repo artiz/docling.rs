@@ -115,7 +115,7 @@ docling.rs's `DocumentConverter` — `{"ocr_lang": "ch"}`,
 | `mineru-kit parse` | `docling-rs FILE` prints Markdown (`--to json\|html\|chunks\|…`), `docling-rs --input 'dir/*' --output out` for a folder; [release binaries](https://github.com/docling-project/docling.rs/releases), `cargo install docling-cli`, or `python -m docling_rs.mineru` |
 | `mineru-kit api-server`, `mineru server` | `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve` — `POST /v1/convert`, and docling-serve's routes for Open WebUI, n8n, Dify ([details](../crates/docling-serve/README.md#drop-in-for-docling-serve-open-webui-n8n-dify-langchain)) |
 | `mineru-kit webui` | the [browser demo](https://docling-project.github.io/docling.rs/) (WebAssembly, runs in the page) |
-| — | an MCP server (`uvx docling-rs-mcp`), Node.js (`npm i docling.rs`), Rust (`docling` crate), C (`docling-ffi`), the LangChain / LlamaIndex / AutoGen integrations |
+| — | an MCP server (`uvx docling-rs-mcp`), Node.js (`npm i docling.rs`), Rust (`docling` crate), C (`docling-ffi`), the LangChain / LlamaIndex / AutoGen / Agent Framework integrations |
 
 Formats: everything MinerU parses (PDF, images, DOCX, PPTX, XLSX, `.doc`
 / `.ppt` / `.xls`, RTF, ODF, EPUB, HTML, MHTML, CSV / TSV) except OFD, plus

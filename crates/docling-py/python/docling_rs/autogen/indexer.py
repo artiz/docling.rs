@@ -13,36 +13,10 @@ except ImportError as e:  # pragma: no cover - exercised only without the extra
     ) from e
 
 from .. import models
-from .._chunk_meta import docling_chunk
+from .._chunk_meta import chunk_metadata, docling_chunk
 from ..chunking import HybridChunker
 
 MetadataFn = Callable[[str, Any], Dict[str, Any]]
-
-
-def chunk_metadata(source: str, chunk: Any) -> Dict[str, Any]:
-    """The default metadata of an indexed chunk — flat scalars only, which is
-    what vector-store memories (Chroma) accept: ``source`` (the input),
-    ``headings`` (the chunk's heading path joined with `` > ``) and ``pages``
-    (the page numbers its items come from, comma-separated — absent for
-    inputs without pages, such as HTML). ``chunk`` is docling's ``DocChunk``
-    view, items resolved, so a custom function gets ``chunk.meta.doc_items``
-    with their provenance and can do what it likes."""
-    out: Dict[str, Any] = {"source": source}
-    meta = getattr(chunk, "meta", None)
-    headings = getattr(meta, "headings", None)
-    if headings:
-        out["headings"] = " > ".join(headings)
-    pages = sorted(
-        {
-            prov.page_no
-            for item in (getattr(meta, "doc_items", None) or [])
-            for prov in (getattr(item, "prov", None) or [])
-            if getattr(prov, "page_no", None) is not None
-        }
-    )
-    if pages:
-        out["pages"] = ",".join(str(p) for p in pages)
-    return out
 
 
 class DoclingIndexer:

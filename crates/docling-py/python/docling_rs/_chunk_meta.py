@@ -1,7 +1,8 @@
 """A native chunk as docling's ``DocChunk``: item refs resolved against the
 document, headings and origin, exported the way docling-core's ``DocMeta``
-does. Shared by the LangChain loader and the AutoGen indexer, so both hand
-out the same ``dl_meta`` and the same page provenance."""
+does. Shared by the LangChain loader and the AutoGen and Agent Framework
+indexers, so all of them hand out the same ``dl_meta`` and the same page
+provenance."""
 
 from __future__ import annotations
 
@@ -76,3 +77,29 @@ def docling_chunk(chunk: Any, dl_doc: Any) -> Any:
     if not items:
         return chunk
     return ResolvedChunk(chunk.text, ResolvedMeta(items, chunk.meta.headings, dl_doc.origin))
+
+
+def chunk_metadata(source: str, chunk: Any) -> Dict[str, Any]:
+    """The default metadata of an indexed chunk — flat scalars only, which is
+    what vector stores (Chroma, Azure AI Search, Redis, …) accept: ``source``
+    (the input), ``headings`` (the chunk's heading path joined with `` > ``)
+    and ``pages`` (the page numbers its items come from, comma-separated —
+    absent for inputs without pages, such as HTML). ``chunk`` is docling's
+    ``DocChunk`` view, items resolved, so a custom function gets
+    ``chunk.meta.doc_items`` with their provenance and can do what it likes."""
+    out: Dict[str, Any] = {"source": source}
+    meta = getattr(chunk, "meta", None)
+    headings = getattr(meta, "headings", None)
+    if headings:
+        out["headings"] = " > ".join(headings)
+    pages = sorted(
+        {
+            prov.page_no
+            for item in (getattr(meta, "doc_items", None) or [])
+            for prov in (getattr(item, "prov", None) or [])
+            if getattr(prov, "page_no", None) is not None
+        }
+    )
+    if pages:
+        out["pages"] = ",".join(str(p) for p in pages)
+    return out
