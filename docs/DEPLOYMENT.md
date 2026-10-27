@@ -111,6 +111,8 @@ services:
       - DOCLING_RS_MAX_MEMORY_MB=4096
       - DOCLING_RS_MEMORY_WATERMARK_PCT=85
       - RUST_LOG=info
+      # 0 = the API only, no web UI page at / (#892)
+      - DOCLING_RS_ENABLE_UI=1
     command:
       - "docling-serve"
       - "--addr"
@@ -208,6 +210,7 @@ PDF/image models have loaded (and stays 503, with the error, if loading fails).
 |---|---|---|
 | `DOCLING_RS_SYSTEM_FONTS` | `0` in the images | PDF fallback fonts come only from `.models/fonts` + `DOCLING_RS_FONT_DIRS`, not the host's directories — the same layout input on every host (#633) |
 | `DOCLING_RS_FONT_DIRS` | the image's Liberation + DejaVu dirs | Font directories for fonts a PDF does not embed; extend it when you install a font for another script |
+| `DOCLING_RS_ENABLE_UI` | `1` | `0` serves the API only: no web UI page at `/` (404 there), the logo gone; `/v1`, `/openapi.yaml`, the probes and `/metrics` unchanged (#892). Upstream docling-serve's `DOCLING_SERVE_ENABLE_UI` is read when it is unset; the `--no-ui` / `--enable-ui` flags beat both |
 | `DOCLING_RS_NO_ARENA` | `1` | Disables ONNX Runtime CPU arena to prevent RSS heap ratcheting (#263) |
 | `DOCLING_RS_MAX_MEMORY_MB` | `0` (or cgroup) | Memory ceiling for admission control in MiB |
 | `DOCLING_RS_MEMORY_WATERMARK_PCT` | `85` | Watermark % above which new requests get HTTP 503 Retry-After |
@@ -335,6 +338,7 @@ docker run -d \
 | `/v1/status/{id}` | `GET` | Poll status of an async conversion task |
 | `/v1/result/{id}` | `GET` | Retrieve the completed async conversion result |
 | `/openapi.yaml` | `GET` | OpenAPI 3.1 schema specification |
+| `/` | `GET` | The web UI (playground + docs); with `DOCLING_RS_ENABLE_UI=0` / `--no-ui` a 404 naming the API (#892) |
 
 ---
 

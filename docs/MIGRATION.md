@@ -2185,7 +2185,10 @@ These are deliberate or unavoidable divergences, not bugs.
     aliases — with upstream's `ConvertDocumentResponse` /
     `TaskStatusResponse` shapes, so Open WebUI's Docling loader, n8n, Dify
     and LangChain's docling-serve client work unchanged; `--api-key` /
-    `DOCLING_SERVE_API_KEY` is upstream's `X-Api-Key`. Upstream's option
+    `DOCLING_SERVE_API_KEY` is upstream's `X-Api-Key`, and
+    `DOCLING_SERVE_ENABLE_UI` / `--enable-ui` switch the web UI (#892;
+    `DOCLING_RS_ENABLE_UI`, `--no-ui` — on by default here, off upstream,
+    so an unset variable keeps the page). Upstream's option
     names map onto ours. Deliberate differences: options with no
     equivalent (`pdf_backend`, `table_mode`, `abort_on_error`, picture
     description, presets) are ignored rather than rejected, so a client's

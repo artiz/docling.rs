@@ -11,6 +11,9 @@ services:
       - DOCLING_RS_MAX_MEMORY_MB=${DOCLING_RS_MAX_MEMORY_MB:-4096}
       - DOCLING_RS_MEMORY_WATERMARK_PCT=${DOCLING_RS_MEMORY_WATERMARK_PCT:-85}
       - RUST_LOG=${RUST_LOG:-info}
+      # Web UI at / (#892): 0 serves the API only (docling-serve's
+      # DOCLING_SERVE_ENABLE_UI works too)
+      - DOCLING_RS_ENABLE_UI=${DOCLING_RS_ENABLE_UI:-1}
     command:
       - "docling-serve"
       - "--addr"

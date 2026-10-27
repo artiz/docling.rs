@@ -101,6 +101,7 @@ and `errors`); `redact_pii` reports its counts in `X-Docling-Redaction`.
 | `--allow-url-fetch` | off | URL inputs, remote images, caller-supplied VLM endpoints, `put` targets. Private/loopback targets stay blocked (`DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts out) and downloads are capped (`DOCLING_RS_MAX_FETCH_BYTES`) |
 | `--allow-local-images` | off | accept `image_sources=local` (#646) |
 | `--strict` | off | strict Markdown for requests that don't say |
+| `--no-ui` · `--enable-ui` | on (`DOCLING_RS_ENABLE_UI`, else `DOCLING_SERVE_ENABLE_UI`) | serve the API only — `/` answers 404, no page or logo; `/v1`, `/openapi.yaml`, the probes and `/metrics` stay (#892). `--enable-ui` is docling-serve's flag (its default is off, ours on) |
 | `--api-key KEY` | unset | `X-Api-Key` on every `/v1` route (#615); `DOCLING_SERVE_API_KEY` when the flag is absent — prefer it, a flag shows in the process list |
 | `--max-memory-mb N` | the cgroup limit (`DOCLING_RS_MAX_MEMORY_MB`) | admission control (#263): above 85 % of it (`DOCLING_RS_MEMORY_WATERMARK_PCT`) new conversions get 503 + Retry-After instead of an OOM kill; `0` disables |
 

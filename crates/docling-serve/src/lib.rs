@@ -286,6 +286,14 @@ pub struct ServeConfig {
     /// `DOCLING_RS_IDLE_UNLOAD_SECS`; `0` (or neither) keeps it for the life
     /// of the process.
     pub idle_unload_secs: Option<u64>,
+    /// Serve the web UI — the playground page at `/` and its logo (#892).
+    /// Off, `/` answers 404 and only the API, `/openapi.yaml` and the
+    /// probes are served: a deployment that is called by machines only
+    /// exposes no page. `None` falls back to `DOCLING_RS_ENABLE_UI`, then
+    /// upstream docling-serve's `DOCLING_SERVE_ENABLE_UI` (`0`/`false`/`no`/
+    /// `off` disable, anything else enables), then on — upstream's default
+    /// is off, ours stays on, so an unset variable changes nothing.
+    pub ui: Option<bool>,
 }
 
 impl Default for ServeConfig {
@@ -303,8 +311,20 @@ impl Default for ServeConfig {
             max_memory_mb: None,
             api_key: None,
             idle_unload_secs: None,
+            ui: None,
         }
     }
+}
+
+/// Whether the web UI is served: [`ServeConfig::ui`], then
+/// `DOCLING_RS_ENABLE_UI`, then `DOCLING_SERVE_ENABLE_UI`, then on (#892).
+fn ui_enabled(cfg: &ServeConfig) -> bool {
+    cfg.ui.unwrap_or_else(|| {
+        ["DOCLING_RS_ENABLE_UI", "DOCLING_SERVE_ENABLE_UI"]
+            .into_iter()
+            .find(|k| docling_core::env::nonempty(k).is_some())
+            .is_none_or(docling_core::env::flag)
+    })
 }
 
 struct AppState {
@@ -535,23 +555,44 @@ pub fn router(cfg: ServeConfig) -> Router {
             }
         });
     }
-    Router::new()
-        // Docs + test form, like the original docling-serve's playground.
-        .route(
+    let router = if ui_enabled(&cfg) {
+        Router::new()
+            // Docs + test form, like the original docling-serve's playground.
+            .route(
+                "/",
+                get(|| async { axum::response::Html(include_str!("index.html")) }),
+            )
+            // The page's logo. Baked into the binary, like the page and the
+            // API description, so a server needs no static-file directory.
+            .route(
+                "/logo.svg",
+                get(|| async {
+                    (
+                        [(header::CONTENT_TYPE, "image/svg+xml")],
+                        include_str!("logo.svg"),
+                    )
+                }),
+            )
+    } else {
+        // #892: no page — `/` says where the API is instead of a bare 404,
+        // and the logo is gone with the page.
+        eprintln!("docling-serve: web UI disabled; serving the API only");
+        Router::new().route(
             "/",
-            get(|| async { axum::response::Html(include_str!("index.html")) }),
-        )
-        // The page's logo and the machine-readable API description. Both are
-        // baked into the binary, so a server needs no static-file directory.
-        .route(
-            "/logo.svg",
             get(|| async {
                 (
-                    [(header::CONTENT_TYPE, "image/svg+xml")],
-                    include_str!("logo.svg"),
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "detail": "the web UI is disabled on this server; the API is \
+                                   POST /v1/convert, described at /openapi.yaml"
+                    })),
                 )
             }),
         )
+    };
+    router
+        // The machine-readable API description — part of the API, kept with
+        // or without the page.
         .route(
             "/openapi.yaml",
             get(|| async {

@@ -3,7 +3,7 @@
 //! Usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N]
 //!                      [--queue-size N] [--result-ttl SECS] [--max-memory-mb N]
 //!                      [--warmup] [--idle-unload-secs N] [--allow-url-fetch] [--allow-local-images]
-//!                      [--strict] [--api-key KEY]
+//!                      [--strict] [--api-key KEY] [--no-ui | --enable-ui]
 //!
 //!   --addr HOST:PORT  bind address (default: 127.0.0.1:5001). Bind 0.0.0.0
 //!                     only behind a trusted proxy.
@@ -32,6 +32,11 @@
 //!                     docling-serve's DOCLING_SERVE_API_KEY, which is read
 //!                     when the flag is absent — prefer it: a flag shows up in
 //!                     the process list)
+//!   --no-ui           serve the API only: no web UI page at `/` (#892;
+//!                     DOCLING_RS_ENABLE_UI=0, or docling-serve's
+//!                     DOCLING_SERVE_ENABLE_UI=0, when the flag is absent)
+//!   --enable-ui       serve it even when one of those variables says 0
+//!                     (docling-serve's flag; on is the default here)
 
 use std::process::ExitCode;
 
@@ -100,6 +105,8 @@ fn main() -> ExitCode {
                 Some(v) if !v.is_empty() => cfg.api_key = Some(v),
                 _ => return usage("--api-key needs a key"),
             },
+            "--no-ui" => cfg.ui = Some(false),
+            "--enable-ui" => cfg.ui = Some(true),
             "--help" | "-h" => return usage(""),
             other => return usage(&format!("unknown argument '{other}'")),
         }
@@ -126,7 +133,7 @@ fn usage(err: &str) -> ExitCode {
         eprintln!("error: {err}");
     }
     eprintln!(
-        "usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--idle-unload-secs N] [--allow-url-fetch] [--allow-local-images] [--strict] [--api-key KEY]"
+        "usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--idle-unload-secs N] [--allow-url-fetch] [--allow-local-images] [--strict] [--api-key KEY] [--no-ui | --enable-ui]"
     );
     if err.is_empty() {
         ExitCode::SUCCESS
