@@ -120,3 +120,4 @@ DOCLING_RS_CUDA_CONV_MAX_WORKSPACE,performance,crates/docling-onnx/src/lib.rs
 DOCLING_RS_IDLE_UNLOAD_SECS,limit,crates/docling-serve/src/lib.rs
 DOCLING_RS_ENABLE_UI,operational,crates/docling-serve/src/lib.rs
 DOCLING_SERVE_ENABLE_UI,operational,crates/docling-serve/src/lib.rs
+DOCLING_RS_PAGE_BITMAP,performance,crates/docling-pdf/src/lib.rs
