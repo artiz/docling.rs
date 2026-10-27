@@ -80,13 +80,57 @@ impl TesseractOptions {
             psm
         });
         Self {
-            cmd: docling_core::env::nonempty("DOCLING_TESSERACT")
-                .unwrap_or_else(|| "tesseract".to_string()),
+            cmd: env_cmd(),
             lang,
             psm,
             tessdata_dir: docling_core::env::nonempty("DOCLING_RS_TESSDATA_DIR"),
         }
     }
+}
+
+/// The binary the environment names (`DOCLING_TESSERACT`, default
+/// `tesseract`).
+fn env_cmd() -> String {
+    docling_core::env::nonempty("DOCLING_TESSERACT").unwrap_or_else(|| "tesseract".to_string())
+}
+
+/// The language stems the environment's Tesseract (`DOCLING_TESSERACT`,
+/// `DOCLING_RS_TESSDATA_DIR`) has installed — what an `ocr_lang` under the
+/// Tesseract engine may name. docling-serve reports it at `/v1/config`, so
+/// its web UI offers the languages the server has rather than a fixed list
+/// (#889: the image shipped `eng`/`osd`/`rus` while the page suggested
+/// `deu+eng`). `Err` when the binary does not run; empty when it has no
+/// traineddata.
+pub fn installed_languages() -> Result<Vec<String>, String> {
+    list_langs(
+        &env_cmd(),
+        docling_core::env::nonempty("DOCLING_RS_TESSDATA_DIR").as_deref(),
+    )
+}
+
+/// `tesseract --list-langs` for `cmd` reading `tessdata_dir`: the stems, in
+/// its (sorted) order.
+fn list_langs(cmd: &str, tessdata_dir: Option<&str>) -> Result<Vec<String>, String> {
+    let mut list = Command::new(cmd);
+    list.arg("--list-langs").stdin(Stdio::null());
+    if let Some(dir) = tessdata_dir {
+        list.arg("--tessdata-dir").arg(dir);
+    }
+    let list = list
+        .output()
+        .map_err(|e| format!("tesseract --list-langs failed to run: {e}"))?;
+    // The header line ("List of available languages in ... (N):") is
+    // followed by one stem per line; Windows spells script packs with a
+    // backslash, `-l` wants the slash everywhere.
+    Ok(parse_list_langs(&String::from_utf8_lossy(&list.stdout)))
+}
+
+fn parse_list_langs(out: &str) -> Vec<String> {
+    out.lines()
+        .skip(1)
+        .map(|l| l.trim().replace('\\', "/"))
+        .filter(|l| !l.is_empty())
+        .collect()
 }
 
 /// Tesseract's `-l` argument from a `DOCLING_RS_OCR_LANG` value (#889);
@@ -568,23 +612,7 @@ impl TesseractOcr {
             .find(|s| !s.is_empty())
             .unwrap_or_default();
         let banner = banner.lines().next().unwrap_or_default().to_string();
-        let mut list = Command::new(&opts.cmd);
-        list.arg("--list-langs").stdin(Stdio::null());
-        if let Some(dir) = &opts.tessdata_dir {
-            list.arg("--tessdata-dir").arg(dir);
-        }
-        let list = list
-            .output()
-            .map_err(|e| format!("tesseract --list-langs failed to run: {e}"))?;
-        // The header line ("List of available languages in ... (N):") is
-        // followed by one stem per line; Windows spells script packs with a
-        // backslash, `-l` wants the slash everywhere.
-        let installed: Vec<String> = String::from_utf8_lossy(&list.stdout)
-            .lines()
-            .skip(1)
-            .map(|l| l.trim().replace('\\', "/"))
-            .filter(|l| !l.is_empty())
-            .collect();
+        let installed = list_langs(&opts.cmd, opts.tessdata_dir.as_deref())?;
         if installed.is_empty() {
             return Err(format!(
                 "{banner}: no traineddata found (tesseract --list-langs printed nothing); \
@@ -821,6 +849,19 @@ fn parse_osd(out: &str) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `--list-langs` (#889, `/v1/config`): the header skipped, script packs
+    /// spelled with the slash.
+    #[test]
+    fn list_langs_output_is_the_stems_after_the_header() {
+        let out = "List of available languages in \"/usr/local/share/tessdata/\" (4):\n\
+                   eng\nosd\nrus\nscript\\Cyrillic\n\n";
+        assert_eq!(
+            parse_list_langs(out),
+            ["eng", "osd", "rus", "script/Cyrillic"]
+        );
+        assert!(parse_list_langs("").is_empty());
+    }
 
     /// `ocr_lang` under the Tesseract engine: stems verbatim, BCP-47 tags and
     /// the PP-OCR codes mapped, lists joined in order, junk rejected.

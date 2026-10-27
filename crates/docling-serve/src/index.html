@@ -130,7 +130,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
     </label>
     <label title="OCR recognition language (#889). PP-OCR: en | ch or a BCP-47 tag for either. Tesseract: tessdata stems joined by + (rus+eng, deu+fra) or BCP-47 tags (ru, de). Empty = the server's DOCLING_RS_OCR_LANG">OCR language
       <input type="text" id="ocr_lang" list="ocr_lang_hints" size="9" placeholder="server default">
-      <datalist id="ocr_lang_hints"><option value="en"><option value="ch"><option value="rus+eng"><option value="deu+eng"><option value="fra+eng"><option value="ukr+eng"><option value="chi_sim+eng"></datalist>
+      <datalist id="ocr_lang_hints"><option value="en"><option value="ch"></datalist>
     </label>
     <label title="Which regions feed the OCR (docling's OcrMode, #254); full_page / layout_regions discard the text layer">OCR mode
       <select id="ocr_mode"><option value="">default</option><option value="full_page">full_page</option><option value="layout_regions">layout_regions</option><option value="pdf_aware_layout_regions">pdf_aware_layout_regions</option></select>
@@ -194,7 +194,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
       upstream's option names, answered as its <code>ConvertDocumentResponse</code>
       (<code>document.md_content</code>, <code>status</code>, <code>errors</code>); <code>/async</code>
       variants, <code>/v1/status/poll/{id}</code> and <code>/v1alpha/…</code> aliases too.</td></tr>
-  <tr><td><code>GET</code></td><td><code>/v1/config</code></td><td>Server capabilities — currently <code>{"allow_url_fetch": bool}</code>, which this page adapts to.</td></tr>
+  <tr><td><code>GET</code></td><td><code>/v1/config</code></td><td>Server capabilities — <code>allow_url_fetch</code>, <code>allow_local_images</code>, the resolved <code>models</code>, and <code>tesseract_languages</code> (the stems <code>ocr_lang</code> may name under Tesseract) — which this page adapts to.</td></tr>
   <tr><td><code>GET</code></td><td><code>/health</code></td><td>Liveness probe.</td></tr>
   <tr><td><code>GET</code></td><td><code>/ready</code></td><td>Readiness probe — 503 until <code>--warmup</code> finishes loading the ML models.</td></tr>
   <tr><td><code>GET</code></td><td><code><a href="/openapi.yaml">/openapi.yaml</a></code></td>
@@ -271,6 +271,28 @@ for (const radio of document.querySelectorAll('input[name=mode]')) {
   });
 }
 
+// #889: the OCR-language hints follow the engine and what the server has —
+// PP-OCR's two models, and the traineddata its Tesseract lists at
+// /v1/config (a fixed list suggested deu+eng on an image without `deu`).
+// Each stem alone and with `eng` (Latin text inside another script is
+// common); `osd` (orientation) and `equ` (legacy math) are not reading
+// languages.
+let tesseractLangs = [];
+function ocrLangHints() {
+  const engine = $('ocr_engine').value;
+  const hints = [];
+  if (engine !== 'tesseract') hints.push('en', 'ch');
+  if (engine !== 'ppocr') {
+    const langs = tesseractLangs.filter((l) => l !== 'osd' && l !== 'equ');
+    for (const l of langs) {
+      hints.push(l);
+      if (l !== 'eng' && langs.includes('eng')) hints.push(l + '+eng');
+    }
+  }
+  const list = $('ocr_lang_hints');
+  list.replaceChildren(...hints.map((v) => Object.assign(document.createElement('option'), { value: v })));
+}
+$('ocr_engine').addEventListener('change', ocrLangHints);
 // Reflect server capabilities: when URL fetch is disabled (--allow-url-fetch
 // off, the secure default), disable the URL radio and explain why, so the
 // option isn't a dead end that only fails with a 422 on Convert.
@@ -293,6 +315,8 @@ for (const radio of document.querySelectorAll('input[name=mode]')) {
       $('fetch-images-label').title = 'Disabled — start docling-serve with --allow-url-fetch';
       $('fetch-images-disabled-note').style.display = '';
     }
+    tesseractLangs = Array.isArray(cfg.tesseract_languages) ? cfg.tesseract_languages : [];
+    ocrLangHints();
   } catch { /* config endpoint unavailable — leave the UI as-is */ }
 })();
 // Pull embedded pictures (data URIs) out of the Markdown / docling JSON / Pandoc AST,

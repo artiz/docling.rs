@@ -585,6 +585,16 @@ paths:
                         found: { type: boolean }
                         bytes: { type: integer, description: File size (0 when missing) — tells an int8 quant from an fp32 graph at a glance. }
                       required: [stage, path, found, bytes]
+                  tesseract_languages:
+                    type: [array, "null"]
+                    items: { type: string }
+                    description: >
+                      The traineddata stems the server's Tesseract has installed
+                      (`tesseract --list-langs`, #889) — what `ocr_lang` may name
+                      under `ocr_engine=tesseract`, joined with `+`; the
+                      playground's language hints. `null` when no Tesseract binary
+                      runs.
+                    examples: [[eng, osd, rus]]
                 required: [allow_url_fetch, models]
 
   /health:

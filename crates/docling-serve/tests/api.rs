@@ -221,6 +221,24 @@ fn openapi_spec_parses_and_every_ref_resolves() {
     );
 }
 
+/// #889: `/v1/config` names Tesseract's installed languages — the web UI's
+/// `ocr_lang` hints — or `null` without a runnable binary. Whatever the host
+/// has: the list matches `tesseract --list-langs` when one is installed.
+#[tokio::test]
+async fn config_reports_tesseract_languages() {
+    let response = app()
+        .oneshot(Request::get("/v1/config").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    let langs = &v["tesseract_languages"];
+    match docling::tesseract_languages() {
+        Ok(expected) => assert_eq!(langs, &serde_json::json!(expected), "{v}"),
+        Err(_) => assert!(langs.is_null(), "{v}"),
+    }
+}
+
 #[tokio::test]
 async fn ready_without_warmup_is_immediate() {
     let response = app()

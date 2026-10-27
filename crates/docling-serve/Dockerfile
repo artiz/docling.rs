@@ -29,11 +29,11 @@
 #
 # OCR with Tesseract (`ocr_engine=tesseract`, #460): the images build
 # Tesseract 5.5.3 from source (the distro packages are older — trixie 5.5.0,
-# Ubuntu 24.04 5.3.4) and bake in tessdata_fast's `eng`, `osd` and `rus`
-# (`ocr_lang=rus+eng`). Other languages: `--build-arg TESSDATA_LANGS="eng osd
-# deu fra"` (tessdata stems, `script/Cyrillic` included), or
-# `TESSDATA_LANGS=all` for every language and script (~ 670 MB); another
-# release: `--build-arg TESSERACT_VERSION=5.5.2`.
+# Ubuntu 24.04 5.3.4) and bake in every language model of tessdata_fast
+# (~ 340 MB; `ocr_lang=rus+eng`, `deu`, `chi_sim`, …). A slimmer image:
+# `--build-arg TESSDATA_LANGS="eng osd rus"` (tessdata stems); the script
+# models too: `TESSDATA_LANGS="all scripts"` (~ 670 MB, `script/Cyrillic`);
+# another release: `--build-arg TESSERACT_VERSION=5.5.2`.
 #
 # GPU run: pass --gpus all to expose the host NVIDIA GPU:
 #   docker run --gpus all -p 5001:5001 docling-rs-serve-cuda
@@ -63,7 +63,7 @@
 # Tesseract release and tessdata_fast languages built into the runtimes (see
 # the tesseract and tessdata stages).
 ARG TESSERACT_VERSION=5.5.3
-ARG TESSDATA_LANGS="eng osd rus"
+ARG TESSDATA_LANGS=all
 
 # ------------------------------------------------------------------------------
 # Stage: chef & planner (shared across CPU and CUDA builds)
@@ -204,27 +204,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ------------------------------------------------------------------------------
 # Stage: tessdata — Tesseract's language models from tessdata_fast (the
 # LSTM models Debian's tesseract-ocr-* packages ship too), pinned to its
-# 4.1.0 tag. TESSDATA_LANGS: tessdata stems, space- or comma-separated
-# (`eng osd rus`; `script/Cyrillic` for a script model), or `all`. `osd`
-# drives the orientation detection; `eng` is Tesseract's default language.
+# 4.1.0 tag. TESSDATA_LANGS, space- or comma-separated: `all` (the default,
+# #889) = every language model (~ 130, `osd` for the orientation detection
+# among them), `scripts` = the script models (`script/Cyrillic`, …), anything
+# else a tessdata stem (`eng osd rus`). A sparse, blob-less checkout fetches
+# only the files asked for; a stem that does not exist fails the build.
 # ------------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM debian:trixie-slim AS tessdata
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
     && rm -rf /var/lib/apt/lists/*
 ARG TESSDATA_LANGS
 ARG TESSDATA_REF=4.1.0
-RUN set -eu; mkdir -p /tessdata; \
-    if [ "$TESSDATA_LANGS" = all ]; then \
-      git clone --quiet --depth 1 --branch "$TESSDATA_REF" https://github.com/tesseract-ocr/tessdata_fast /tmp/tessdata_fast; \
-      mv /tmp/tessdata_fast/*.traineddata /tmp/tessdata_fast/script /tessdata/; \
-      rm -rf /tmp/tessdata_fast; \
-    else \
-      for lang in $(echo "$TESSDATA_LANGS" | tr ',' ' '); do \
-        mkdir -p "$(dirname "/tessdata/$lang")"; \
-        curl -fsSL --retry 3 -o "/tessdata/$lang.traineddata" \
-          "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/$TESSDATA_REF/$lang.traineddata"; \
-      done; \
-    fi
+RUN set -eu; set --; \
+    for lang in $(echo "$TESSDATA_LANGS" | tr ',' ' '); do \
+      case "$lang" in \
+        all) set -- "$@" '/*.traineddata' ;; \
+        scripts) set -- "$@" '/script/*.traineddata' ;; \
+        *) set -- "$@" "/$lang.traineddata" ;; \
+      esac; \
+    done; \
+    git clone --quiet --depth 1 --filter=blob:none --no-checkout --branch "$TESSDATA_REF" \
+      https://github.com/tesseract-ocr/tessdata_fast /tmp/tessdata_fast; \
+    git -C /tmp/tessdata_fast sparse-checkout set --no-cone "$@"; \
+    git -C /tmp/tessdata_fast checkout --quiet; \
+    for lang in $(echo "$TESSDATA_LANGS" | tr ',' ' '); do \
+      case "$lang" in all|scripts) ;; *) test -f "/tmp/tessdata_fast/$lang.traineddata" \
+        || { echo "TESSDATA_LANGS: no $lang.traineddata in tessdata_fast $TESSDATA_REF" >&2; exit 1; } ;; esac; \
+    done; \
+    mkdir /tessdata; \
+    cd /tmp/tessdata_fast && find . -name '*.traineddata' -exec cp --parents {} /tessdata/ \; ; \
+    rm -rf /tmp/tessdata_fast; \
+    ls /tessdata | wc -l
 
 # ------------------------------------------------------------------------------
 # Stage: runtime (CPU base, Debian Trixie slim)

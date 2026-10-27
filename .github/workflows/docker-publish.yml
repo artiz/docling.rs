@@ -186,8 +186,10 @@ jobs:
         run: |
           echo "Converting a Markdown fixture (no models involved)..."
           docker run --rm -v "$PWD/tests/data/md/sources:/data:ro" docling-rs:test wiki.md --to md | head -n 3
-          echo "Tesseract (built from source, tessdata_fast eng/osd/rus baked in)..."
-          docker run --rm --entrypoint tesseract docling-rs:test --list-langs 2>&1 | tee /dev/stderr | grep -qx rus
+          echo "Tesseract (built from source, every tessdata_fast language baked in)..."
+          langs=$(docker run --rm --entrypoint tesseract docling-rs:test --list-langs 2>&1)
+          head -n 1 <<<"$langs"
+          for l in eng osd rus deu chi_sim; do grep -qx "$l" <<<"$langs" || { echo "Tesseract has no $l"; exit 1; }; done
           if [ "${{ matrix.platform }}" = "linux/s390x" ]; then
             echo "s390x under QEMU: the ONNX Runtime must be in the image, the PDF run is skipped (emulated inference)"
             docker run --rm --entrypoint ls docling-rs:test -la /app/.models/onnxruntime/ | grep -q libonnxruntime.so

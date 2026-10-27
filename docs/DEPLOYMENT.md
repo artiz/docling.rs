@@ -280,17 +280,27 @@ The images carry Tesseract 5.5.3, built from source by
 Leptonica; cross-compiled for s390x) — the distro packages are older
 (Debian trixie 5.5.0, Ubuntu 24.04 5.3.4). Its language models come from
 [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) 4.1.0, the
-same LSTM models Debian's `tesseract-ocr-*` packages ship: `eng`, `osd`
-(orientation detection) and `rus` by default. The `TESSDATA_LANGS` build arg
-takes other tessdata stems (space- or comma-separated, `script/Cyrillic` for a
-script model) or `all` — every language and script, ~670 MB:
+same LSTM models Debian's `tesseract-ocr-*` packages ship. By default
+(`TESSDATA_LANGS=all`) the image carries every language model — 125 of them,
+`osd` (orientation detection) included, ~340 MB — so any `ocr_lang` combination
+works (`rus+eng`, `deu+fra`, `chi_sim`, …). The build arg, space- or
+comma-separated, also takes tessdata stems for a slimmer image, and `scripts`
+for the script models (`script/Cyrillic`, `script/Latin`, …; another ~330 MB);
+a stem tessdata_fast does not have fails the build:
 
 ```bash
+# slim: three languages (~18 MB)
 docker build -f crates/docling-serve/Dockerfile \
-  --build-arg TESSDATA_LANGS="eng osd rus ukr deu" -t docling-serve-ocr .
+  --build-arg TESSDATA_LANGS="eng osd rus" -t docling-serve-ocr .
+# everything: languages and scripts (~670 MB)
+docker build -f crates/docling-serve/Dockerfile \
+  --build-arg TESSDATA_LANGS="all scripts" -t docling-serve-ocr .
 curl -F files=@scan_ru.pdf -F ocr_engine=tesseract -F ocr_lang=rus+eng \
   http://localhost:5001/v1/convert
 ```
+
+`GET /v1/config` lists what the server's Tesseract has
+(`tesseract_languages`), and the web UI's OCR-language hints come from it.
 
 A running container takes more models as files in
 `/usr/local/share/tessdata` (`-v ./ukr.traineddata:/usr/local/share/tessdata/ukr.traineddata:ro`,
@@ -318,7 +328,7 @@ docker run -d \
 |---|---|---|
 | `/health` | `GET` | Liveness probe: returns `{"status":"ok"}` immediately |
 | `/ready` | `GET` | Readiness probe. With `--warmup`: `503 {"status":"warming_up"}` while the models load, then `200 {"status":"ready","models":"warm"}` — or `503 {"status":"warmup_failed","error":…}` if they cannot load. Without it: `200 {"status":"ready","models":"lazy"}` at once (models load on the first PDF/image request) |
-| `/v1/config` | `GET` | Server capabilities, active memory, and URL fetch status |
+| `/v1/config` | `GET` | Server capabilities, active memory, URL fetch status, resolved models, and Tesseract's installed languages (`tesseract_languages`) |
 | `/metrics` | `GET` | Prometheus metrics (request counters, latency histograms, active conversions) |
 | `/v1/convert` | `POST` | Synchronous conversion (multipart upload or JSON URL) |
 | `/v1/convert/async` | `POST` | Asynchronous conversion: returns `202 {"task_id":"..."}` |

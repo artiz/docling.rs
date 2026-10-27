@@ -95,9 +95,9 @@ pub use docling_core::{Revision, RevisionKind, TrackChanges};
 #[cfg(feature = "pdf")]
 pub use docling_pdf::{
     model_inventory, page_count as pdf_page_count, render_pages as render_pdf_pages,
-    tesseract_lang_arg, Completion, EnrichmentOptions, HeadingHierarchyOptions, ImageOutput,
-    ModelEntry, OcrEngine, OcrLang, OcrMode, PageProgress, PageProgressHook, PdfError, Pipeline,
-    RenderedPage,
+    tesseract_lang_arg, tesseract_languages, Completion, EnrichmentOptions,
+    HeadingHierarchyOptions, ImageOutput, ModelEntry, OcrEngine, OcrLang, OcrMode, PageProgress,
+    PageProgressHook, PdfError, Pipeline, RenderedPage,
 };
 // The pure-Rust text-layer extraction (no pdfium, no models) — compiled with
 // either PDF feature. The CLI uses it as the `--text-layer-only` fallback when the

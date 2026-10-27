@@ -214,8 +214,9 @@ codec or copybook when the conversion runs.
   pipeline (regions, orphan recovery, TableFormer word matching); orientation
   comes from Tesseract's own OSD (needs the `osd` traineddata). Install
   `tesseract-ocr` plus language packs (`tesseract --list-langs`; the
-  container images build Tesseract 5.5.3 and ship tessdata_fast's `eng`,
-  `osd` and `rus`, `TESSDATA_LANGS` adds more — docs/DEPLOYMENT.md).
+  container images build Tesseract 5.5.3 and ship every tessdata_fast
+  language model, `TESSDATA_LANGS` slims or extends that — docs/DEPLOYMENT.md;
+  serve's `/v1/config` lists them as `tesseract_languages`).
   `DOCLING_TESSERACT` names the binary, `DOCLING_RS_TESSERACT_PSM` a page
   segmentation mode (unset = Tesseract's automatic 3; 6 = one uniform block,
   11 = sparse text),

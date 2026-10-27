@@ -660,6 +660,14 @@ async fn shutdown_signal() {
 /// inputs are accepted (`--allow-url-fetch`) — the UI greys out the URL option
 /// and explains why when this is false, instead of letting the user hit a 422.
 async fn config(State(state): State<Arc<AppState>>) -> Response {
+    // #889: Tesseract's installed languages, asked of the binary each time
+    // (a `--list-langs` run, milliseconds; a mounted traineddata shows up
+    // without a restart) — the playground's `ocr_lang` hints, which a fixed
+    // list got wrong on an image with three languages.
+    let tesseract_languages = tokio::task::spawn_blocking(|| docling::tesseract_languages().ok())
+        .await
+        .ok()
+        .flatten();
     Json(json!({
         "allow_url_fetch": state.cfg.allow_url_fetch,
         // #646: whether `image_sources=local` is accepted.
@@ -679,6 +687,7 @@ async fn config(State(state): State<Arc<AppState>>) -> Response {
             "found": m.found,
             "bytes": m.bytes,
         })).collect::<Vec<_>>(),
+        "tesseract_languages": tesseract_languages,
     }))
     .into_response()
 }
