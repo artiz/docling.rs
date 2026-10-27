@@ -58,6 +58,14 @@ llamaindex = [
 autogen = [
     "autogen-core>=0.4",
 ]
+# docling_rs.agent_framework — the Microsoft Agent Framework integration,
+# AutoGen's successor: DoclingIndexer (documents into a vector collection),
+# DoclingContextProvider / docling_search_tool (retrieval) and
+# DoclingConvertTool. Agent Framework needs Python 3.10+ and ships breaking
+# changes in minor releases, hence the bounds (1.23 is what is tested).
+agent-framework = [
+    "agent-framework-core>=1.23,<2; python_version >= '3.10'",
+]
 
 [project.urls]
 Homepage = "https://github.com/docling-project/docling.rs"

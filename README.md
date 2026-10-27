@@ -152,6 +152,10 @@ Same options, same outputs on every surface — every option in
 - **AutoGen:** `pip install "docling-rs[autogen]"` — `DoclingIndexer` fills
   any AutoGen memory with chunks that carry their pages, `DoclingConvertTool`
   lets an agent read documents ([details](./crates/docling-py/README.md#autogen)).
+- **Microsoft Agent Framework:** `pip install "docling-rs[agent-framework]"` —
+  AutoGen's successor: `DoclingIndexer` fills any Agent Framework vector
+  store, `DoclingContextProvider` puts the relevant chunks with their pages
+  into each turn ([details](./crates/docling-py/README.md#microsoft-agent-framework)).
 - **Your own formats:** register a backend for a format docling.rs does not
   read — or to read one of its formats your way — from Rust, Python
   (`@docling_rs.register_backend(extensions=["rtf2"])`, and MarkItDown's
@@ -494,8 +498,8 @@ Details and the demo page: [`crates/docling-wasm`](./crates/docling-wasm/README.
   batches, a warm `Pipeline`.
 - **Python** — [`docling-rs`](./crates/docling-py/README.md) on PyPI
   (`docling-rs-cuda` for NVIDIA): docling's `DocumentConverter` with a genuine
-  docling-core `DoclingDocument`, MarkItDown's API, and the LangChain and
-  AutoGen integrations.
+  docling-core `DoclingDocument`, MarkItDown's API, and the LangChain,
+  AutoGen and Microsoft Agent Framework integrations.
 - **C ABI** — [`docling-ffi`](./crates/docling-ffi/README.md): one library and
   one `docling.h` for C, C++, C#/.NET, Go, Java, Swift and Zig, prebuilt in
   every published release.

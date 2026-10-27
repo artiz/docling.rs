@@ -144,7 +144,7 @@ forced — docling.rs does not report per page which pages it OCR'd.
 | `marker_single` / `marker` | `docling-rs FILE` prints Markdown (`--to json\|html\|chunks\|…`), `docling-rs --input 'dir/*' --output out` for a folder; [release binaries](https://github.com/docling-project/docling.rs/releases), `cargo install docling-cli`, or `python -m docling_rs.marker` |
 | `marker_server` | `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve` — `POST /v1/convert`, and docling-serve's routes for Open WebUI, n8n, Dify ([details](../crates/docling-serve/README.md#drop-in-for-docling-serve-open-webui-n8n-dify-langchain)) |
 | `marker_gui` | the [browser demo](https://docling-project.github.io/docling.rs/) (WebAssembly, runs in the page) |
-| — | an MCP server (`uvx docling-rs-mcp`), Node.js (`npm i docling.rs`), Rust (`docling` crate), C (`docling-ffi`), the LangChain / LlamaIndex / AutoGen integrations |
+| — | an MCP server (`uvx docling-rs-mcp`), Node.js (`npm i docling.rs`), Rust (`docling` crate), C (`docling-ffi`), the LangChain / LlamaIndex / AutoGen / Agent Framework integrations |
 
 Formats: everything Marker converts (PDF, images, DOCX, PPTX, XLSX, HTML,
 EPUB) plus Markdown, CSV, ODF, RTF, legacy `.doc` / `.ppt` / `.xls`, Apple

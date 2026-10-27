@@ -695,6 +695,9 @@ descriptions — are in [`examples/langchain/`](./examples/langchain/).
 
 ## AutoGen
 
+> AutoGen is in maintenance mode; Microsoft's successor is Agent Framework —
+> new projects want [`docling_rs.agent_framework`](#microsoft-agent-framework).
+
 `docling_rs.autogen` puts documents in front of
 [AutoGen](https://github.com/microsoft/autogen) agents — the indexing half
 of AutoGen's RAG recipe and a document-reading tool, both on the Rust
@@ -730,6 +733,67 @@ not flood the context); the conversion runs on a worker thread, as
 `FunctionTool` runs every synchronous function. The example in
 [`examples/autogen/`](./examples/autogen/) indexes a paper into a Chroma
 memory and answers questions with page citations.
+
+## Microsoft Agent Framework
+
+`docling_rs.agent_framework` does the same for
+[Microsoft Agent Framework](https://github.com/microsoft/agent-framework),
+AutoGen's successor (AutoGen is in maintenance mode) — documents into its
+vector stores, retrieval for an agent, and the document-reading tool:
+
+```bash
+pip install "docling-rs[agent-framework]" agent-framework-openai
+```
+
+```python
+from agent_framework import Agent, InMemoryCollection        # or a connector's collection
+from agent_framework.openai import OpenAIChatClient, OpenAIEmbeddingClient
+from docling_rs.agent_framework import (
+    DoclingChunk, DoclingContextProvider, DoclingConvertTool, DoclingIndexer,
+)
+
+collection = InMemoryCollection(DoclingChunk, embedding_generator=OpenAIEmbeddingClient(model="text-embedding-3-small"))
+await DoclingIndexer(collection).index_documents(["report.pdf", "https://arxiv.org/pdf/2408.09869"])
+agent = Agent(
+    client=OpenAIChatClient("gpt-5.4-mini"),
+    context_providers=[DoclingContextProvider(collection)],   # relevant chunks, each turn
+    tools=[DoclingConvertTool()],                              # read any other document
+)
+```
+
+`DoclingChunk` is a `@vectorstoremodel` record — `id`, `text` (the heading
+path plus the chunk text, full-text indexed), `source`, `headings` (`A > B`),
+`pages` (`3,4`), `chunk_index` and the `embedding` the collection generates
+from the text on upsert. It is sized for 1536-dimensional embeddings;
+`docling_chunk_model(768)` builds the same record for another embedding
+model. The key is a UUID derived from the source and the chunk's position,
+so indexing a document again overwrites its chunks rather than duplicating
+them (a document that shrank keeps its old tail until you delete it).
+
+`DoclingIndexer(collection, converter=…, chunker=…, metadata=…, record=…,
+batch_size=64)` converts each source on a worker thread, chunks it (the
+native `HybridChunker` with docling's defaults, or any chunker with
+`chunk()` / `contextualize()`) and upserts the records in batches — one
+embedding request each; `indexer.records(source)` yields them without
+upserting, and `record=` maps the fields onto a record type of your own.
+
+`DoclingContextProvider(collection, top=4, score_threshold=…, filter=…)`
+searches the collection with the user's messages before every run and adds
+the best chunks to the context, each under a citation line
+(`[report.pdf, pp. 3,4 — Results > Tables]`) — what an AutoGen
+`AssistantAgent(memory=[…])` did. For agentic retrieval instead,
+`docling_search_tool(collection)` is a `search_documents(query)` tool with
+the same citations (Agent Framework's `create_vector_search_tool`).
+Agent Framework marks its vector-store API experimental, and warns when it
+is used.
+
+`DoclingConvertTool(converter=…, max_chars=40_000, approval_mode=…)` is the
+AutoGen tool's counterpart: `convert_document(source)` returns the document
+as Markdown, run on a worker thread. It reads any path or URL the model
+names with the process's file access — where the conversation carries
+untrusted text, set `approval_mode="always_require"`. The example in
+[`examples/agent_framework/`](./examples/agent_framework/) indexes a paper
+and answers with page citations.
 
 ## MCP server
 
