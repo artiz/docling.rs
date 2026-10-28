@@ -3,7 +3,11 @@
 //! we walk the `body` tree (children resolved through `$ref` into the
 //! `texts`/`groups`/`tables`/`pictures` arrays, skipping `furniture`) and map
 //! each item onto the crate's [`Node`] model so the shared Markdown serializer
-//! reproduces docling-core's output.
+//! reproduces docling-core's output. Each item's `prov` and the document's
+//! `pages` ride along (#899): the JSON export of a docling-JSON input keeps
+//! the page and box provenance docling gave the original document, and the
+//! DocLang export carries the `<location>` tokens and `<page_break/>`s
+//! docling-core's own serializer derives from them.
 
 use serde_json::Value;
 
@@ -47,10 +51,26 @@ impl DeclarativeBackend for DoclingJsonBackend {
         if root["metadata"].is_object() {
             doc.metadata = docling_core::DocumentMetadata::from_json(&root["metadata"]);
         }
-        let mut guard = WalkGuard::default();
+        let mut guard = WalkGuard {
+            pages: page_sizes(&root),
+            ..WalkGuard::default()
+        };
         if let Some(children) = root["body"]["children"].as_array() {
             for c in children {
                 walk(c, &root, 0, &mut doc, &mut guard);
+            }
+        }
+        // A page no body item sits on (a blank page, a furniture-only one)
+        // is still a page of the document: its marker keeps it in the
+        // exported `pages` map. Trailing markers render nothing — Markdown's
+        // page break goes only between two rendered blocks.
+        for (&page_no, &(width, height)) in &guard.pages {
+            if !guard.seen_pages.contains(&page_no) {
+                doc.push(Node::PageInfo {
+                    page_no,
+                    width,
+                    height,
+                });
             }
         }
         Ok(doc)
@@ -133,6 +153,156 @@ fn formatted_text(item: &Value) -> String {
 struct WalkGuard {
     seen: std::collections::HashSet<String>,
     depth: usize,
+    /// The document's `pages` (#899): page number → size in points.
+    pages: std::collections::BTreeMap<usize, (f32, f32)>,
+    /// The page the last provenanced item sat on (0 before the first).
+    cur_page: usize,
+    /// Pages a [`Node::PageInfo`] marker was emitted for.
+    seen_pages: std::collections::BTreeSet<usize>,
+}
+
+/// The document's `pages` map: `{"1": {"size": {"width", "height"}, …}}`.
+fn page_sizes(root: &Value) -> std::collections::BTreeMap<usize, (f32, f32)> {
+    let mut pages = std::collections::BTreeMap::new();
+    if let Some(map) = root["pages"].as_object() {
+        for (key, page) in map {
+            let no = page["page_no"]
+                .as_u64()
+                .map(|n| n as usize)
+                .or_else(|| key.parse().ok());
+            let (w, h) = (
+                page["size"]["width"].as_f64(),
+                page["size"]["height"].as_f64(),
+            );
+            if let (Some(no), Some(w), Some(h)) = (no, w, h) {
+                if no > 0 {
+                    pages.insert(no, (w as f32, h as f32));
+                }
+            }
+        }
+    }
+    pages
+}
+
+/// An item's first `prov` entry (#899): the page it sits on, its box in the
+/// page's own coordinate origin, and its character span. docling keeps a
+/// list, one entry per page an item spans; the JSON export writes one box
+/// per item, so the first — the only one in practice — is what survives.
+struct Prov {
+    page_no: usize,
+    bbox: [f32; 4],
+    bottom_left: bool,
+    charspan: [usize; 2],
+}
+
+fn prov_of(item: &Value) -> Option<Prov> {
+    let p = item["prov"].as_array()?.first()?;
+    let page_no = p["page_no"].as_u64()? as usize;
+    let b = &p["bbox"];
+    let coord = |k: &str| b[k].as_f64().map(|v| v as f32);
+    let bbox = [coord("l")?, coord("t")?, coord("r")?, coord("b")?];
+    let bottom_left = b["coord_origin"].as_str() != Some("TOPLEFT");
+    let span = p["charspan"].as_array();
+    let at = |i: usize| span.and_then(|s| s.get(i)?.as_u64()).unwrap_or(0) as usize;
+    Some(Prov {
+        page_no,
+        bbox,
+        bottom_left,
+        charspan: [at(0), at(1)],
+    })
+}
+
+/// Before an item on page `page_no`: the [`Node::PageInfo`] marker that
+/// tells the JSON export which page (and page size) the following items are
+/// on, once per change of page, as the PDF and XLSX paths emit it. `true`
+/// when the walk is on that page afterwards. A marker between two list items
+/// would split the list (the serializers group a list from adjacent items),
+/// so a list that runs onto the next page keeps that page's items in the
+/// list, without a location — docling's own PDF documents never do, their
+/// layout groups a list per page.
+fn enter_page(
+    page_no: usize,
+    list_item: bool,
+    doc: &mut DoclingDocument,
+    g: &mut WalkGuard,
+) -> bool {
+    if page_no == 0 {
+        return false;
+    }
+    if page_no == g.cur_page {
+        return true;
+    }
+    let Some(&(width, height)) = g.pages.get(&page_no) else {
+        return false;
+    };
+    if list_item && matches!(doc.nodes.last(), Some(Node::ListItem { .. })) {
+        return false;
+    }
+    // docling-core's `_iterate_items` yields a page break between two items
+    // on different pages (DocLang's `<page_break/>`; Markdown's placeholder,
+    // which absorbs the marker pair into one). Not before the first item.
+    if g.cur_page != 0 {
+        doc.push(Node::PageBreak);
+    }
+    g.cur_page = page_no;
+    g.seen_pages.insert(page_no);
+    doc.push(Node::PageInfo {
+        page_no,
+        width,
+        height,
+    });
+    true
+}
+
+/// Wrap the node at `index` (the first node the item pushed) in the item's
+/// provenance: the exact box for the JSON export (`Node::Prov`, outside —
+/// the JSON export prefers it) around, when the walk is on the item's page,
+/// the location grid for DocLang (`Node::Located`, inside — its serializer
+/// renders the node it wraps directly).
+fn wrap_prov(doc: &mut DoclingDocument, index: usize, prov: &Prov, grid: Option<[u16; 4]>) {
+    let inner = std::mem::replace(&mut doc.nodes[index], Node::PageBreak);
+    let inner = match grid {
+        Some(location) => Node::Located {
+            location,
+            inner: Box::new(inner),
+        },
+        None => inner,
+    };
+    doc.nodes[index] = Node::Prov {
+        page_no: prov.page_no,
+        bbox: prov.bbox,
+        charspan: prov.charspan,
+        bottom_left: prov.bottom_left,
+        seq: None,
+        inner: Box::new(inner),
+    };
+}
+
+/// An item's provenance on the DocLang location grid (`[x0, y0, x1, y1]` on
+/// 0–511, top-left origin): docling-core's
+/// `_create_location_tokens_for_bbox` at resolution 512, the same
+/// quantization as the PDF pipeline's. The `<location>` tokens of every
+/// item, and the whole provenance of a list item, which the `location`
+/// field carries: the serializers group a list from *adjacent* `ListItem`
+/// nodes, so a `Prov` wrapper around one would split the list. The JSON
+/// export denormalizes the grid against the page size, so a list item's box
+/// comes back to within a grid cell (page size / 512 — under a point on A4)
+/// and its charspan as `[0, len]`, which is what docling writes for a PDF
+/// item anyway.
+fn grid_location(prov: &Prov, g: &WalkGuard) -> Option<[u16; 4]> {
+    let &(w, h) = g.pages.get(&prov.page_no)?;
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    let q =
+        |v: f32, dim: f32| ((512.0 * v as f64 / dim as f64).round() as i64).clamp(0, 511) as u16;
+    let [l, t, r, b] = prov.bbox;
+    let (top, bottom) = if prov.bottom_left {
+        (h - t, h - b)
+    } else {
+        (t, b)
+    };
+    Some([q(l, w), q(top, h), q(r, w), q(bottom, h)])
 }
 
 /// Deepest `children` nesting walked. docling's own JSON never goes past a
@@ -164,7 +334,7 @@ fn walk_inner(
     }
     let kind = ref_kind(reference);
     if kind.starts_with("#/texts/") {
-        text_item(item, root, level, doc);
+        text_item(item, root, level, doc, g);
         // docling nests a section's content under its heading (and a list
         // item's sub-list under the item), so a text item's `children` are
         // body content too — without this walk a document collapses to its
@@ -178,13 +348,48 @@ fn walk_inner(
     } else if kind.starts_with("#/groups/") {
         group_item(item, root, level, doc, g);
     } else if kind.starts_with("#/tables/") {
-        table_item(item, root, doc);
+        with_prov(item, doc, g, |doc, _| table_item(item, root, doc));
     } else if kind.starts_with("#/pictures/") {
-        picture_item(item, root, doc);
+        with_prov(item, doc, g, |doc, _| picture_item(item, root, doc));
     }
 }
 
-fn text_item(item: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
+/// Run `push` for an item and attach the item's provenance (#899) to the
+/// first node it pushed: the page marker ahead of it, the exact box around
+/// it — or, for a list item, in its `location` field (`list_location`).
+fn with_prov(
+    item: &Value,
+    doc: &mut DoclingDocument,
+    g: &mut WalkGuard,
+    push: impl FnOnce(&mut DoclingDocument, Option<[u16; 4]>),
+) {
+    let Some(prov) = prov_of(item) else {
+        push(doc, None);
+        return;
+    };
+    let list_item = item["label"].as_str() == Some("list_item");
+    let on_page = enter_page(prov.page_no, list_item, doc, g);
+    let start = doc.nodes.len();
+    let grid = on_page.then(|| grid_location(&prov, g)).flatten();
+    push(doc, grid);
+    if doc.nodes.len() > start && !matches!(doc.nodes[start], Node::ListItem { .. }) {
+        wrap_prov(doc, start, &prov, grid);
+    }
+}
+
+fn text_item(item: &Value, root: &Value, level: u8, doc: &mut DoclingDocument, g: &mut WalkGuard) {
+    with_prov(item, doc, g, |doc, location| {
+        text_node(item, root, level, doc, location)
+    });
+}
+
+fn text_node(
+    item: &Value,
+    root: &Value,
+    level: u8,
+    doc: &mut DoclingDocument,
+    location: Option<[u16; 4]>,
+) {
     let label = item["label"].as_str().unwrap_or("text");
     // docling does not serialize empty text items (an undecoded formula is the
     // one exception — it becomes a placeholder comment).
@@ -235,7 +440,7 @@ fn text_item(item: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
             text,
             level,
             marker: None,
-            location: None,
+            location,
             dclx: None,
             href: None,
             layer: None,
@@ -384,6 +589,9 @@ fn list_group(
             }
             Marker::FromGroup => (enumerated_group, position, body),
         };
+        let location = prov_of(item)
+            .filter(|p| enter_page(p.page_no, true, doc, g))
+            .and_then(|p| grid_location(&p, g));
         doc.push(Node::ListItem {
             ordered,
             number,
@@ -391,7 +599,7 @@ fn list_group(
             text,
             level,
             marker: None,
-            location: None,
+            location,
             dclx: None,
             href: None,
             layer: None,

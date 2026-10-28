@@ -352,6 +352,10 @@ pub enum Node {
         bbox: [f32; 4],
         /// docling's `charspan` for the item (`[0, 0]` for an XLSX table).
         charspan: [usize; 2],
+        /// The bbox's origin: docling's `BOTTOMLEFT` (a PDF page's
+        /// provenance, as a docling-JSON input carries it — #899) or
+        /// `TOPLEFT` (an XLSX sheet's cell box).
+        bottom_left: bool,
         /// The item's creation rank among its siblings, when that differs
         /// from the node order: docling numbers `#/tables/N` / `#/texts/N` /
         /// `#/pictures/N` in the order it *creates* items (a sheet's tables,

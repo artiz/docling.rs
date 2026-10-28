@@ -2294,13 +2294,14 @@ impl Builder {
                 page_no,
                 bbox,
                 charspan,
+                bottom_left,
                 inner,
                 ..
             } => {
                 self.pending_exact = Some(ExactProv {
                     page_no: *page_no,
                     bbox: bbox.map(f64::from),
-                    bottom_left: false,
+                    bottom_left: *bottom_left,
                     charspan: *charspan,
                 });
                 let r = self.add_node(inner, parent);
@@ -3292,6 +3293,7 @@ mod tests {
                     page_no: 1,
                     bbox: [0.0, 0.0, 3.0, 4.0],
                     charspan: [0, 0],
+                    bottom_left: false,
                     seq: Some(1),
                     inner: Box::new(Node::Table(table.clone())),
                 },
@@ -3299,6 +3301,7 @@ mod tests {
                     page_no: 1,
                     bbox: [0.0, 1.0, 1.0, 1.0],
                     charspan: [0, 0],
+                    bottom_left: false,
                     seq: Some(0),
                     inner: Box::new(Node::Chart {
                         kind: "bar_chart".into(),
@@ -3932,6 +3935,7 @@ mod tests {
             page_no: 1,
             bbox: [-1.0, 2.0, 12.0, 9.5],
             charspan: [0, 1],
+            bottom_left: false,
             seq: None,
             inner: Box::new(Node::Paragraph { text: "x".into() }),
         });
@@ -3954,6 +3958,7 @@ mod tests {
             page_no: 1,
             bbox: [0.0, 0.0, 10.0, 8.0],
             charspan: [0, 0],
+            bottom_left: false,
             seq: None,
             inner: Box::new(Node::Table(table)),
         });
@@ -3961,6 +3966,7 @@ mod tests {
             page_no: 7,
             bbox: [-5.0, 0.0, 50.0, 50.0],
             charspan: [0, 1],
+            bottom_left: false,
             seq: None,
             inner: Box::new(Node::Paragraph { text: "y".into() }),
         });
