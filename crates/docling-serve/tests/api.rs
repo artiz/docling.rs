@@ -1105,28 +1105,167 @@ fn multipart_files(files: &[(&str, &[u8])], fields: &[(&str, &str)]) -> (String,
     (format!("multipart/form-data; boundary={boundary}"), body)
 }
 
-/// Several `file` parts in one request convert as a batch (#182): the
-/// response is a JSON results array with per-item status — and one bad file
-/// fails only its own item.
+/// The three uploads of the batch tests: two documents and, under an
+/// unknown extension, binary that no backend reads (text would read as
+/// plain text since #671).
+const BATCH_FILES: [(&str, &[u8]); 3] = [
+    ("a.md", b"# A\n"),
+    ("b.csv", b"x,y\n1,2\n"),
+    ("broken.xyz", b"\x00\x01\x02\xff\xfe\x00"),
+];
+
+/// Several `file` parts in one request convert as a batch (#182). For
+/// Markdown the answer is Markdown, as for one file: the documents in
+/// request order, the separator line between them, the bad file as one
+/// `Error converting …` line in its place — a 200, streamed.
+#[tokio::test]
+async fn batch_markdown_is_one_separated_body() {
+    let (ct, body) = multipart_files(&BATCH_FILES, &[("to", "md")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/markdown; charset=utf-8"
+    );
+    let out = body_string(response).await;
+    let sep = format!("\n\n{}\n\n", docling_serve::BATCH_SEPARATOR);
+    let parts: Vec<&str> = out.split(sep.as_str()).collect();
+    assert_eq!(parts.len(), 3, "{out:?}");
+    assert_eq!(parts[0], "# A");
+    assert!(
+        parts[1].starts_with("|   x |   y |") && parts[1].ends_with("|   1 |   2 |"),
+        "{:?}",
+        parts[1]
+    );
+    assert!(
+        parts[2].starts_with("Error converting broken.xyz: "),
+        "{:?}",
+        parts[2]
+    );
+    assert!(
+        parts[2].contains("xyz") && !parts[2].contains('\n'),
+        "{:?}",
+        parts[2]
+    );
+    // The same body buffered — what an async job stores — down to the byte.
+    let (ct, body) = multipart_files(&BATCH_FILES, &[("to", "md")]);
+    let stored = async_result(&ct, body).await;
+    assert_eq!(
+        stored.headers()[header::CONTENT_TYPE],
+        "text/markdown; charset=utf-8"
+    );
+    assert_eq!(stored.headers()["x-docling-status"], "partial_success");
+    assert!(stored.headers()["x-docling-errors"]
+        .to_str()
+        .unwrap()
+        .contains("broken.xyz"));
+    assert_eq!(body_string(stored).await, out);
+}
+
+/// Submit `body` to `/v1/convert/async`, wait for the job, fetch its result.
+async fn async_result(ct: &str, body: Vec<u8>) -> axum::response::Response {
+    let app = app();
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/convert/async")
+                .header(header::CONTENT_TYPE, ct)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    let id = v["task_id"].as_str().expect("task id").to_string();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/v1/status/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+        match v["task_status"].as_str().unwrap() {
+            "success" => break,
+            "failure" => panic!("job failed: {v}"),
+            _ if std::time::Instant::now() > deadline => panic!("job never finished"),
+            _ => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+        }
+    }
+    app.oneshot(
+        Request::get(format!("/v1/result/{id}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+    .unwrap()
+}
+
+/// An HTML batch is one page: the first document's skeleton holding every
+/// document's `page` div, `<hr><hr><hr>` between them, the bad file an
+/// error paragraph; a LaTeX batch one document, `\clearpage` between the
+/// bodies, the later document's `\title` ahead of its `\maketitle`.
+#[tokio::test]
+async fn batch_html_and_latex_are_one_document() {
+    let (ct, body) = multipart_files(&BATCH_FILES, &[("to", "html")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/html; charset=utf-8"
+    );
+    let out = body_string(response).await;
+    assert_eq!(out.matches("<!DOCTYPE html>").count(), 1, "{out}");
+    assert_eq!(out.matches("<body>").count(), 1, "{out}");
+    assert_eq!(out.matches("<hr><hr><hr>").count(), 2, "{out}");
+    assert_eq!(out.matches("<div class='page'>").count(), 2, "{out}");
+    let a = out.find("<h1>A</h1>").expect("a.md");
+    let table = out.find("<table").expect("b.csv");
+    let err = out
+        .find("<p>Error converting broken.xyz: ")
+        .expect("error paragraph");
+    assert!(a < table && table < err, "{out}");
+    assert!(out.trim_end().ends_with("</body>\n</html>"), "{out}");
+
+    let (ct, body) = multipart_files(&BATCH_FILES, &[("to", "latex")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/x-tex; charset=utf-8"
+    );
+    let out = body_string(response).await;
+    assert_eq!(out.matches("\\documentclass").count(), 1, "{out}");
+    assert_eq!(out.matches("\\begin{document}").count(), 1, "{out}");
+    assert_eq!(out.matches("\\end{document}").count(), 1, "{out}");
+    assert_eq!(out.matches("\\clearpage").count(), 2, "{out}");
+    assert!(out.contains("\\title{A}"), "{out}");
+    assert!(
+        out.contains("\\textbf{Error converting broken.xyz: "),
+        "{out}"
+    );
+    assert!(out.ends_with("\\end{document}"), "{out}");
+}
+
+/// Any other format answers a JSON results array with per-item status — one
+/// bad file fails only its own item.
 #[tokio::test]
 async fn batch_upload_returns_results_array() {
-    let (ct, body) = multipart_files(
-        &[
-            ("a.md", b"# A\n"),
-            ("b.csv", b"x,y\n1,2\n"),
-            // Binary under an unknown extension: text would read as plain
-            // text since #671.
-            ("broken.xyz", b"\x00\x01\x02\xff\xfe\x00"),
-        ],
-        &[("to", "md")],
-    );
+    let (ct, body) = multipart_files(&BATCH_FILES, &[("to", "json")]);
     let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
     let results = v["results"].as_array().expect("results array");
     assert_eq!(results.len(), 3);
     assert_eq!(results[0]["status"], "success");
-    assert!(results[0]["md"].as_str().unwrap().contains("# A"));
+    assert_eq!(results[0]["document"]["texts"][0]["text"], "A", "{v}");
     assert_eq!(results[1]["status"], "success");
     assert_eq!(results[2]["status"], "failure");
     assert!(results[2]["error"].as_str().unwrap().contains("xyz"));
@@ -2086,20 +2225,21 @@ async fn latex_output_is_a_complete_document() {
 
 #[tokio::test]
 async fn latex_batch_items_and_zip_target_carry_tex() {
-    // Batch: inline `latex` key per item.
+    // Batch: one document; the second file's title travels into the body,
+    // ahead of its `\maketitle`.
     let (ct, body) = multipart_files(
         &[("a.md", b"# A\n"), ("b.md", b"# B\n")],
         &[("to", "latex")],
     );
     let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
-    let results = v["results"].as_array().expect("batch shape");
-    assert_eq!(results.len(), 2);
-    assert!(
-        results[0]["latex"].as_str().unwrap().contains("\\title{A}"),
-        "{v}"
-    );
+    let out = body_string(response).await;
+    assert_eq!(out.matches("\\documentclass").count(), 1, "{out}");
+    let title_a = out.find("\\title{A}").expect("title A");
+    let begin = out.find("\\begin{document}").unwrap();
+    let title_b = out.find("\\title{B}").expect("title B");
+    assert!(title_a < begin && begin < title_b, "{out}");
+    assert!(out.contains("\\title{B}\n\\maketitle"), "{out}");
 
     // Zip target: `<stem>.tex` entries (OutputNames knows the extension).
     let b64 = docling_b64("a,b\n1,2\n");
@@ -2134,12 +2274,18 @@ async fn text_output_is_undecorated_plain_text() {
     let out = body_string(response).await;
     assert_eq!(out, "Title\n\nSome bold and a link\n\n- one\n- two");
 
-    // Batch items carry it under `text`; a zip target names it `<stem>.txt`.
+    // A batch is one text body, the separator line between the documents;
+    // a zip target names it `<stem>.txt`.
     let (ct, body) = multipart_files(&[("a.md", b"# A\n"), ("b.md", b"*B*\n")], &[("to", "text")]);
     let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
-    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
-    assert_eq!(v["results"][0]["text"], "A", "{v}");
-    assert_eq!(v["results"][1]["text"], "B", "{v}");
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/plain; charset=utf-8"
+    );
+    assert_eq!(
+        body_string(response).await,
+        format!("A\n\n{}\n\nB", docling_serve::BATCH_SEPARATOR)
+    );
     let b64 = docling_b64("a,b\n1,2\n");
     let body = format!(
         r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "one.csv"}}],
@@ -2165,16 +2311,29 @@ async fn zip_upload_converts_each_document() {
         ("tool.exe", b"MZ".as_slice()),
         ("broken.docx", b"not a zip".as_slice()),
     ]);
-    let (ct, body) = multipart_files(&[("bundle.zip", &zip)], &[("to", "md")]);
+    let (ct, body) = multipart_files(&[("bundle.zip", &zip)], &[("to", "json")]);
     let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
     let results = v["results"].as_array().expect("results array");
     assert_eq!(results.len(), 3, "{v}");
     assert_eq!(results[0]["status"], "success");
-    assert!(results[0]["md"].as_str().unwrap().contains("# A"));
+    assert_eq!(results[0]["document"]["texts"][1]["text"], "alpha", "{v}");
     assert_eq!(results[1]["status"], "success");
     assert_eq!(results[2]["status"], "failure");
+    // As Markdown: one body, the documents separated, the broken one a line.
+    let (ct, body) = multipart_files(&[("bundle.zip", &zip)], &[("to", "md")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let out = body_string(response).await;
+    assert_eq!(
+        out.matches(docling_serve::BATCH_SEPARATOR).count(),
+        2,
+        "{out:?}"
+    );
+    assert!(out.starts_with("# A\n\nalpha"), "{out:?}");
+    // Entries are named by stem, as the JSON items are.
+    assert!(out.contains("Error converting broken: "), "{out:?}");
 
     // Nothing convertible inside: a client error, not an empty success.
     let only_exe = docling::dclx::zip_bytes(vec![("tool.exe", b"MZ".as_slice())]);

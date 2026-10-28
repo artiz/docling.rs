@@ -162,7 +162,10 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   </div>
   <div class="hint">PDF/image inputs run the ML pipeline — the first conversion loads the models
   (tens of seconds), repeats are fast. Markdown responses stream in as they convert.
-  Picking <em>several</em> files converts them as one batch (JSON results array).</div>
+  Picking <em>several</em> files converts them as one batch in the same format as one file:
+  Markdown and text as one body with a dashed line between the documents, HTML as one page
+  (<code>&lt;hr&gt;&lt;hr&gt;&lt;hr&gt;</code> between them), LaTeX as one document; JSON, chunks,
+  Pandoc, VTT, dclx and images as a JSON results array.</div>
   <div class="out">
     <div class="hint" id="confidence" style="display:none"></div>
     <pre id="result" style="display:none"></pre>
@@ -175,8 +178,10 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <tr><th>Method</th><th>Path</th><th>Description</th></tr>
   <tr><td><code>POST</code></td><td><code>/v1/convert</code></td>
       <td>Convert an upload (<code>multipart/form-data</code>, a <code>file</code> part — the filename's
-      extension selects the input format; several <code>file</code> parts convert as a batch and
-      answer a JSON <code>results</code> array) or a URL (<code>application/json</code>:
+      extension selects the input format; several <code>file</code> parts convert as a batch in
+      the same format as one file — Markdown / text with a dashed separator line between the
+      documents, HTML one page, LaTeX one document; JSON, chunks, Pandoc, VTT, dclx and images
+      as a JSON <code>results</code> array) or a URL (<code>application/json</code>:
       <code>{"url": …, "file_name"?: …}</code>). PDF/image responses carry an
       <code>X-Docling-Confidence</code> summary header; <code>to=json</code> bodies embed the full
       per-page confidence report.</td></tr>
@@ -252,7 +257,7 @@ curl -H 'content-type: application/json' \
      localhost:5001/v1/convert                                     # convert a URL
 
 curl -F file=@a.pdf -F file=@b.docx \
-     'localhost:5001/v1/convert?to=md'                             # batch → JSON results array
+     'localhost:5001/v1/convert?to=md'                             # batch → one Markdown, dashed line between documents
 
 id=$(curl -F file=@big.pdf localhost:5001/v1/convert/async | jq -r .task_id)
 curl localhost:5001/v1/status/$id                                  # pending|started|success|failure
@@ -513,7 +518,7 @@ $('go').addEventListener('click', async () => {
       body += chunk;
       out.textContent += chunk;
     }
-    // Batch responses are JSON whatever `to` says — go by the content type.
+    // A batch of a format that cannot be joined is JSON — go by the content type.
     const isJson = (response.headers.get('content-type') || '').includes('application/json');
     if (isJson || to === 'json' || to === 'chunks') {
       try {
