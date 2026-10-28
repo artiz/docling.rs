@@ -123,6 +123,10 @@ pub enum InputFormat {
     /// decompressed (PalmDOC LZ77, zlib) into paragraphs. A `.pdb` that is no
     /// Palm database reads as text.
     PalmDoc,
+    /// Hancom Hangul word processor documents (`.hwp`, `.hwpx`), a docling.rs
+    /// extension (#216): HWP 5 compound files and HWPX (OWPML) packages read
+    /// into paragraphs, headings, lists and tables.
+    Hwp,
     /// DjVu scanned documents (`.djvu`/`.djv`) — a docling.rs extension (#434);
     /// docling has no DjVu reader. Decoded in pure Rust (`djvu-rs`): the
     /// hidden per-page text layer by default, rasterize + OCR for scan-only
@@ -221,6 +225,7 @@ impl InputFormat {
             InputFormat::T602 => "t602",
             InputFormat::Prn => "prn",
             InputFormat::PalmDoc => "palmdoc",
+            InputFormat::Hwp => "hwp",
             InputFormat::Djvu => "djvu",
             InputFormat::Text => "text",
             InputFormat::Jsonl => "jsonl",
@@ -286,6 +291,7 @@ impl InputFormat {
             "t602" => InputFormat::T602,
             "prn" => InputFormat::Prn,
             "palmdoc" => InputFormat::PalmDoc,
+            "hwp" => InputFormat::Hwp,
             "djvu" => InputFormat::Djvu,
             "text" => InputFormat::Text,
             "jsonl" => InputFormat::Jsonl,
@@ -751,6 +757,10 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         // is the spelling #216 lists.
         ("pdb", PalmDoc),
         ("pbd", PalmDoc),
+        // Hancom Hangul (#216): HWP 5 (an OLE compound file) and HWPX (a ZIP);
+        // the backend tells them apart by content.
+        ("hwp", Hwp),
+        ("hwpx", Hwp),
         // DjVu (#434): docling.rs extension, pure-Rust decode via `djvu-rs`.
         ("djvu", Djvu),
         ("djv", Djvu),

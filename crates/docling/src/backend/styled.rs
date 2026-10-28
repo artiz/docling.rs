@@ -78,16 +78,18 @@ impl Para {
     }
 
     /// The plain text, whitespace collapsed.
-    #[cfg(test)]
     pub fn text(&self) -> String {
         self.runs.iter().map(|(t, _)| t.as_str()).collect()
     }
 
-    /// The paragraph node; `None` when no text arrived.
-    pub fn into_node(self) -> Option<Node> {
-        if self.runs.is_empty() {
-            return None;
-        }
+    /// Whether no text arrived.
+    pub fn is_empty(&self) -> bool {
+        self.runs.is_empty()
+    }
+
+    /// The Markdown: each run escaped, its non-blank core wrapped in the
+    /// style's markers.
+    pub fn markdown(&self) -> String {
         let mut md = String::new();
         for (text, s) in &self.runs {
             let core = text.trim();
@@ -107,6 +109,15 @@ impl Para {
             md.push_str(&m);
             md.push_str(trail);
         }
+        md.trim_end().to_string()
+    }
+
+    /// The paragraph node; `None` when no text arrived.
+    pub fn into_node(self) -> Option<Node> {
+        if self.runs.is_empty() {
+            return None;
+        }
+        let md = self.markdown();
         let runs = self
             .runs
             .into_iter()
@@ -121,11 +132,7 @@ impl Para {
                 formula: false,
             })
             .collect();
-        Some(inline_paragraph_node(
-            md.trim_end().to_string(),
-            runs,
-            false,
-        ))
+        Some(inline_paragraph_node(md, runs, false))
     }
 
     /// Take the paragraph, leaving an empty one.

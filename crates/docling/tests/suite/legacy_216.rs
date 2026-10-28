@@ -45,3 +45,22 @@ fn kingsoft_et_reads_as_xls() {
         );
     }
 }
+
+/// Hancom Hangul documents are told by content: an HWP 5 compound file by
+/// its `FileHeader` + `DocInfo` streams, an HWPX package by its
+/// `application/hwp+zip` mimetype — a nameless input converts as one.
+#[test]
+fn hwp_and_hwpx_are_sniffed_by_content() {
+    let dir = repo_root().join("crates/docling/tests/data/hwp/sources");
+    for name in ["hwplib_table.hwp", "hwpxlib_table.hwpx"] {
+        let bytes = std::fs::read(dir.join(name)).unwrap();
+        assert_eq!(
+            docling::InputFormat::detect(&bytes),
+            Some(docling::InputFormat::Hwp),
+            "{name}"
+        );
+        let named = markdown_of(name, bytes.clone());
+        assert!(named.contains('|'), "{named}");
+        assert_eq!(markdown_of("upload.bin", bytes), named, "{name}");
+    }
+}

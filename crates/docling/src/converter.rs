@@ -2954,6 +2954,11 @@ impl DocumentConverter {
                 // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
                 // backend for the whole DOS-era family.
                 InputFormat::Lotus => LotusBackend.convert(source)?,
+                // Hancom Hangul (#216): HWP 5 and HWPX.
+                InputFormat::Hwp => crate::backend::HwpBackend {
+                    track_changes: self.track_changes,
+                }
+                .convert(source)?,
                 // Palm e-texts (#216): PalmDOC, TealDoc, zTXT.
                 InputFormat::PalmDoc => crate::backend::PalmDocBackend.convert(source)?,
                 // Print files (#216): text out of a report or a printer stream.
