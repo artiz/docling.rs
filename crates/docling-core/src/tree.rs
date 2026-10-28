@@ -244,6 +244,10 @@ pub struct SourceBlock {
     pub id: Option<String>,
     /// Its `class` attribute, as written.
     pub class: Option<String>,
+    /// Every attribute of the element, by name (#910): `id` and `class`
+    /// among them, and whatever else the source put there — `style`,
+    /// `aria-hidden`, a RIS element's `typ`.
+    pub attrs: Vec<(String, String)>,
     /// The element's path from the document root — each step the tag and
     /// the 1-based position among the parent's same-tag element children,
     /// `html/body/div[3]/p[1]` — stable for the document and unique to the
@@ -262,6 +266,25 @@ pub struct SourceBlock {
     /// Why no item was made from this block; `None` when `items` is not
     /// empty.
     pub omitted: Option<BlockOmission>,
+}
+
+/// An element of the source that is not a block but carries an `id` or a
+/// `class` (#910): a container — the `<div id="art_23">` an article's
+/// paragraphs sit in — so an excerpt selected by a container's identity
+/// resolves to a path and, through [`ItemTree::blocks_under`], to the blocks
+/// inside it. A block's own identity is on the block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceElement {
+    /// The element's tag name.
+    pub tag: String,
+    /// Its `id` attribute, when it has one.
+    pub id: Option<String>,
+    /// Its `class` attribute, as written.
+    pub class: Option<String>,
+    /// Every attribute, by name.
+    pub attrs: Vec<(String, String)>,
+    /// Its path from the document root, as [`SourceBlock::path`].
+    pub path: String,
 }
 
 /// Why a [`SourceBlock`] produced no item.
@@ -374,6 +397,9 @@ pub struct ItemTree {
     /// enumerates them (HTML); each item's [`TreeItem::block`] points into
     /// this. Empty otherwise.
     pub blocks: Vec<SourceBlock>,
+    /// The source's containers that carry an `id` or a `class` (#910), in
+    /// document order; see [`SourceElement`]. Empty when `blocks` is.
+    pub containers: Vec<SourceElement>,
 }
 
 impl ItemTree {
@@ -442,6 +468,38 @@ impl ItemTree {
         out
     }
 
+    /// The blocks under `path` (#910), in document order: those whose
+    /// [`SourceBlock::path`] is `path` or starts with `path/` — the block
+    /// itself, or everything inside a container.
+    pub fn blocks_under(&self, path: &str) -> Vec<usize> {
+        let prefix = format!("{path}/");
+        self.blocks
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.path == path || b.path.starts_with(&prefix))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// The path of the element with `id` (#910): a block's or a container's,
+    /// the first in document order when the source repeats an id.
+    pub fn path_of_id(&self, id: &str) -> Option<&str> {
+        let block = self
+            .blocks
+            .iter()
+            .find(|b| b.id.as_deref() == Some(id))
+            .map(|b| b.path.as_str());
+        let container = self
+            .containers
+            .iter()
+            .find(|c| c.id.as_deref() == Some(id))
+            .map(|c| c.path.as_str());
+        match (block, container) {
+            (Some(b), Some(c)) => Some(if b.len() <= c.len() && b < c { b } else { c }),
+            (b, c) => b.or(c),
+        }
+    }
+
     /// Append every item of `other` after this tree's, renumbering its
     /// indices (parents, children, comments, table/picture caption and
     /// rich-cell refs) and adding its body children to this body — so a
@@ -497,6 +555,7 @@ impl ItemTree {
                 *b += block_off;
             }
         }
+        self.containers.extend(other.containers);
     }
 
     /// Move `id` under `new_parent`, dropping it from its current parent's

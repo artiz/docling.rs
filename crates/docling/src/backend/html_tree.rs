@@ -34,7 +34,9 @@
 
 use std::collections::HashMap;
 
-use docling_core::tree::{BlockOmission, Formatting, ItemTree, ListMeta, SourceBlock, TreeKind};
+use docling_core::tree::{
+    BlockOmission, Formatting, ItemTree, ListMeta, SourceBlock, SourceElement, TreeKind,
+};
 use docling_core::{ContentLayer, Script, Table, TableCell};
 use ego_tree::{NodeId, NodeRef};
 use scraper::{ElementRef, Html, Node as HtmlNode, Selector};
@@ -493,6 +495,7 @@ fn collect_blocks(root: ElementRef<'_>, el_of: &HashMap<usize, NodeId>, tree: &m
         el_of,
         blocks: Vec::new(),
         block_of: HashMap::new(),
+        containers: Vec::new(),
     };
     c.visit(
         root,
@@ -505,13 +508,14 @@ fn collect_blocks(root: ElementRef<'_>, el_of: &HashMap<usize, NodeId>, tree: &m
             block: None,
         },
     );
-    let (blocks, block_of) = (c.blocks, c.block_of);
+    let (blocks, block_of, containers) = (c.blocks, c.block_of, c.containers);
     // Every item of the element — the runs inside an inline group, the
     // rich-cell groups of a table included — points at its block.
     for (&i, el) in el_of {
         tree.items[i].block = block_of.get(el).copied();
     }
     tree.blocks = blocks;
+    tree.containers = containers;
 }
 
 /// What the ancestors of an element decide for it.
@@ -535,6 +539,18 @@ struct Collector<'t, 'a> {
     blocks: Vec<SourceBlock>,
     /// Element → its block.
     block_of: HashMap<NodeId, usize>,
+    /// The containers with an `id` or a `class` (#910).
+    containers: Vec<SourceElement>,
+}
+
+/// An element's attributes, by name (the order scraper keeps them in).
+fn attrs_of(e: &scraper::node::Element) -> Vec<(String, String)> {
+    let mut attrs: Vec<(String, String)> = e
+        .attrs()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    attrs.sort();
+    attrs
 }
 
 impl Collector<'_, '_> {
@@ -601,6 +617,7 @@ impl Collector<'_, '_> {
                 tag: tag.to_string(),
                 id: e.attr("id").map(str::to_string),
                 class: e.attr("class").map(str::to_string),
+                attrs: attrs_of(e),
                 path: path.clone(),
                 text,
                 items: items.clone(),
@@ -609,6 +626,14 @@ impl Collector<'_, '_> {
             if !items.is_empty() {
                 block = Some(idx);
             }
+        } else if e.attr("id").is_some() || e.attr("class").is_some() {
+            self.containers.push(SourceElement {
+                tag: tag.to_string(),
+                id: e.attr("id").map(str::to_string),
+                class: e.attr("class").map(str::to_string),
+                attrs: attrs_of(e),
+                path: path.clone(),
+            });
         }
         let ctx = Ctx {
             path,
@@ -2737,6 +2762,68 @@ mod tests {
         assert_eq!(t.blocks[table_block].items, vec![table]);
         assert_eq!(t.items[table].block, Some(table_block));
         assert_eq!(text(&t.items[t.blocks[li_block].items[0]]), "inner");
+    }
+
+    /// #910: a container's identity — the `<div id="art_23">` an article's
+    /// paragraphs sit in, no block itself — resolves to its path and to
+    /// the blocks inside it; every attribute of a block is on it.
+    #[test]
+    fn container_ids_resolve_to_their_blocks() {
+        let t = tree(
+            r#"<html><body>
+<div class="eli-subdivision" id="art_23">
+  <p id="d1e3455-80-1" class="oj-ti-art">Article 23</p>
+  <div class="eli-title" id="art_23.tit_1">
+    <p class="oj-sti-art">Reporting obligations</p>
+  </div>
+</div>
+<div><p>Article 24</p></div>
+</body></html>"#,
+        );
+        let containers: Vec<(&str, Option<&str>, Option<&str>)> = t
+            .containers
+            .iter()
+            .map(|c| (c.path.as_str(), c.id.as_deref(), c.class.as_deref()))
+            .collect();
+        assert_eq!(
+            containers,
+            vec![
+                (
+                    "html/body[1]/div[1]",
+                    Some("art_23"),
+                    Some("eli-subdivision")
+                ),
+                (
+                    "html/body[1]/div[1]/div[1]",
+                    Some("art_23.tit_1"),
+                    Some("eli-title")
+                ),
+            ],
+            "the anonymous div is no container"
+        );
+        let art = t.path_of_id("art_23").unwrap();
+        assert_eq!(t.blocks_under(art), vec![0, 1]);
+        assert_eq!(
+            t.source_text(t.blocks_under(art)),
+            "Article 23\nReporting obligations"
+        );
+        let title = t.path_of_id("art_23.tit_1").unwrap();
+        assert_eq!(t.blocks_under(title), vec![1]);
+        assert_eq!(t.blocks_under(&t.blocks[0].path), vec![0]);
+        assert_eq!(t.blocks_under("html/body[1]/div[2]"), vec![2]);
+        assert_eq!(
+            t.path_of_id("d1e3455-80-1"),
+            Some(t.blocks[0].path.as_str())
+        );
+        assert_eq!(t.path_of_id("nope"), None);
+        assert_eq!(
+            t.blocks[0].attrs,
+            vec![
+                ("class".to_string(), "oj-ti-art".to_string()),
+                ("id".to_string(), "d1e3455-80-1".to_string())
+            ]
+        );
+        assert_eq!(t.containers[0].attrs.len(), 2);
     }
 
     /// Every text node of the source belongs to exactly one block: the

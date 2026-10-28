@@ -127,6 +127,9 @@ An HTML conversion's tree also keeps the **source blocks** (#903, #904):
 `doc.tree.blocks` lists every block of the source in document order — tag,
 `id`, `class`, element path, its own normalized text, the items made from
 it, or why none was — and each `TreeItem::block` points back at its block.
+`tree.containers` lists the containers that carry an `id` or a `class`
+(#910), `tree.path_of_id(id)` resolves either to its path and
+`tree.blocks_under(path)` selects the blocks inside it.
 `tree.source_text([i, j])` reads selected blocks with one newline between
 them, free of any serializer's separators:
 
