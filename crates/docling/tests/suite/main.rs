@@ -29,6 +29,7 @@ mod docx_upstream;
 mod encrypted;
 mod feed;
 mod heif;
+mod html_depth_cap;
 mod html_export;
 mod html_source_blocks;
 mod html_upstream;

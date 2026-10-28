@@ -127,15 +127,17 @@ pub(crate) fn convert_html_with(
     infer_furniture: bool,
 ) -> DoclingDocument {
     let mut doc = DoclingDocument::new(name);
-    append_fragment_with(html, &mut doc.nodes, images, infer_furniture);
+    let flattened = append_fragment_with(html, &mut doc.nodes, images, infer_furniture);
     // The flat nodes above drive Markdown / DocLang / LaTeX; the JSON export
     // takes docling's item tree, built by a call-for-call port of upstream's
     // walk ([`super::html_tree`]) so the JSON structure — heading nesting,
     // inline groups, rich cells, content layers, item numbering — is
-    // upstream's.
-    if nesting_estimate_within(html, max_dom_depth()) {
-        let parsed = Html::parse_document(html);
-        if within_depth_limit(parsed.root_element(), MAX_DOM_DEPTH) {
+    // upstream's. A page past the depth cap has no tree (its DOM is never
+    // walked); the notice says so (#912).
+    match flattened {
+        Some(notice) => doc.notices.push(notice),
+        None => {
+            let parsed = Html::parse_document(html);
             doc.tree = Some(super::html_tree::build_tree(
                 &parsed,
                 images,
@@ -147,6 +149,12 @@ pub(crate) fn convert_html_with(
     doc
 }
 
+/// The depth-cap notice (#912): the page nests past
+/// `DOCLING_RS_MAX_HTML_DEPTH`, so it is read as flat text.
+fn depth_notice() -> docling_core::Notice {
+    docling_core::Notice::depth_limit("HTML", "DOCLING_RS_MAX_HTML_DEPTH", max_dom_depth())
+}
+
 /// Parse an HTML fragment and append its block nodes to `out`. Shared with the
 /// Markdown backend, which feeds embedded raw-HTML blocks through here (as
 /// docling does).
@@ -155,13 +163,14 @@ pub(crate) fn append_fragment(html: &str, out: &mut Vec<Node>, images: &dyn Imag
 }
 
 /// [`append_fragment`] with docling's `infer_furniture` option (see
-/// [`convert_html_with`]).
+/// [`convert_html_with`]). `Some` when the page was flattened — nested past
+/// the depth cap, read as text without walking a DOM (#912).
 fn append_fragment_with(
     html: &str,
     out: &mut Vec<Node>,
     images: &dyn ImageResolver,
     infer_furniture: bool,
-) {
+) -> Option<docling_core::Notice> {
     // html5ever's tree builder walks its stack of open elements per tag, so
     // a page nested tens of thousands of elements deep parses in quadratic
     // time — 100 000 nested `<div>`s (1 MB) took 37 s before a single node
@@ -173,7 +182,7 @@ fn append_fragment_with(
         if !text.is_empty() {
             out.push(Node::Paragraph { text });
         }
-        return;
+        return Some(depth_notice());
     }
     let parsed = Html::parse_document(html);
     // The document `<title>` is docling's furniture-layer title heading — it
@@ -191,6 +200,7 @@ fn append_fragment_with(
     }
 
     let start = out.len();
+    let mut flattened = None;
     // Prefer <body>; fall back to the root element for fragments.
     let body = parsed.select(cached_selector!("body")).next();
     let root = body.unwrap_or_else(|| parsed.root_element());
@@ -219,12 +229,14 @@ fn append_fragment_with(
         if !text.is_empty() {
             out.push(Node::Paragraph { text });
         }
+        flattened = Some(depth_notice());
     }
     // docling's `infer_furniture`: content before the first body heading is site
     // chrome (navigation/menus/sidebars) → the `furniture` layer.
     if infer_furniture {
         mark_leading_furniture(&mut out[start..]);
     }
+    flattened
 }
 
 /// The first hyperlink target inside `el` (its own `<a href>` or a descendant),
@@ -3296,6 +3308,27 @@ mod tests {
             doc.export_to_markdown().contains("deep text"),
             "flattened fallback should preserve the text content"
         );
+        // #912: the flattening is named — the variable, the effective cap,
+        // what the document lacks — instead of an unexplained success.
+        assert!(doc.tree.is_none());
+        assert_eq!(doc.notices.len(), 1, "{:?}", doc.notices);
+        assert_eq!(
+            doc.notices[0].kind,
+            docling_core::NoticeKind::DepthLimit {
+                variable: "DOCLING_RS_MAX_HTML_DEPTH",
+                limit: 200
+            }
+        );
+        assert!(
+            doc.notices[0].message.contains("DOCLING_RS_MAX_HTML_DEPTH")
+                && doc.notices[0].message.contains("200")
+                && doc.notices[0].message.contains("source blocks"),
+            "{}",
+            doc.notices[0].message
+        );
+        // Within the cap: a tree, no notice.
+        let doc = convert("<html><body><div><p>shallow</p></div></body></html>");
+        assert!(doc.tree.is_some() && doc.notices.is_empty());
     }
 
     #[test]
