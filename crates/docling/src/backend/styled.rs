@@ -90,8 +90,22 @@ impl Para {
     /// The Markdown: each run escaped, its non-blank core wrapped in the
     /// style's markers.
     pub fn markdown(&self) -> String {
-        let mut md = String::new();
+        // Runs that differ only in what Markdown cannot show (underline,
+        // sub/superscript) render as one: `**1.**`, not `**1****.**`.
+        let mut groups: Vec<(String, Style)> = Vec::new();
         for (text, s) in &self.runs {
+            let shown = Style {
+                underline: false,
+                script: Script::Baseline,
+                ..*s
+            };
+            match groups.last_mut() {
+                Some((t, g)) if *g == shown => t.push_str(text),
+                _ => groups.push((text.clone(), shown)),
+            }
+        }
+        let mut md = String::new();
+        for (text, s) in &groups {
             let core = text.trim();
             let lead = &text[..text.len() - text.trim_start().len()];
             let trail = &text[lead.len() + core.len()..];

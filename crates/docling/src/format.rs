@@ -131,6 +131,10 @@ pub enum InputFormat {
     /// extension (#216): the text a drawing places (labels, callouts) in the
     /// binary and clear-text encodings.
     Cgm,
+    /// Classic Macintosh word processors — MacWrite (`.mw`), Word for the
+    /// Macintosh 1–5 (`.mcw`) and ClarisWorks / AppleWorks 1–6 (`.cwk`), a
+    /// docling.rs extension (#216): their text, told apart by content.
+    MacWp,
     /// DjVu scanned documents (`.djvu`/`.djv`) — a docling.rs extension (#434);
     /// docling has no DjVu reader. Decoded in pure Rust (`djvu-rs`): the
     /// hidden per-page text layer by default, rasterize + OCR for scan-only
@@ -231,6 +235,7 @@ impl InputFormat {
             InputFormat::PalmDoc => "palmdoc",
             InputFormat::Hwp => "hwp",
             InputFormat::Cgm => "cgm",
+            InputFormat::MacWp => "mac_wp",
             InputFormat::Djvu => "djvu",
             InputFormat::Text => "text",
             InputFormat::Jsonl => "jsonl",
@@ -298,6 +303,7 @@ impl InputFormat {
             "palmdoc" => InputFormat::PalmDoc,
             "hwp" => InputFormat::Hwp,
             "cgm" => InputFormat::Cgm,
+            "mac_wp" => InputFormat::MacWp,
             "djvu" => InputFormat::Djvu,
             "text" => InputFormat::Text,
             "jsonl" => InputFormat::Jsonl,
@@ -769,6 +775,11 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         ("hwpx", Hwp),
         // Computer Graphics Metafile (#216): the drawing's text.
         ("cgm", Cgm),
+        // Classic Mac word processors (#216): MacWrite, Word for Mac, ClarisWorks;
+        // the backend tells them apart by content.
+        ("mw", MacWp),
+        ("mcw", MacWp),
+        ("cwk", MacWp),
         // DjVu (#434): docling.rs extension, pure-Rust decode via `djvu-rs`.
         ("djvu", Djvu),
         ("djv", Djvu),

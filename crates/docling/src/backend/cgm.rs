@@ -499,4 +499,21 @@ mod tests {
         assert!(!looks_like_binary_cgm(b"PK\x03\x04"));
         assert!(!looks_like_clear_text_cgm(b"% only a comment"));
     }
+
+    /// Every fixture, cut at every few bytes, converts or errors — never
+    /// panics.
+    #[test]
+    fn truncated_files_do_not_panic() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/cgm/sources");
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+            for end in (0..bytes.len()).step_by(97) {
+                let _ = CgmBackend.convert(&SourceDocument::from_bytes(
+                    "t.cgm",
+                    crate::InputFormat::Cgm,
+                    bytes[..end].to_vec(),
+                ));
+            }
+        }
+    }
 }

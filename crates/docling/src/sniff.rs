@@ -84,6 +84,13 @@ pub(crate) fn detect_any(bytes: &[u8]) -> Option<InputFormat> {
     if crate::backend::looks_like_palmdoc(bytes) {
         return Some(InputFormat::PalmDoc);
     }
+    // Word for Macintosh's magic, ClarisWorks' `BOBO` (#216); MacWrite has
+    // no signature beyond a version word and comes by its extension.
+    if crate::backend::macwp::looks_like_mac_word(bytes)
+        || crate::backend::macwp::looks_like_clarisworks(bytes)
+    {
+        return Some(InputFormat::MacWp);
+    }
     // A Computer Graphics Metafile's BEGIN METAFILE element (#216).
     if crate::backend::cgm::looks_like_binary_cgm(bytes)
         || crate::backend::cgm::looks_like_clear_text_cgm(bytes)

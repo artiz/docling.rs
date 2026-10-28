@@ -1456,4 +1456,21 @@ mod tests {
         );
         assert_eq!(Head::from_kind(0, 3), Head::Body);
     }
+
+    /// Every fixture, cut at every few bytes, converts or errors — never
+    /// panics.
+    #[test]
+    fn truncated_files_do_not_panic() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/hwp/sources");
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+            for end in (0..bytes.len()).step_by(97) {
+                let _ = HwpBackend::default().convert(&SourceDocument::from_bytes(
+                    "t.hwp",
+                    crate::InputFormat::Hwp,
+                    bytes[..end].to_vec(),
+                ));
+            }
+        }
+    }
 }

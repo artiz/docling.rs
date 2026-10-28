@@ -80,3 +80,25 @@ fn cgm_reads_its_text_and_is_sniffed() {
     let md = markdown_of("upload.bin", bytes);
     assert!(md.contains("GENIGRAPHICS"), "{md}");
 }
+
+/// Word for Macintosh and ClarisWorks are sniffed by their signatures —
+/// classic Mac files often had no extension; MacWrite reads by its own.
+#[test]
+fn mac_word_processors_are_sniffed() {
+    let dir = repo_root().join("crates/docling/tests/data/mac_wp/sources");
+    for name in [
+        "libreoffice_word_5.0.mcw",
+        "libreoffice_clarisworks_1.0.cwk",
+    ] {
+        let bytes = std::fs::read(dir.join(name)).unwrap();
+        assert_eq!(
+            docling::InputFormat::detect(&bytes),
+            Some(docling::InputFormat::MacWp),
+            "{name}"
+        );
+        let md = markdown_of("upload", bytes);
+        assert!(md.contains("EXERCICE"), "{name}: {md}");
+    }
+    let mw = std::fs::read(dir.join("libreoffice_macwrite_4.5.mw")).unwrap();
+    assert!(markdown_of("t.mw", mw).contains("Exercice"));
+}
