@@ -123,6 +123,19 @@ content layers the HTML / Markdown exports render: [`docs/MIGRATION.md` §
 3](../../docs/MIGRATION.md#json-structure-and-content-layers); the Pandoc
 mapping is in the same section's table.
 
+An HTML conversion's tree also keeps the **source blocks** (#903, #904):
+`doc.tree.blocks` lists every block of the source in document order — tag,
+`id`, `class`, element path, its own normalized text, the items made from
+it, or why none was — and each `TreeItem::block` points back at its block.
+`tree.source_text([i, j])` reads selected blocks with one newline between
+them, free of any serializer's separators:
+
+```rust
+let tree = doc.tree.as_ref().unwrap();
+let p79 = tree.blocks.iter().position(|b| b.text.starts_with("79 ")).unwrap();
+println!("{} {:?} -> {}", tree.blocks[p79].path, tree.blocks[p79].id, tree.source_text([p79]));
+```
+
 ## Chunking (docling's Hierarchical & Hybrid chunkers)
 
 `docling_core.transforms.chunker` ported to Rust — the chunkers RAG

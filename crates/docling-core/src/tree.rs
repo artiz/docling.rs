@@ -216,6 +216,72 @@ pub struct TreeItem {
     /// `language`): the LaTeX backend keeps a `tikzpicture`'s source there
     /// when no engine renders it (`("…", "Tikz")`).
     pub code_meta: Option<(String, String)>,
+    /// The source block this item was made from (#903): an index into
+    /// [`ItemTree::blocks`], set by a backend that enumerates its source's
+    /// blocks (HTML). `None` when the backend does not, or for an item no
+    /// single block produced.
+    pub block: Option<usize>,
+}
+
+/// A block of the source document (#903, #904): the original element an
+/// item was made from — or one that produced no item, with the reason —
+/// so a caller can tie converted items back to the source, tell two
+/// identical texts apart, and read a block's text on its own terms, free of
+/// any serializer's separators.
+///
+/// The HTML backend enumerates, in document order, every element that
+/// produced an item, every non-inline element with text of its own (text
+/// nodes reached through inline elements only — a `<span>`'s text belongs
+/// to the block around it), and every empty `<p>`, heading, `<li>`, `<dt>`,
+/// `<dd>`, `<td>`/`<th>`, `<pre>` or `<caption>`. Pure containers (a layout
+/// `<div>` with nothing but blocks inside) are not blocks. Every text node
+/// of the source thus belongs to exactly one block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceBlock {
+    /// The element's tag name (`p`, `div`, `li`, `table`, `img`, …).
+    pub tag: String,
+    /// Its `id` attribute, when it has one.
+    pub id: Option<String>,
+    /// Its `class` attribute, as written.
+    pub class: Option<String>,
+    /// The element's path from the document root — each step the tag and
+    /// the 1-based position among the parent's same-tag element children,
+    /// `html/body/div[3]/p[1]` — stable for the document and unique to the
+    /// element, with or without an `id`.
+    pub path: String,
+    /// The block's own text: its text nodes (and those of the inline
+    /// elements inside it, not of nested blocks) in source order, whitespace
+    /// runs collapsed to one space, trimmed. Independent of what the items
+    /// made of it hold — a hidden block's text is here too.
+    pub text: String,
+    /// The items made from this block, in creation order — the top-level
+    /// ones (an inline group, not the runs inside it; a list group, not
+    /// its items, which have their `<li>` blocks). Empty when it produced
+    /// none: see `omitted`.
+    pub items: Vec<usize>,
+    /// Why no item was made from this block; `None` when `items` is not
+    /// empty.
+    pub omitted: Option<BlockOmission>,
+}
+
+/// Why a [`SourceBlock`] produced no item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockOmission {
+    /// No text of its own once normalized (an empty `<p>`, a `<li>` whose
+    /// content is nested blocks).
+    Empty,
+    /// Hidden or non-content (`display: none`, `hidden`, `<script>`,
+    /// `<style>`, `<noscript>`), or inside such an element.
+    Hidden,
+    /// In a table whose cells were flattened: the text is in the grid of
+    /// the table item (the index) rather than an item of its own.
+    InTable(usize),
+    /// Its text went into the items of an enclosing block (the index into
+    /// [`ItemTree::blocks`]): a `<p>` inside a `<li>` is the list item's
+    /// text.
+    Merged(usize),
+    /// The walk produced nothing the backend can attribute.
+    Unmapped,
 }
 
 /// A note call inside a text item ([`TreeItem::notes`]).
@@ -304,6 +370,10 @@ pub struct ItemTree {
     /// structure (LaTeX); a tree the port does not cover falls back to the
     /// nodes.
     pub doclang: bool,
+    /// The source's blocks (#903), in document order, when the backend
+    /// enumerates them (HTML); each item's [`TreeItem::block`] points into
+    /// this. Empty otherwise.
+    pub blocks: Vec<SourceBlock>,
 }
 
 impl ItemTree {
@@ -331,6 +401,7 @@ impl ItemTree {
             number: None,
             revision: None,
             code_meta: None,
+            block: None,
         });
         match parent {
             Some(p) => self.items[p].children.push(id),
@@ -351,6 +422,24 @@ impl ItemTree {
         let id = self.add(parent, layer, kind);
         self.items[id].prov = Some(prov);
         id
+    }
+
+    /// The text of the given source blocks (#904), one line each: each
+    /// block's own normalized [`SourceBlock::text`], joined with a single
+    /// `\n` — no serializer decoration, no trailing separator, nothing of
+    /// the blocks around them. Indices out of range are skipped.
+    pub fn source_text(&self, blocks: impl IntoIterator<Item = usize>) -> String {
+        let mut out = String::new();
+        for b in blocks {
+            let Some(block) = self.blocks.get(b) else {
+                continue;
+            };
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&block.text);
+        }
+        out
     }
 
     /// Append every item of `other` after this tree's, renumbering its
@@ -390,6 +479,24 @@ impl ItemTree {
             self.items.push(item);
         }
         self.body.extend(other.body.into_iter().map(shift));
+        let block_off = self.blocks.len();
+        for mut b in other.blocks {
+            for i in b.items.iter_mut() {
+                *i = shift(*i);
+            }
+            if let Some(BlockOmission::InTable(t)) = b.omitted.as_mut() {
+                *t = shift(*t);
+            }
+            if let Some(BlockOmission::Merged(m)) = b.omitted.as_mut() {
+                *m += block_off;
+            }
+            self.blocks.push(b);
+        }
+        for item in &mut self.items[off..] {
+            if let Some(b) = item.block.as_mut() {
+                *b += block_off;
+            }
+        }
     }
 
     /// Move `id` under `new_parent`, dropping it from its current parent's
@@ -465,6 +572,15 @@ impl ItemTree {
             self.items.push(item);
         }
         remap(&mut self.body);
+        for b in &mut self.blocks {
+            remap(&mut b.items);
+            if let Some(BlockOmission::InTable(t)) = b.omitted {
+                b.omitted = Some(match new_of[t] {
+                    Some(n) => BlockOmission::InTable(n),
+                    None => BlockOmission::Unmapped,
+                });
+            }
+        }
         new_of
     }
 

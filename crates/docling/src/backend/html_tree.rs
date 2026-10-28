@@ -32,9 +32,11 @@
 //! parent stack) so that the JSON is structurally identical to docling's on
 //! the whole HTML corpus. Nothing here affects the other serializers.
 
-use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind};
+use std::collections::HashMap;
+
+use docling_core::tree::{BlockOmission, Formatting, ItemTree, ListMeta, SourceBlock, TreeKind};
 use docling_core::{ContentLayer, Script, Table, TableCell};
-use ego_tree::NodeRef;
+use ego_tree::{NodeId, NodeRef};
 use scraper::{ElementRef, Html, Node as HtmlNode, Selector};
 
 use super::html::{
@@ -403,6 +405,7 @@ pub(super) fn build_tree(
         format_tags: Vec::new(),
         hyperlink: None,
         images,
+        el_of: HashMap::new(),
     };
     // The `<title>` is a furniture-layer title item, created first (unless
     // `add_title` is off, as for the Markdown backend's HTML detour).
@@ -413,6 +416,7 @@ pub(super) fn build_tree(
             .filter(|t| !t.is_empty())
             .collect();
         let text = parts.join(" ");
+        let first = w.tree.items.len();
         w.tree.add(
             None,
             Some(ContentLayer::Furniture),
@@ -426,6 +430,7 @@ pub(super) fn build_tree(
                 list: None,
             },
         );
+        w.record(*title, first);
     }
     let content = parsed.select(sel!("body")).next().unwrap_or(root);
     // `infer_furniture`: everything before the first heading (one not inside
@@ -436,7 +441,212 @@ pub(super) fn build_tree(
             .any(|h| ancestor_named(*h, "table", None).is_none());
     w.layer = has_header.then_some(ContentLayer::Furniture);
     w.walk(content);
+    collect_blocks(root, &w.el_of, &mut w.tree);
     w.tree
+}
+
+/// Tags of the elements that are a block even when empty (#903): the ones
+/// whose omission changes the block count a caller may be keyed to — an
+/// empty paragraph, heading, list item, cell. A container (`<div>`, `<ul>`,
+/// `<figure>`, `<tbody>`) with no text of its own and no item is not a block.
+const LEAF_TAGS: &[&str] = &[
+    "p",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "pre",
+    "li",
+    "dt",
+    "dd",
+    "td",
+    "th",
+    "caption",
+    "figcaption",
+    "address",
+    "summary",
+];
+
+/// Whether `name` is an inline tag: its text belongs to the block around it.
+fn inline_tag(name: &str) -> bool {
+    name == "br" || INLINE_TAGS.contains(&name) || FORMAT_TAGS.contains(&name)
+}
+
+/// #903: enumerate the source's blocks in document order and tie each item
+/// to the one it was made from — see [`SourceBlock`]. `el_of` is the walk's
+/// record of which element each item was created for.
+fn collect_blocks(root: ElementRef<'_>, el_of: &HashMap<usize, NodeId>, tree: &mut ItemTree) {
+    // Every item of an element, in creation order; the top-level ones (not
+    // under another item of the same element: an inline group's runs, a
+    // table's rich-cell groups) name the block's items.
+    let mut all: HashMap<NodeId, Vec<usize>> = HashMap::new();
+    let mut ids: Vec<usize> = el_of.keys().copied().collect();
+    ids.sort_unstable();
+    for i in ids {
+        all.entry(el_of[&i]).or_default().push(i);
+    }
+    let mut c = Collector {
+        tree,
+        all: &all,
+        el_of,
+        blocks: Vec::new(),
+        block_of: HashMap::new(),
+    };
+    c.visit(
+        root,
+        1,
+        &Ctx {
+            path: String::new(),
+            hidden: false,
+            table: None,
+            cell_table: None,
+            block: None,
+        },
+    );
+    let (blocks, block_of) = (c.blocks, c.block_of);
+    // Every item of the element — the runs inside an inline group, the
+    // rich-cell groups of a table included — points at its block.
+    for (&i, el) in el_of {
+        tree.items[i].block = block_of.get(el).copied();
+    }
+    tree.blocks = blocks;
+}
+
+/// What the ancestors of an element decide for it.
+struct Ctx {
+    path: String,
+    /// Inside a hidden or non-content element.
+    hidden: bool,
+    /// The item of the nearest enclosing `<table>`.
+    table: Option<usize>,
+    /// Inside a flattened (non-rich) cell of that table: its text is in the
+    /// grid.
+    cell_table: Option<usize>,
+    /// The nearest enclosing block that produced items.
+    block: Option<usize>,
+}
+
+struct Collector<'t, 'a> {
+    tree: &'t mut ItemTree,
+    all: &'a HashMap<NodeId, Vec<usize>>,
+    el_of: &'a HashMap<usize, NodeId>,
+    blocks: Vec<SourceBlock>,
+    /// Element → its block.
+    block_of: HashMap<NodeId, usize>,
+}
+
+impl Collector<'_, '_> {
+    /// `pos`: the element's 1-based position among its parent's same-tag
+    /// element children.
+    fn visit(&mut self, el: ElementRef<'_>, pos: usize, ctx: &Ctx) {
+        let e = el.value();
+        let tag = e.name();
+        let path = if ctx.path.is_empty() {
+            tag.to_string()
+        } else {
+            format!("{}/{tag}[{pos}]", ctx.path)
+        };
+        let hidden = ctx.hidden || suppressed(e);
+        let items: Vec<usize> = self
+            .all
+            .get(&el.id())
+            .map(|v| {
+                v.iter()
+                    .copied()
+                    .filter(|&i| {
+                        self.tree.items[i]
+                            .parent
+                            .is_none_or(|p| self.el_of.get(&p) != Some(&el.id()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let table = if tag == "table" {
+            items
+                .iter()
+                .copied()
+                .find(|&i| matches!(self.tree.items[i].kind, TreeKind::Table { .. }))
+                .or(ctx.table)
+        } else {
+            ctx.table
+        };
+        let cell_table = if matches!(tag, "td" | "th") && !is_rich_cell(el) {
+            ctx.table
+        } else {
+            ctx.cell_table
+        };
+        let text = own_text(el, self.all);
+        let is_block = !items.is_empty()
+            || (!inline_tag(tag) && (!text.is_empty() || LEAF_TAGS.contains(&tag)));
+        let mut block = ctx.block;
+        if is_block {
+            let omitted = if !items.is_empty() {
+                None
+            } else if hidden {
+                Some(BlockOmission::Hidden)
+            } else if let Some(t) = cell_table {
+                Some(BlockOmission::InTable(t))
+            } else if text.is_empty() {
+                Some(BlockOmission::Empty)
+            } else if let Some(b) = ctx.block {
+                Some(BlockOmission::Merged(b))
+            } else {
+                Some(BlockOmission::Unmapped)
+            };
+            let idx = self.blocks.len();
+            self.block_of.insert(el.id(), idx);
+            self.blocks.push(SourceBlock {
+                tag: tag.to_string(),
+                id: e.attr("id").map(str::to_string),
+                class: e.attr("class").map(str::to_string),
+                path: path.clone(),
+                text,
+                items: items.clone(),
+                omitted,
+            });
+            if !items.is_empty() {
+                block = Some(idx);
+            }
+        }
+        let ctx = Ctx {
+            path,
+            hidden,
+            table,
+            cell_table,
+            block,
+        };
+        let mut seen: HashMap<&str, usize> = HashMap::new();
+        for child in el.children().filter_map(ElementRef::wrap) {
+            let n = seen.entry(child.value().name()).or_insert(0);
+            *n += 1;
+            let n = *n;
+            self.visit(child, n, &ctx);
+        }
+    }
+}
+
+/// An element's own text (#904): its text nodes and those of the inline
+/// elements inside it that are not blocks themselves (an `<a>` that
+/// produced items is one), a `<br>` as a space, nested blocks' text left
+/// out; whitespace runs collapsed to one space, trimmed.
+fn own_text(el: ElementRef<'_>, all: &HashMap<NodeId, Vec<usize>>) -> String {
+    fn gather(node: NodeRef<'_, HtmlNode>, all: &HashMap<NodeId, Vec<usize>>, out: &mut String) {
+        for child in node.children() {
+            match child.value() {
+                HtmlNode::Text(t) => out.push_str(t),
+                HtmlNode::Element(e) if e.name() == "br" => out.push(' '),
+                HtmlNode::Element(e) if inline_tag(e.name()) && !all.contains_key(&child.id()) => {
+                    gather(child, all, out)
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut raw = String::new();
+    gather(*el, all, &mut raw);
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 struct Walker<'a> {
@@ -449,9 +659,19 @@ struct Walker<'a> {
     format_tags: Vec<&'a str>,
     hyperlink: Option<String>,
     images: &'a dyn ImageResolver,
+    /// The element each item was created for (#903): item index → element.
+    el_of: HashMap<usize, NodeId>,
 }
 
 impl<'a> Walker<'a> {
+    /// Tie every item created since `first` to `el`, unless a nested
+    /// creation already tied it to the element it was really made for.
+    fn record(&mut self, el: NodeRef<'a, HtmlNode>, first: usize) {
+        for i in first..self.tree.items.len() {
+            self.el_of.entry(i).or_insert_with(|| el.id());
+        }
+    }
+
     fn parent(&self) -> Option<usize> {
         self.parents[self.level]
     }
@@ -757,29 +977,29 @@ impl<'a> Walker<'a> {
                         })
                     });
                     if has_class(e, &["form_region"]) {
-                        self.flush(&mut buffer, element_name, &mut added);
+                        self.flush(&mut buffer, element, &mut added);
                         added.extend(self.handle_form_container(cel));
                         continue;
                     }
                     if is_custom_checkbox(e) {
-                        self.flush(&mut buffer, element_name, &mut added);
+                        self.flush(&mut buffer, element, &mut added);
                         if let Some(r) = self.emit_custom_checkbox(cel) {
                             added.push(r);
                         }
                         continue;
                     }
                     if name == "img" {
-                        self.flush(&mut buffer, element_name, &mut added);
+                        self.flush(&mut buffer, element, &mut added);
                         added.push(self.emit_image(cel));
                     } else if name == "input" {
-                        self.flush(&mut buffer, element_name, &mut added);
+                        self.flush(&mut buffer, element, &mut added);
                         if let Some(r) = self.emit_input(cel) {
                             added.push(r);
                         }
                     } else if FORMAT_TAGS.contains(&name) {
                         let tag: &'a str = name;
                         if has_block_descendants {
-                            self.flush(&mut buffer, element_name, &mut added);
+                            self.flush(&mut buffer, element, &mut added);
                             self.format_tags.push(tag);
                             added.extend(self.walk(cel));
                             self.format_tags.pop();
@@ -790,7 +1010,7 @@ impl<'a> Walker<'a> {
                         }
                     } else if name == "a" {
                         if has_block_descendants {
-                            self.flush(&mut buffer, element_name, &mut added);
+                            self.flush(&mut buffer, element, &mut added);
                             let saved = self.use_hyperlink(cel);
                             added.extend(self.walk(cel));
                             self.restore_hyperlink(saved);
@@ -800,17 +1020,17 @@ impl<'a> Walker<'a> {
                             self.restore_hyperlink(saved);
                         }
                     } else if BLOCK_TAGS.contains(&name) {
-                        self.flush(&mut buffer, element_name, &mut added);
+                        self.flush(&mut buffer, element, &mut added);
                         added.extend(self.handle_block(cel));
                     } else if has_block_descendants {
-                        self.flush(&mut buffer, element_name, &mut added);
+                        self.flush(&mut buffer, element, &mut added);
                         added.extend(self.walk(cel));
                     } else if INLINE_TAGS.contains(&name)
                         || (name == "div" && has_inline_display_style(e))
                     {
                         buffer.extend(self.extract(child, false, true, false));
                     } else {
-                        self.flush(&mut buffer, element_name, &mut added);
+                        self.flush(&mut buffer, element, &mut added);
                         added.extend(self.walk(cel));
                     }
                 }
@@ -820,7 +1040,7 @@ impl<'a> Walker<'a> {
                         // Source line breaks between a cell's children split
                         // its inline runs into separate items.
                         if matches!(element_name, "td" | "th") && t.contains('\n') {
-                            self.flush(&mut buffer, element_name, &mut added);
+                            self.flush(&mut buffer, element, &mut added);
                         }
                         continue;
                     }
@@ -829,12 +1049,12 @@ impl<'a> Walker<'a> {
                 _ => {}
             }
         }
-        self.flush(&mut buffer, element_name, &mut added);
+        self.flush(&mut buffer, element, &mut added);
         added
     }
 
     /// upstream's `_flush_buffer`.
-    fn flush(&mut self, buffer: &mut Vec<Part>, element_name: &str, added: &mut Vec<usize>) {
+    fn flush(&mut self, buffer: &mut Vec<Part>, element: ElementRef<'a>, added: &mut Vec<usize>) {
         if buffer.is_empty() {
             return;
         }
@@ -842,6 +1062,8 @@ impl<'a> Walker<'a> {
         if parts.iter().all(|p| p.text.is_empty()) {
             return;
         }
+        let element_name = element.value().name();
+        let first = self.tree.items.len();
         for list in split_by_newline(&parts) {
             let force = list.len() == 1 && list[0].code && !matches!(element_name, "p" | "pre");
             let group = self.open_inline_group(&list, force);
@@ -860,6 +1082,7 @@ impl<'a> Walker<'a> {
                 added.push(g);
             }
         }
+        self.record(*element, first);
     }
 
     // ----- blocks -----------------------------------------------------------
@@ -867,6 +1090,7 @@ impl<'a> Walker<'a> {
     /// upstream's `_handle_block`.
     fn handle_block(&mut self, tag: ElementRef<'a>) -> Vec<usize> {
         let mut added: Vec<usize> = Vec::new();
+        let first = self.tree.items.len();
         match tag.value().name() {
             "figure" => {
                 for child in tag.children() {
@@ -1040,6 +1264,7 @@ impl<'a> Walker<'a> {
             }
             _ => {}
         }
+        self.record(*tag, first);
         added
     }
 
@@ -1140,6 +1365,7 @@ impl<'a> Walker<'a> {
                     .filter(|c| matches!(c.value().name(), "dt" | "dd"))
                     .collect();
                 for child in children {
+                    let first = self.tree.items.len();
                     if child.value().name() == "dt" {
                         dd_group = None;
                         let bold = Formatting {
@@ -1184,6 +1410,7 @@ impl<'a> Walker<'a> {
                             });
                         }
                     }
+                    self.record(*child, first);
                 }
                 self.set_parent(self.level + 1, None);
                 self.level -= 1;
@@ -1280,6 +1507,7 @@ impl<'a> Walker<'a> {
                 }
                 continue;
             }
+            let first = self.tree.items.len();
             let mut item =
                 self.add_list_item_with_content(li, list_group, is_ordered, &marker, None);
             if item.is_none()
@@ -1336,6 +1564,7 @@ impl<'a> Walker<'a> {
                     }
                 }
             }
+            self.record(*li, first);
         }
         if list_group.is_some() {
             self.set_parent(self.level + 1, None);
@@ -1505,6 +1734,7 @@ impl<'a> Walker<'a> {
     /// stack preserved around it) and re-parented under a group of the table,
     /// every cell recorded with its declared spans and raw text.
     fn handle_table(&mut self, tag: ElementRef<'a>) -> usize {
+        let first = self.tree.items.len();
         // The table's own `<caption>` (non-recursive, so a nested table does
         // not steal its ancestor's) is emitted first, under the current
         // parent, and linked from the table (docling#4289).
@@ -1692,6 +1922,7 @@ impl<'a> Walker<'a> {
             *t = table;
             *rich_cells = rich;
         }
+        self.record(*tag, first);
         table_id
     }
 
@@ -1701,6 +1932,8 @@ impl<'a> Walker<'a> {
     fn emit_image(&mut self, img: ElementRef<'a>) -> usize {
         let e = img.value();
         let parent = self.parent();
+        let first = self.tree.items.len();
+        let mut fig_cap: Option<ElementRef<'a>> = None;
         let mut caption: Vec<Part> = Vec::new();
         if let Some(a) = (|| {
             let mut cur = img.parent();
@@ -1730,6 +1963,7 @@ impl<'a> Walker<'a> {
                 .find(|c| c.value().name() == "figcaption")
             {
                 caption = self.extract(*cap, false, true, false);
+                fig_cap = Some(cap);
             }
         }
         if caption.is_empty() {
@@ -1756,9 +1990,14 @@ impl<'a> Walker<'a> {
                 single.hyperlink,
                 None,
             ));
+            // The caption belongs to its `<figcaption>`; an `alt` or link
+            // text caption to the image.
+            if let Some(cap) = fig_cap {
+                self.record(*cap, first);
+            }
         }
         let image = super::html::img_src(e).and_then(|s| self.images.resolve(&s));
-        self.tree.add(
+        let pic = self.tree.add(
             parent,
             self.layer,
             TreeKind::Picture {
@@ -1771,7 +2010,9 @@ impl<'a> Walker<'a> {
                 chart: None,
                 dpi: None,
             },
-        )
+        );
+        self.record(*img, first);
+        pic
     }
 
     /// upstream's `_emit_caption`: a `<caption>`/`<figcaption>` as a `caption`
@@ -1784,14 +2025,17 @@ impl<'a> Walker<'a> {
         }
         let text = clean_unicode(single.text.trim());
         let parent = self.parent();
-        Some(self.add_annotated(
+        let first = self.tree.items.len();
+        let r = self.add_annotated(
             "caption",
             text,
             Some(single.text.clone()),
             single.formatting,
             single.hyperlink,
             parent,
-        ))
+        );
+        self.record(*cap, first);
+        Some(r)
     }
 
     /// upstream's `_emit_input`.
@@ -1833,7 +2077,10 @@ impl<'a> Walker<'a> {
         let formatting = self.formatting();
         let hyperlink = self.hyperlink.clone();
         let parent = self.parent();
-        Some(self.add_annotated(label, text, None, formatting, hyperlink, parent))
+        let first = self.tree.items.len();
+        let r = self.add_annotated(label, text, None, formatting, hyperlink, parent);
+        self.record(*input, first);
+        Some(r)
     }
 
     /// upstream's `_emit_custom_checkbox` (the class-based checkbox).
@@ -1852,7 +2099,10 @@ impl<'a> Walker<'a> {
         let formatting = self.formatting();
         let hyperlink = self.hyperlink.clone();
         let parent = self.parent();
-        Some(self.add_annotated(label, text, None, formatting, hyperlink, parent))
+        let first = self.tree.items.len();
+        let r = self.add_annotated(label, text, None, formatting, hyperlink, parent);
+        self.record(*cb, first);
+        Some(r)
     }
 
     /// upstream's `_handle_form_container`: a `form_region` with detectable
@@ -1862,9 +2112,12 @@ impl<'a> Walker<'a> {
         match detect_field_region(tag) {
             Some(items) => {
                 let parent = self.parent();
-                vec![self
+                let first = self.tree.items.len();
+                let r = self
                     .tree
-                    .add(parent, self.layer, TreeKind::FieldRegion { items })]
+                    .add(parent, self.layer, TreeKind::FieldRegion { items });
+                self.record(*tag, first);
+                vec![r]
             }
             None if tag.value().name() == "table" => self.handle_block(tag),
             None => self.walk(tag),
@@ -2305,5 +2558,222 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(t.items[0].children.contains(&1));
+    }
+
+    /// #903: the issue's reduction — a heading with an `id`, an anonymous
+    /// `<p class="norm">` in a styled `<div>` — comes back with a locator
+    /// per block, the runs of the paragraph's inline group included.
+    #[test]
+    fn blocks_locate_the_issue_903_reduction() {
+        let t = tree(
+            r#"<html><body>
+<p class="title-gr-seq-level-2" id="id-c07c7a91-7f80-48d2-a14e-525ebaf11271">ANGABEN</p>
+<div style="margin-left: 30pt; text-indent: -30pt">
+   <p class="norm">
+      <span class="boldface">79</span>
+      <span style="word-spacing: 18pt"> </span>
+      <span class="boldface">Die Hauptbestandteile des Steueraufwands (Steuerertrags) sind getrennt anzugeben.</span>
+   </p>
+</div>
+</body></html>"#,
+        );
+        let locs: Vec<(&str, &str, Option<&str>, &str)> = t
+            .blocks
+            .iter()
+            .map(|b| {
+                (
+                    b.tag.as_str(),
+                    b.path.as_str(),
+                    b.id.as_deref(),
+                    b.text.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            locs,
+            vec![
+                (
+                    "p",
+                    "html/body[1]/p[1]",
+                    Some("id-c07c7a91-7f80-48d2-a14e-525ebaf11271"),
+                    "ANGABEN"
+                ),
+                (
+                    "p",
+                    "html/body[1]/div[1]/p[1]",
+                    None,
+                    "79 Die Hauptbestandteile des Steueraufwands (Steuerertrags) sind getrennt anzugeben."
+                ),
+            ],
+            "the layout div, with no text of its own, is no block"
+        );
+        assert!(t.blocks.iter().all(|b| b.omitted.is_none()));
+        assert_eq!(t.blocks[1].class.as_deref(), Some("norm"));
+        assert_eq!(t.blocks[1].text.len(), 84);
+        // The title paragraph (a `<p>`, not a heading) is its block's one
+        // item; so is the paragraph (its three spans simplify to one bold
+        // run, the blank one absorbed), and each points back at its block.
+        assert_eq!(t.blocks[0].items, vec![0]);
+        assert_eq!(label(&t.items[0]), "text");
+        let [item] = t.blocks[1].items[..] else {
+            panic!("one top-level item: {:?}", t.blocks[1].items);
+        };
+        assert_eq!(text(&t.items[item]), t.blocks[1].text);
+        assert_eq!(t.items[item].block, Some(1));
+        assert!(t.items.iter().all(|it| it.block.is_some()));
+    }
+
+    /// A paragraph of several runs is an inline group: the group is the
+    /// block's item, and every run inside it points at the block too.
+    #[test]
+    fn inline_group_runs_point_at_their_block() {
+        let t =
+            tree(r#"<html><body><p id="x">plain <b>bold</b> and <i>italic</i></p></body></html>"#);
+        assert_eq!(t.blocks.len(), 1);
+        assert_eq!(t.blocks[0].text, "plain bold and italic");
+        let [group] = t.blocks[0].items[..] else {
+            panic!("{:?}", t.blocks[0].items);
+        };
+        assert!(matches!(t.items[group].kind, TreeKind::Group { .. }));
+        assert_eq!(t.items[group].children.len(), 4);
+        for &run in &t.items[group].children {
+            assert_eq!(t.items[run].block, Some(0), "{}", text(&t.items[run]));
+        }
+    }
+
+    /// #904: a block's text on its own terms — the issue's two paragraphs,
+    /// read back as the reference normalizes them (whitespace collapsed
+    /// inside the element, one newline between selected blocks, nothing
+    /// of the next block or its delimiter), where `export_to_text()` keeps
+    /// the serializer's blank line after the first.
+    #[test]
+    fn source_text_joins_the_selected_blocks_only() {
+        let t = tree(
+            r#"<html><body>
+<div style="margin-left: 30pt; text-indent: -30pt">
+   <p class="norm">
+      <span class="boldface">79</span>
+      <span style="word-spacing: 18pt"> </span>
+      <span class="boldface">Die Hauptbestandteile des Steueraufwands (Steuerertrags) sind getrennt anzugeben.</span>
+   </p>
+</div>
+<div style="margin-left: 30pt; text-indent: -30pt">
+   <p class="norm">80<span style="word-spacing: 18pt"> </span>Zu den Bestandteilen des Steueraufwands (Steuerertrags) kann Folgendes gehören:</p>
+</div>
+</body></html>"#,
+        );
+        assert_eq!(t.blocks.len(), 2);
+        let p79 =
+            "79 Die Hauptbestandteile des Steueraufwands (Steuerertrags) sind getrennt anzugeben.";
+        let p80 =
+            "80 Zu den Bestandteilen des Steueraufwands (Steuerertrags) kann Folgendes gehören:";
+        assert_eq!(t.source_text([0]), p79);
+        assert_eq!(t.source_text([0, 1]), format!("{p79}\n{p80}"));
+        assert_eq!(t.source_text([1, 0]), format!("{p80}\n{p79}"));
+        assert_eq!(t.source_text([7]), "");
+    }
+
+    /// A block that produced no item says why: hidden, empty, flattened
+    /// into a table's grid, merged into an enclosing block's item.
+    #[test]
+    fn omitted_blocks_say_why() {
+        let t = tree(
+            r#"<html><head><style>p { color: red }</style></head><body>
+<p style="display:none">hidden</p>
+<p></p>
+<table><tr><td>cell</td><td><p>in a p</p></td></tr></table>
+<ul><li><p>inner</p></li></ul>
+<div><span>a span </span> and text</div>
+</body></html>"#,
+        );
+        let by_path: Vec<(&str, Option<BlockOmission>, &str)> = t
+            .blocks
+            .iter()
+            .map(|b| (b.path.as_str(), b.omitted, b.text.as_str()))
+            .collect();
+        let table = t
+            .items
+            .iter()
+            .position(|it| matches!(it.kind, TreeKind::Table { .. }))
+            .unwrap();
+        let li_block = t.blocks.iter().position(|b| b.tag == "li").unwrap();
+        assert_eq!(
+            by_path,
+            vec![
+                (
+                    "html/head[1]/style[1]",
+                    Some(BlockOmission::Hidden),
+                    "p { color: red }"
+                ),
+                ("html/body[1]/p[1]", Some(BlockOmission::Hidden), "hidden"),
+                ("html/body[1]/p[2]", Some(BlockOmission::Empty), ""),
+                ("html/body[1]/table[1]", None, ""),
+                (
+                    "html/body[1]/table[1]/tbody[1]/tr[1]/td[1]",
+                    Some(BlockOmission::InTable(table)),
+                    "cell"
+                ),
+                (
+                    "html/body[1]/table[1]/tbody[1]/tr[1]/td[2]",
+                    Some(BlockOmission::InTable(table)),
+                    ""
+                ),
+                (
+                    "html/body[1]/table[1]/tbody[1]/tr[1]/td[2]/p[1]",
+                    Some(BlockOmission::InTable(table)),
+                    "in a p"
+                ),
+                ("html/body[1]/ul[1]", None, ""),
+                ("html/body[1]/ul[1]/li[1]", None, ""),
+                (
+                    "html/body[1]/ul[1]/li[1]/p[1]",
+                    Some(BlockOmission::Merged(li_block)),
+                    "inner"
+                ),
+                ("html/body[1]/div[1]", None, "a span and text"),
+            ]
+        );
+        let table_block = t.blocks.iter().position(|b| b.tag == "table").unwrap();
+        assert_eq!(t.blocks[table_block].items, vec![table]);
+        assert_eq!(t.items[table].block, Some(table_block));
+        assert_eq!(text(&t.items[t.blocks[li_block].items[0]]), "inner");
+    }
+
+    /// Every text node of the source belongs to exactly one block: the
+    /// blocks' texts, together, are the document's text (the EUR-Lex IAS 12
+    /// excerpt of #903/#904, hidden and flattened blocks included).
+    #[test]
+    fn blocks_cover_every_text_node_once() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/html_blocks/eurlex_ias12_excerpt.xhtml");
+        let html = std::fs::read_to_string(path).expect("fixture");
+        let parsed = Html::parse_document(&html);
+        let mut words: Vec<String> = Vec::new();
+        for node in parsed.tree.nodes() {
+            if let HtmlNode::Text(t) = node.value() {
+                words.extend(t.split_whitespace().map(str::to_string));
+            }
+        }
+        let t = build_tree(&parsed, &super::super::images::NoFetch, true, true);
+        let mut covered: Vec<String> = Vec::new();
+        for b in &t.blocks {
+            covered.extend(b.text.split_whitespace().map(str::to_string));
+        }
+        assert_eq!(covered, words);
+        assert!(t.items.iter().all(|it| it.block.is_some()));
+        // The paragraph of #904, by its locator, with the issue's reference text.
+        let p79 = t
+            .blocks
+            .iter()
+            .position(|b| b.text.starts_with("79 "))
+            .unwrap();
+        assert_eq!(t.blocks[p79].path, "html/body[1]/div[1]/div[1]/div[4]/p[1]");
+        assert_eq!(
+            t.blocks[p79].text,
+            "79 Die Hauptbestandteile des Steueraufwands (Steuerertrags) sind getrennt anzugeben."
+        );
+        assert!(t.blocks[p79 + 1]
+            .text
+            .starts_with("80 Zu den Bestandteilen"));
     }
 }
