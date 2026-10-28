@@ -118,6 +118,11 @@ pub enum InputFormat {
     /// fixed-width text, or a PCL / ESC/P printer stream, a docling.rs extension
     /// (#216); escape sequences and overstrikes taken out, columns kept.
     Prn,
+    /// Palm e-texts (`.pdb`) — PalmDOC / AportisDoc, TealDoc and zTXT, a
+    /// docling.rs extension (#216): the Palm database's text records
+    /// decompressed (PalmDOC LZ77, zlib) into paragraphs. A `.pdb` that is no
+    /// Palm database reads as text.
+    PalmDoc,
     /// DjVu scanned documents (`.djvu`/`.djv`) — a docling.rs extension (#434);
     /// docling has no DjVu reader. Decoded in pure Rust (`djvu-rs`): the
     /// hidden per-page text layer by default, rasterize + OCR for scan-only
@@ -215,6 +220,7 @@ impl InputFormat {
             InputFormat::StarOffice5 => "staroffice5",
             InputFormat::T602 => "t602",
             InputFormat::Prn => "prn",
+            InputFormat::PalmDoc => "palmdoc",
             InputFormat::Djvu => "djvu",
             InputFormat::Text => "text",
             InputFormat::Jsonl => "jsonl",
@@ -279,6 +285,7 @@ impl InputFormat {
             "staroffice5" => InputFormat::StarOffice5,
             "t602" => InputFormat::T602,
             "prn" => InputFormat::Prn,
+            "palmdoc" => InputFormat::PalmDoc,
             "djvu" => InputFormat::Djvu,
             "text" => InputFormat::Text,
             "jsonl" => InputFormat::Jsonl,
@@ -739,6 +746,11 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         ("602", T602),
         // Print-to-file output (#216): report text or a PCL / ESC/P stream.
         ("prn", Prn),
+        // Palm e-texts (#216): `.pdb` is a Palm database (the backend checks the
+        // type/creator and reads a text `.pdb` — Protein Data Bank — as text); `.pbd`
+        // is the spelling #216 lists.
+        ("pdb", PalmDoc),
+        ("pbd", PalmDoc),
         // DjVu (#434): docling.rs extension, pure-Rust decode via `djvu-rs`.
         ("djvu", Djvu),
         ("djv", Djvu),

@@ -2954,6 +2954,8 @@ impl DocumentConverter {
                 // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
                 // backend for the whole DOS-era family.
                 InputFormat::Lotus => LotusBackend.convert(source)?,
+                // Palm e-texts (#216): PalmDOC, TealDoc, zTXT.
+                InputFormat::PalmDoc => crate::backend::PalmDocBackend.convert(source)?,
                 // Print files (#216): text out of a report or a printer stream.
                 InputFormat::Prn => crate::backend::PrnBackend.convert(source)?,
                 // T602 (#216): docling.rs extension, after LibreOffice's filter.

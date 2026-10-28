@@ -80,6 +80,10 @@ pub(crate) fn detect_any(bytes: &[u8]) -> Option<InputFormat> {
     if bytes.starts_with(b"\xffWPC") {
         return Some(InputFormat::WordPerfect);
     }
+    // A Palm e-text: the database's type and creator at offset 60 (#216).
+    if crate::backend::looks_like_palmdoc(bytes) {
+        return Some(InputFormat::PalmDoc);
+    }
     // A saved T602 document opens with its code-page setting (#216).
     if crate::backend::looks_like_t602(bytes) {
         return Some(InputFormat::T602);
