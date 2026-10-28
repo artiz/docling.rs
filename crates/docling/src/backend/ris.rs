@@ -37,8 +37,22 @@
 //! `**` / `*` against its neighbours with no extra space (docling-core joins
 //! an inline group's runs with spaces, which would split `„*x*“`). Table
 //! cells keep docling's escaping, as every backend's do.
+//!
+//! The item tree keeps the source's blocks (#909, as the HTML backend does
+//! since #903): every element that produced an item, every element with
+//! text of its own, every empty `absatz` / `ueberschrift` / cell, as a
+//! `SourceBlock` — tag, every attribute (`typ`, `ct`, `halign`, …), the
+//! path `risdok/nutzdaten[1]/abschnitt[1]/absatz[2]`, its normalized text
+//! with the inline runs' ranges. An `abschnitt` is the block its section
+//! group was made from, with its `nr` / `typ`; any other element with
+//! attributes that produced nothing is a container.
 
-use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind};
+use std::collections::HashMap;
+
+use docling_core::tree::{
+    BlockOmission, Formatting, ItemTree, ListMeta, SourceBlock, SourceElement, SourceTextBuilder,
+    TreeKind,
+};
 use docling_core::{
     inline_paragraph_node, ContentLayer, DoclingDocument, InlineRun, Node, Script, Table, TableCell,
 };
@@ -112,7 +126,9 @@ impl DeclarativeBackend for RisBackend {
                                 Some(nr) => format!("abschnitt {nr}"),
                                 None => "abschnitt".to_string(),
                             };
+                            let first = b.tree.items.len();
                             let group = b.add(None, None, group("section", &name));
+                            b.record(el, first);
                             b.blocks(el, Some(group));
                         } else {
                             b.blocks_of(el, None);
@@ -131,6 +147,7 @@ impl DeclarativeBackend for RisBackend {
         // serializer over the tree, #884): formatting runs and the section
         // groups reach it as they reach the JSON.
         tree.doclang = true;
+        collect_blocks(root, &b.el_of, &mut tree);
         doc.nodes = b.nodes;
         doc.tree = Some(tree);
         Ok(doc)
@@ -333,11 +350,21 @@ struct Builder {
     nodes: Vec<Node>,
     /// The open list: its tree group and the parent it hangs in.
     list: Option<(usize, Option<usize>)>,
+    /// The element each item was created for (#909): item → element.
+    el_of: HashMap<usize, roxmltree::NodeId>,
 }
 
 impl Builder {
     fn add(&mut self, parent: Option<usize>, layer: Option<ContentLayer>, kind: TreeKind) -> usize {
         self.tree.add(parent, layer, kind)
+    }
+
+    /// Tie every item created since `first` to `el`, unless a nested
+    /// creation already tied it to the element it was really made for.
+    fn record(&mut self, el: XmlNode, first: usize) {
+        for i in first..self.tree.items.len() {
+            self.el_of.entry(i).or_insert_with(|| el.id());
+        }
     }
 
     /// The blocks of a section (or another container), in order.
@@ -396,11 +423,13 @@ impl Builder {
             if text.is_empty() {
                 continue;
             }
+            let first = self.tree.items.len();
             self.add(
                 parent,
                 Some(ContentLayer::Furniture),
                 text_kind(label, &text, None),
             );
+            self.record(p, first);
             self.nodes.push(Node::FurnitureText {
                 label: label.into(),
                 text: md_escape(&text),
@@ -420,7 +449,9 @@ impl Builder {
         if let TreeKind::Text { level: l, .. } = &mut kind {
             *l = Some(level);
         }
+        let first = self.tree.items.len();
         self.add(parent, None, kind);
+        self.record(el, first);
         self.nodes.push(Node::Heading {
             level: level + 1,
             text: md_escape(&text),
@@ -435,6 +466,7 @@ impl Builder {
         if runs.is_empty() {
             return;
         }
+        let first = self.tree.items.len();
         match runs.as_slice() {
             [(text, fmt)] => {
                 self.add(parent, None, text_kind("text", text, fmt.formatting()));
@@ -446,6 +478,7 @@ impl Builder {
                 }
             }
         }
+        self.record(el, first);
         let inline: Vec<InlineRun> = runs.iter().map(|(t, f)| f.run(t)).collect();
         self.nodes
             .push(inline_paragraph_node(markdown(&runs), inline, false));
@@ -495,6 +528,7 @@ impl Builder {
         }
         let (list, _) = self.list.expect("open list");
         let text = plain(&runs);
+        let first = self.tree.items.len();
         let item = self.add(Some(list), None, text_kind("list_item", &text, None));
         if runs.len() > 1 || !runs[0].1.is_plain() {
             // A styled item: its runs as an inline group under the item.
@@ -506,6 +540,7 @@ impl Builder {
                 self.add(Some(g), None, text_kind("text", t, f.formatting()));
             }
         }
+        self.record(el, first);
         self.nodes.push(Node::ListItem {
             ordered: false,
             number: 0,
@@ -618,6 +653,7 @@ impl Builder {
             cells: Some(cells.clone()),
             ..Table::default()
         };
+        let first = self.tree.items.len();
         self.add(
             parent,
             None,
@@ -627,6 +663,7 @@ impl Builder {
                 captions: Vec::new(),
             },
         );
+        self.record(el, first);
         let flat_rows = grid(true);
         let flat_cells = cells
             .into_iter()
@@ -641,6 +678,218 @@ impl Builder {
             ..Table::default()
         }));
     }
+}
+
+/// The RIS elements whose text is read inline — part of the block around
+/// them, with their range in its text (#911) — rather than blocks.
+fn inline_tag(name: &str) -> bool {
+    matches!(
+        name,
+        "b" | "i" | "u" | "sup" | "sub" | "span" | "feld" | "tab" | "br" | "aw" | "s" | "strike"
+    )
+}
+
+/// The elements that are a block even when empty.
+const LEAF_TAGS: &[&str] = &["absatz", "ueberschrift", "td", "th"];
+
+/// #909: enumerate the source's blocks in document order and tie each item
+/// to the one it was made from — the HTML backend's rule (#903), on the RIS
+/// tree: every element that produced an item, every non-inline element
+/// with text of its own, every empty paragraph / heading / cell. An
+/// `abschnitt` (or any container) that carries attributes is a container
+/// with its identity; an element the reading skips — `metadaten`,
+/// `layoutdaten`, `abstand` — explains itself. The list group a run of
+/// bullet paragraphs shares belongs to no single element and has no block.
+fn collect_blocks(root: XmlNode, el_of: &HashMap<usize, roxmltree::NodeId>, tree: &mut ItemTree) {
+    let mut all: HashMap<roxmltree::NodeId, Vec<usize>> = HashMap::new();
+    let mut ids: Vec<usize> = el_of.keys().copied().collect();
+    ids.sort_unstable();
+    for i in ids {
+        all.entry(el_of[&i]).or_default().push(i);
+    }
+    let mut c = RisCollector {
+        tree,
+        all: &all,
+        el_of,
+        blocks: Vec::new(),
+        block_of: HashMap::new(),
+        containers: Vec::new(),
+    };
+    c.visit(root, 1, "", false, None, None, None);
+    let (blocks, block_of, containers) = (c.blocks, c.block_of, c.containers);
+    for (&i, el) in el_of {
+        tree.items[i].block = block_of.get(el).copied();
+    }
+    tree.blocks = blocks;
+    tree.containers = containers;
+}
+
+struct RisCollector<'t, 'a> {
+    tree: &'t mut ItemTree,
+    all: &'a HashMap<roxmltree::NodeId, Vec<usize>>,
+    el_of: &'a HashMap<usize, roxmltree::NodeId>,
+    blocks: Vec<SourceBlock>,
+    block_of: HashMap<roxmltree::NodeId, usize>,
+    containers: Vec<SourceElement>,
+}
+
+/// An element's attributes, by name.
+fn xml_attrs(el: XmlNode) -> Vec<(String, String)> {
+    let mut attrs: Vec<(String, String)> = el
+        .attributes()
+        .map(|a| (a.name().to_string(), a.value().to_string()))
+        .collect();
+    attrs.sort();
+    attrs
+}
+
+impl RisCollector<'_, '_> {
+    /// `pos`: the element's 1-based position among its parent's same-tag
+    /// element children; `skipped`: inside `metadaten` / `layoutdaten` /
+    /// `abstand`, which the reading leaves out; `table` the enclosing
+    /// table's item, `cell_table` the same when inside a cell (whose text
+    /// is in the grid); `block` the nearest enclosing block with items.
+    #[allow(clippy::too_many_arguments)]
+    fn visit(
+        &mut self,
+        el: XmlNode,
+        pos: usize,
+        parent_path: &str,
+        skipped: bool,
+        table: Option<usize>,
+        cell_table: Option<usize>,
+        block: Option<usize>,
+    ) {
+        let tag = el.tag_name().name();
+        let path = if parent_path.is_empty() {
+            tag.to_string()
+        } else {
+            format!("{parent_path}/{tag}[{pos}]")
+        };
+        let skipped = skipped || matches!(tag, "metadaten" | "layoutdaten" | "abstand");
+        let items: Vec<usize> = self
+            .all
+            .get(&el.id())
+            .map(|v| {
+                v.iter()
+                    .copied()
+                    .filter(|&i| {
+                        self.tree.items[i]
+                            .parent
+                            .is_none_or(|p| self.el_of.get(&p) != Some(&el.id()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let table = if tag == "table" {
+            items
+                .iter()
+                .copied()
+                .find(|&i| matches!(self.tree.items[i].kind, TreeKind::Table { .. }))
+                .or(table)
+        } else {
+            table
+        };
+        let cell_table = if matches!(tag, "td" | "th") {
+            table
+        } else {
+            cell_table
+        };
+        let (text, inlines) = own_text(el, &path, self.all);
+        let is_block = !items.is_empty()
+            || (!inline_tag(tag) && (!text.is_empty() || LEAF_TAGS.contains(&tag)));
+        let mut block = block;
+        if is_block {
+            let omitted = if !items.is_empty() {
+                None
+            } else if skipped {
+                Some(BlockOmission::Hidden)
+            } else if let Some(t) = cell_table {
+                Some(BlockOmission::InTable(t))
+            } else if text.is_empty() {
+                Some(BlockOmission::Empty)
+            } else if let Some(b) = block {
+                Some(BlockOmission::Merged(b))
+            } else {
+                Some(BlockOmission::Unmapped)
+            };
+            let idx = self.blocks.len();
+            self.block_of.insert(el.id(), idx);
+            self.blocks.push(SourceBlock {
+                tag: tag.to_string(),
+                id: el.attribute("id").map(str::to_string),
+                class: el.attribute("class").map(str::to_string),
+                attrs: xml_attrs(el),
+                path: path.clone(),
+                text,
+                items: items.clone(),
+                omitted,
+                inlines,
+            });
+            if !items.is_empty() {
+                block = Some(idx);
+            }
+        } else if el.attributes().next().is_some() {
+            self.containers.push(SourceElement {
+                tag: tag.to_string(),
+                id: el.attribute("id").map(str::to_string),
+                class: el.attribute("class").map(str::to_string),
+                attrs: xml_attrs(el),
+                path: path.clone(),
+            });
+        }
+        let mut seen: HashMap<&str, usize> = HashMap::new();
+        for child in el.children().filter(XmlNode::is_element) {
+            let n = seen.entry(child.tag_name().name()).or_insert(0);
+            *n += 1;
+            let n = *n;
+            self.visit(child, n, &path, skipped, table, cell_table, block);
+        }
+    }
+}
+
+/// An element's own text (#904): its text nodes and those of the inline
+/// elements inside it (a `tab` / `br` as a space), nested blocks' text left
+/// out, whitespace normalized — with every inline element's range (#911).
+fn own_text(
+    el: XmlNode,
+    path: &str,
+    all: &HashMap<roxmltree::NodeId, Vec<usize>>,
+) -> (String, Vec<docling_core::tree::SourceInline>) {
+    fn gather(
+        node: XmlNode,
+        path: &str,
+        all: &HashMap<roxmltree::NodeId, Vec<usize>>,
+        b: &mut SourceTextBuilder,
+    ) {
+        let mut seen: HashMap<&str, usize> = HashMap::new();
+        for child in node.children() {
+            if let Some(t) = child.text().filter(|_| child.is_text()) {
+                b.push_text(t);
+            } else if child.is_element() {
+                let name = child.tag_name().name();
+                let n = seen.entry(name).or_insert(0);
+                *n += 1;
+                let n = *n;
+                if !inline_tag(name) || all.contains_key(&child.id()) {
+                    continue;
+                }
+                match name {
+                    "tab" | "br" => b.push_text(" "),
+                    "aw" => {}
+                    _ => {
+                        let child_path = format!("{path}/{name}[{n}]");
+                        b.open_inline(name, xml_attrs(child), child_path.clone());
+                        gather(child, &child_path, all, b);
+                        b.close_inline();
+                    }
+                }
+            }
+        }
+    }
+    let mut b = SourceTextBuilder::new();
+    gather(el, path, all, &mut b);
+    b.finish()
 }
 
 /// A table cell's text: its paragraphs (or its inline content when it has
@@ -692,6 +941,155 @@ mod tests {
              <metadaten /><nutzdaten><abschnitt nr=\"1\" typ=\"ns\">{body}</abschnitt>\
              </nutzdaten></risdok>"
         )
+    }
+
+    /// #909: the issue's reduction — a heading and a paragraph in a section
+    /// — comes back as two source blocks with stable paths under
+    /// `risdok/nutzdaten/abschnitt`, their attributes and normalized text;
+    /// the section is the block its group was made from, with its `nr` /
+    /// `typ`; the metadata is a skipped block when it holds text.
+    #[test]
+    fn source_blocks_locate_the_elements() {
+        let doc = convert(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?><risdok xmlns=\"http://www.bka.gv.at\">\
+             <metadaten><titel>Meta</titel></metadaten><nutzdaten>\
+             <abschnitt nr=\"1\" typ=\"ns\" paperf=\"n\" endnhier=\"n\">\
+             <ueberschrift typ=\"titel\" halign=\"c\">Entscheidende Behörde</ueberschrift>\
+             <absatz typ=\"erltext\" ct=\"text\" halign=\"l\">  Daten<b>schutz</b>behörde \
+             <span>(DSB)</span></absatz><absatz typ=\"erltext\"></absatz>\
+             </abschnitt></nutzdaten></risdok>",
+        );
+        let t = doc.tree.as_ref().unwrap();
+        let blocks: Vec<(&str, &str, Option<BlockOmission>)> = t
+            .blocks
+            .iter()
+            .map(|b| (b.path.as_str(), b.text.as_str(), b.omitted))
+            .collect();
+        assert_eq!(
+            blocks,
+            vec![
+                (
+                    "risdok/metadaten[1]/titel[1]",
+                    "Meta",
+                    Some(BlockOmission::Hidden)
+                ),
+                ("risdok/nutzdaten[1]/abschnitt[1]", "", None),
+                (
+                    "risdok/nutzdaten[1]/abschnitt[1]/ueberschrift[1]",
+                    "Entscheidende Behörde",
+                    None
+                ),
+                (
+                    "risdok/nutzdaten[1]/abschnitt[1]/absatz[1]",
+                    "Datenschutzbehörde (DSB)",
+                    None
+                ),
+                (
+                    "risdok/nutzdaten[1]/abschnitt[1]/absatz[2]",
+                    "",
+                    Some(BlockOmission::Empty)
+                ),
+            ]
+        );
+        let heading = &t.blocks[2];
+        assert_eq!(
+            heading.attrs,
+            vec![
+                ("halign".to_string(), "c".to_string()),
+                ("typ".to_string(), "titel".to_string())
+            ]
+        );
+        assert_eq!(heading.items.len(), 1);
+        assert_eq!(t.items[heading.items[0]].block, Some(2));
+        let para = &t.blocks[3];
+        assert_eq!(para.attrs.len(), 3);
+        // The paragraph's runs (an inline group) all point at its block, and
+        // its inline elements keep their ranges.
+        for &i in &para.items {
+            assert_eq!(t.items[i].block, Some(3));
+            for &c in &t.items[i].children {
+                assert_eq!(t.items[c].block, Some(3));
+            }
+        }
+        let inl: Vec<(&str, &str)> = para
+            .inlines
+            .iter()
+            .map(|i| (i.path.as_str(), &para.text[i.start..i.end]))
+            .collect();
+        assert_eq!(
+            inl,
+            vec![
+                ("risdok/nutzdaten[1]/abschnitt[1]/absatz[1]/b[1]", "schutz"),
+                (
+                    "risdok/nutzdaten[1]/abschnitt[1]/absatz[1]/span[1]",
+                    "(DSB)"
+                ),
+            ]
+        );
+        assert_eq!(
+            para.text_excluding(|i| i.tag == "span"),
+            "Datenschutzbehörde"
+        );
+        assert_eq!(
+            t.source_text([2, 3]),
+            "Entscheidende Behörde\nDatenschutzbehörde (DSB)"
+        );
+        // The section: the block its group was made from, with its identity;
+        // selecting under it gives its heading and paragraphs.
+        let section = &t.blocks[1];
+        assert_eq!(section.tag, "abschnitt");
+        assert_eq!(section.attrs.len(), 4);
+        assert!(matches!(
+            &t.items[section.items[0]].kind,
+            TreeKind::Group { label, .. } if label == "section"
+        ));
+        assert_eq!(t.blocks_under(&section.path), vec![1, 2, 3, 4]);
+        assert!(t.containers.is_empty());
+        assert!(t.items.iter().all(|it| it.block.is_some()));
+    }
+
+    /// A bullet list and a table: the list items' paragraphs are blocks,
+    /// the shared list group belongs to none; the table is a block, its
+    /// cells and their paragraphs are in its grid.
+    #[test]
+    fn lists_and_tables_have_their_blocks() {
+        let doc = convert(&wrap(
+            "<absatz typ=\"erltext\">-<tab/>eins</absatz><absatz typ=\"erltext\">-<tab/>zwei</absatz>\
+             <table><tr><td><absatz>Zelle</absatz></td><td>roh</td></tr></table>",
+        ));
+        let t = doc.tree.as_ref().unwrap();
+        let summary: Vec<(&str, &str, Option<BlockOmission>, usize)> = t
+            .blocks
+            .iter()
+            .map(|b| (b.tag.as_str(), b.text.as_str(), b.omitted, b.items.len()))
+            .collect();
+        let table = t
+            .items
+            .iter()
+            .position(|it| matches!(it.kind, TreeKind::Table { .. }))
+            .unwrap();
+        assert_eq!(
+            summary,
+            vec![
+                ("abschnitt", "", None, 1),
+                ("absatz", "- eins", None, 1),
+                ("absatz", "- zwei", None, 1),
+                ("table", "", None, 1),
+                ("td", "", Some(BlockOmission::InTable(table)), 0),
+                ("absatz", "Zelle", Some(BlockOmission::InTable(table)), 0),
+                ("td", "roh", Some(BlockOmission::InTable(table)), 0),
+            ]
+        );
+        let group = t
+            .items
+            .iter()
+            .position(|it| matches!(&it.kind, TreeKind::Group { label, .. } if label == "list"))
+            .unwrap();
+        assert_eq!(t.items[group].block, None);
+        assert!(t.items[group]
+            .children
+            .iter()
+            .all(|&c| t.items[c].block.is_some()));
     }
 
     /// The issue's minimal sample: a heading and a paragraph, in order, as
