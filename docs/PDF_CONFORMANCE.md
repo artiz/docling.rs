@@ -1559,6 +1559,26 @@ four pages or more. Output is byte-identical; the model cost itself is bounded
 by the layout and TableFormer models, so the levers there stay the INT8
 models, the KV-cached decoder and GPU execution providers.
 
+Off the model's path is not free, though: #682 still drew every page's 2×
+bitmap — the 3× supersample, four times the 1.5× layout render's pixels —
+where only TableFormer, picture crops, the code/formula enrichment, page
+images and OCR read it, and a page of prose has none of those (#897: render
+was 42–55 % of the summed engine time on an M-series machine). Since #897 the
+walk schedules that render adaptively (`BitmapRender::Adaptive`): a page's
+layout detections decide whether it reads the bitmap, and while most of the
+last eight pages did, the render starts during layout as before; while most
+did not, it is drawn only for a page that reads it, after layout — and a
+render started for a page that then declines it is skipped if the helper has
+not begun it. On a 60-page text-only PDF (4-core container) the renders drop
+from 120 to 69 and their CPU from ~11 s to ~3.7 s, wall time −6 %; on the
+corpus papers (a table or picture on most pages) the render count and wall
+time are unchanged. Output is byte-identical in every schedule — the bitmap,
+when drawn, is the same one. `DOCLING_RS_PAGE_BITMAP=eager` restores the #682
+schedule and `on-demand` draws only the bitmaps read (least CPU; a paper's
+pages then wait for their render after layout, +15 % wall there). With
+`DOCLING_RS_TIMING=1`, `docling_pdf::timing::snapshot()` / `reset()` read
+and clear the per-stage totals per document.
+
 What a TableFormer decode step costs, measured on the same box with
 `DOCLING_RS_ORT_PROFILE` (ORT's per-operator profile; see
 `scripts/dev/ort_profile_summary.py`) and a per-step timer: 4.4 ms with an

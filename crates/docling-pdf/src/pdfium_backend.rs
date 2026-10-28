@@ -65,13 +65,15 @@ pub struct PdfPage {
     /// [`Self::image`].
     #[cfg(feature = "ocr-prep")]
     pub image_layout: Option<RgbImage>,
-    /// The 2x bitmap of a page with a text layer, still rendering on the
-    /// page walk's helper thread (#682): [`Self::image`] holds a 1×1
-    /// placeholder until [`Self::resolve_image`] installs the render, which
-    /// the ML pipeline does right after layout — the stage that reads
-    /// [`Self::image_layout`] instead — so the render overlaps it. `None`
-    /// once resolved, and on every path that renders synchronously (scanned
-    /// pages, the plugin and pdfium renderers, images, METS).
+    /// The 2x bitmap of a page with a text layer, deferred to the page
+    /// walk's helper thread (#682): [`Self::image`] holds a 1×1 placeholder
+    /// until [`Self::resolve_image`] installs the render. The ML pipeline
+    /// resolves it after layout — the stage that reads
+    /// [`Self::image_layout`] instead — and only for a page whose detections
+    /// read the bitmap (tables, pictures, …; #897), so a text-only page never
+    /// draws it. `None` once resolved, and on every path that renders
+    /// synchronously (scanned pages, the plugin and pdfium renderers,
+    /// images, METS).
     #[cfg(feature = "ml")]
     pub pending_image: Option<PendingImage>,
     /// Hyperlink annotations on the page (rect in top-left page coords + target
@@ -116,15 +118,35 @@ impl PdfPage {
         }
     }
 
-    /// Wait for a deferred 2x render (#682) and install it as
-    /// [`Self::image`]; a no-op when nothing is pending. The ML pipeline
-    /// calls it once layout is done, before anything reads the bitmap.
+    /// Wait for a deferred 2x render (#682) — starting it first when it was
+    /// left for on demand ([`BitmapRender::OnDemand`], #897) — and install it
+    /// as [`Self::image`]; a no-op when nothing is pending. The ML pipeline
+    /// calls it after layout for a page whose detections need the bitmap,
+    /// before anything reads it.
     #[cfg(feature = "ml")]
     pub fn resolve_image(&mut self) -> Result<(), PdfError> {
         if let Some(pending) = self.pending_image.take() {
             self.image = crate::timing::timed("render.wait", || pending.wait())?;
         }
         Ok(())
+    }
+
+    /// Whether [`Self::image`] is still a placeholder for a deferred 2x
+    /// render ([`Self::resolve_image`] installs it).
+    #[cfg(feature = "ml")]
+    pub fn image_pending(&self) -> bool {
+        self.pending_image.is_some()
+    }
+
+    /// Nothing is going to read this page's deferred 2x bitmap (#897): the
+    /// helper skips its render if it has not begun it. The page stays
+    /// pending — a later [`Self::resolve_image`] still gets the bitmap,
+    /// rendering it then if it was skipped.
+    #[cfg(feature = "ml")]
+    pub fn decline_image(&self) {
+        if let Some(pending) = &self.pending_image {
+            pending.decline();
+        }
     }
 
     /// Same as [`from_cells`](Self::from_cells) but carrying the rendered page
@@ -221,7 +243,10 @@ impl PdfDocument {
     /// once. For large documents prefer [`for_each_page`], which streams.
     pub fn open(bytes: &[u8], password: Option<&str>) -> Result<Self, PdfError> {
         let mut pages = Vec::new();
-        for_each_page::<PdfError, _>(bytes, password, true, true, None, |_, _, page| {
+        for_each_page::<PdfError, _>(bytes, password, true, true, None, |_, _, mut page| {
+            // Every page's bitmap, as documented — not the placeholder of a
+            // render still on the helper thread (#682).
+            page.resolve_image()?;
             pages.push(page);
             Ok(())
         })?;
@@ -300,12 +325,65 @@ pub fn page_count(bytes: &[u8], password: Option<&str>) -> Result<usize, PdfErro
 /// downstream page numbering refers to the source document.
 ///
 /// `E` is the caller's error type; [`PdfError`]s convert into it via `From`.
+///
+/// A page with a text layer may arrive with its 2x bitmap still rendering
+/// (#682): call [`PdfPage::resolve_image`] before reading [`PdfPage::image`].
+/// The render starts as the page leaves the walk; [`walk_pages`] with
+/// [`BitmapRender::OnDemand`] starts it only when resolved (#897).
 pub fn for_each_page<E, F>(
     bytes: &[u8],
     password: Option<&str>,
     render_image: bool,
     extract_text: bool,
     range: Option<(usize, usize)>,
+    f: F,
+) -> Result<(), E>
+where
+    E: From<PdfError>,
+    F: FnMut(usize, usize, PdfPage) -> Result<(), E>,
+{
+    walk_pages(
+        bytes,
+        password,
+        render_image,
+        extract_text,
+        range,
+        BitmapRender::Eager,
+        f,
+    )
+}
+
+#[cfg(feature = "ml")]
+/// When the 2x bitmap of a page with a text layer is rendered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BitmapRender {
+    /// As soon as the page leaves the walk, on the helper thread while
+    /// layout runs (#682) — for a caller that reads every page's bitmap.
+    Eager,
+    /// Started like [`Self::Eager`] while the document's recent pages mostly
+    /// read their bitmap, left [`Self::OnDemand`] while they mostly do not
+    /// (#897). Layout reads the separate 1x render, and a page whose
+    /// detections hold no table, picture or other bitmap consumer never
+    /// needs the 2x one: on a paper with a figure or table on most pages
+    /// the render overlaps layout as before; on prose the wasted renders go.
+    /// A started render the page then declines ([`PdfPage::decline_image`])
+    /// is still skipped if the helper has not begun it.
+    Adaptive,
+    /// Only once [`PdfPage::resolve_image`] asks for it (#897): no render is
+    /// ever wasted, but a page that needs one waits for it after layout
+    /// instead of having it drawn meanwhile.
+    OnDemand,
+}
+
+#[cfg(feature = "ml")]
+/// [`for_each_page`] with the 2x bitmaps rendered as `bitmap` says.
+pub fn walk_pages<E, F>(
+    bytes: &[u8],
+    password: Option<&str>,
+    render_image: bool,
+    extract_text: bool,
+    range: Option<(usize, usize)>,
+    bitmap: BitmapRender,
     mut f: F,
 ) -> Result<(), E>
 where
@@ -351,11 +429,17 @@ where
     // The object model's geometry and links are used whenever it read the same
     // number of pages pdfium did (or pdfium is absent); a disagreeing file keeps
     // pdfium's answers throughout.
-    let meta = meta.filter(|m| {
-        session
-            .as_ref()
-            .is_none_or(|s| s.page_count() == m.page_count())
-    });
+    //
+    // Shared, because the helper thread that renders the deferred 2x bitmaps
+    // (#682) outlives the walk: a page resolved on demand (#897) asks for its
+    // render after the walk has handed the last page over.
+    let meta = meta
+        .filter(|m| {
+            session
+                .as_ref()
+                .is_none_or(|s| s.page_count() == m.page_count())
+        })
+        .map(std::sync::Arc::new);
     // The pure-Rust renderer (phase 3 of retiring pdfium): the model inputs
     // of every page the plugin does not render and the Rust raster declines
     // — the default renderer.
@@ -368,16 +452,11 @@ where
     // (#682, `DeferredRender`) when the pure-Rust renderer is the only one
     // drawing: the plugin and pdfium hold per-document handles the walk
     // thread owns, so their pages render in place as before.
-    let defer_meta = match (&meta, &renderer, &dparse, &session) {
-        (Some(m), Some(_), None, None) => Some(m),
+    let defer = match (&meta, &renderer, &dparse, &session) {
+        (Some(m), Some(_), None, None) => DeferredRender::spawn(m.clone(), bitmap),
         _ => None,
     };
-    std::thread::scope(|scope| {
-        let defer = defer_meta.map(|m| {
-            let (tx, rx) = std::sync::mpsc::channel();
-            scope.spawn(move || DeferredRender::serve(m, rx));
-            DeferredRender { tx }
-        });
+    {
         // Index the window directly: iterating pdfium's pages from page 0 and
         // skipping to `first` would load (and close) every page before the
         // window — ~0.7 ms each, 1.3 s of pure overhead for a one-page window
@@ -405,7 +484,7 @@ where
                 PageSources {
                     page: page.as_ref(),
                     dparse: dparse.as_ref(),
-                    meta: meta.as_ref(),
+                    meta: meta.as_deref(),
                     renderer: renderer.as_ref(),
                     defer: defer.as_ref(),
                 },
@@ -417,10 +496,9 @@ where
             )?;
             f(i, total, extracted)?;
         }
-        // Dropping the job sender ends the helper; the scope joins it.
+        // The helper ends once this sender and every page's handle are gone.
         drop(defer);
-        Ok::<(), E>(())
-    })?;
+    }
     // Tearing down the parsed document (hundreds of thousands of lopdf
     // objects on a long PDF — 250 ms for the 1913-page .NET reference) is
     // nobody's business but the allocator's: hand it to a detached thread so
@@ -704,26 +782,149 @@ struct PageSources<'a> {
     defer: Option<&'a DeferredRender>,
 }
 
-/// A page's 2x bitmap being rendered on the walk's helper thread (#682):
-/// the result arrives through a one-shot channel. Cloning a page clones the
-/// handle; whichever copy resolves first gets the bitmap.
+/// A page's 2x bitmap, rendered on the walk's helper thread (#682): queued
+/// until something asks for it ([`BitmapRender::OnDemand`]) or sent at once
+/// ([`BitmapRender::Eager`], [`BitmapRender::Adaptive`]), the result
+/// arriving through a one-shot channel. A sent job can be declined: the
+/// helper then skips it if it has not started it, and a later resolve sends
+/// it again (#897). Cloning a page clones the handle; whichever copy
+/// resolves first gets the bitmap. A handle dropped while still queued, or
+/// declined in time, costs nothing — the render never happens.
 #[cfg(feature = "ml")]
 #[derive(Clone)]
-pub struct PendingImage(std::sync::Arc<std::sync::Mutex<Option<PendingReceiver>>>);
+pub struct PendingImage(std::sync::Arc<std::sync::Mutex<Pending>>);
 
-/// The one-shot channel a [`PendingImage`] waits on.
+/// The channel a sent job's bitmap comes back through.
 #[cfg(feature = "ml")]
-type PendingReceiver = std::sync::mpsc::Receiver<Result<RgbImage, PdfError>>;
+type Reply = std::sync::mpsc::Receiver<Result<RgbImage, PdfError>>;
+
+/// Where a [`PendingImage`] stands: the job and the helper to send it to,
+/// plus — once sent — the reply channel and the flag that lets the helper
+/// skip it.
+#[cfg(feature = "ml")]
+struct Pending {
+    spec: RenderSpec,
+    tx: std::sync::mpsc::Sender<RenderJob>,
+    sent: Option<(Reply, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
+    taken: bool,
+    /// The document's recent verdicts, which [`BitmapRender::Adaptive`]
+    /// schedules by; this page's goes in once.
+    stats: std::sync::Arc<Verdicts>,
+    /// This page's verdict so far (`Some(true)` = read).
+    verdict: Option<bool>,
+}
+
+/// Whether the last [`Verdicts::WINDOW`] pages that reached a verdict read
+/// their 2x bitmap — what [`BitmapRender::Adaptive`] decides a new page's
+/// render by (#897).
+#[cfg(feature = "ml")]
+#[derive(Default)]
+struct Verdicts(std::sync::Mutex<std::collections::VecDeque<bool>>);
+
+#[cfg(feature = "ml")]
+impl Verdicts {
+    const WINDOW: usize = 8;
+
+    /// Record a page's verdict, or turn a declined page's into a read one.
+    fn record(&self, read: bool, replaces_decline: bool) {
+        let mut w = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        if replaces_decline {
+            if let Some(v) = w.iter_mut().rev().find(|v| !**v) {
+                *v = true;
+            }
+            return;
+        }
+        if w.len() == Self::WINDOW {
+            w.pop_front();
+        }
+        w.push_back(read);
+    }
+
+    /// Start the next render now? Yes until a few verdicts are in (most
+    /// documents' first pages are not representative either way, and a
+    /// wrong "yes" costs one render, a wrong "no" one page's latency), then
+    /// while at least half of the window read theirs.
+    fn start_eagerly(&self) -> bool {
+        let w = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        w.len() < 3 || 2 * w.iter().filter(|v| **v).count() >= w.len()
+    }
+}
+
+#[cfg(feature = "ml")]
+impl Pending {
+    /// Send the job (again, after a skipped one) and keep its reply channel.
+    /// The helper runs while any job sender lives — this one included — so a
+    /// failed send means it died (a render panicked).
+    fn send(&mut self) -> Result<(), PdfError> {
+        let (reply, rx) = std::sync::mpsc::sync_channel(1);
+        let declined = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.tx
+            .send(RenderJob {
+                spec: self.spec,
+                declined: declined.clone(),
+                reply,
+            })
+            .map_err(|_| PdfError::Pdfium("page render thread ended early".into()))?;
+        self.sent = Some((rx, declined));
+        Ok(())
+    }
+}
 
 #[cfg(feature = "ml")]
 impl PendingImage {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Pending> {
+        self.0.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Hand the job to the helper, unless that happened already.
+    fn start(&self) {
+        let mut p = self.lock();
+        if p.sent.is_none() && !p.taken {
+            // A dead helper surfaces as the page's resolve error.
+            let _ = p.send();
+        }
+    }
+
+    /// Nothing will read this bitmap: let the helper skip the job if it has
+    /// not begun it (a job never sent stays unsent).
+    fn decline(&self) {
+        let mut p = self.lock();
+        if p.verdict.is_none() {
+            p.verdict = Some(false);
+            p.stats.record(false, false);
+        }
+        if let Some((_, declined)) = &p.sent {
+            declined.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     fn wait(self) -> Result<RgbImage, PdfError> {
-        let rx = self.0.lock().unwrap_or_else(|p| p.into_inner()).take();
-        match rx {
-            Some(rx) => rx
-                .recv()
-                .unwrap_or_else(|_| Err(PdfError::Pdfium("page render thread ended early".into()))),
-            None => Err(PdfError::Pdfium("page bitmap resolved twice".into())),
+        let mut p = self.lock();
+        if p.taken {
+            return Err(PdfError::Pdfium("page bitmap resolved twice".into()));
+        }
+        if p.verdict != Some(true) {
+            p.stats.record(true, p.verdict == Some(false));
+            p.verdict = Some(true);
+        }
+        loop {
+            match &p.sent {
+                None => p.send()?,
+                Some((rx, declined)) => {
+                    // Asked for after all: a job not yet begun renders.
+                    declined.store(false, std::sync::atomic::Ordering::Relaxed);
+                    match rx.recv() {
+                        Ok(out) => {
+                            p.taken = true;
+                            p.sent = None;
+                            return out;
+                        }
+                        // Skipped while declined (or the helper died, which
+                        // the next send reports): send it again.
+                        Err(_) => p.sent = None,
+                    }
+                }
+            }
         }
     }
 }
@@ -739,63 +940,118 @@ impl std::fmt::Debug for PendingImage {
 /// with the decode `hint`, box-downscaled to `dw` × `dh` — exactly the
 /// synchronous path's steps, on another thread.
 #[cfg(feature = "ml")]
-struct RenderJob {
+#[derive(Clone, Copy)]
+struct RenderSpec {
     index: i32,
     w: u32,
     h: u32,
     hint: f64,
     dw: u32,
     dh: u32,
+}
+
+#[cfg(feature = "ml")]
+struct RenderJob {
+    spec: RenderSpec,
+    /// Set when the page turned out not to read the bitmap (#897): the
+    /// helper skips the job if it gets to it after that — dropping `reply`,
+    /// which tells a later resolve to send it again.
+    declined: std::sync::Arc<std::sync::atomic::AtomicBool>,
     reply: std::sync::mpsc::SyncSender<Result<RgbImage, PdfError>>,
 }
 
 /// The walk's render helper (#682): a second pure-Rust renderer, with its
-/// own per-document caches, on a scoped thread, fed one [`RenderJob`] per
-/// page with a text layer. Its bitmaps are the ones the walk thread would
-/// have drawn — the same renderer code over the same object model — so the
+/// own per-document caches, on its own thread, fed one [`RenderJob`] per
+/// 2x bitmap asked for. Its bitmaps are the ones the walk thread would have
+/// drawn — the same renderer code over the same object model — so the
 /// output is byte-identical; what changes is that the page leaves the walk
-/// as soon as its 1x layout image is drawn and the 2x bitmap lands while
-/// layout runs. The walk's own channel bounds the jobs in flight.
+/// as soon as its 1x layout image is drawn, and the 2x bitmap lands while
+/// layout runs ([`BitmapRender::Eager`]) or when the page turns out to need
+/// it ([`BitmapRender::OnDemand`], #897). Not scoped to the walk: a page
+/// resolved on demand asks after the walk is over, so the thread holds the
+/// object model and runs until the walk and every page's handle have let go
+/// of the job sender.
 #[cfg(feature = "ml")]
 struct DeferredRender {
     tx: std::sync::mpsc::Sender<RenderJob>,
+    mode: BitmapRender,
+    stats: std::sync::Arc<Verdicts>,
 }
 
 #[cfg(feature = "ml")]
 impl DeferredRender {
+    /// The helper for `meta`; `None` (render in place, as without one) when
+    /// the thread cannot be spawned.
+    fn spawn(meta: std::sync::Arc<crate::pdf_meta::PdfMeta>, mode: BitmapRender) -> Option<Self> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name("docling-pdf-render".into())
+            .spawn(move || Self::serve(&meta, rx))
+            .ok()?;
+        Some(Self {
+            tx,
+            mode,
+            stats: Default::default(),
+        })
+    }
+
     fn submit(&self, index: i32, w: u32, h: u32, hint: f64, dw: u32, dh: u32) -> PendingImage {
-        let (reply, rx) = std::sync::mpsc::sync_channel(1);
-        // A helper that is gone surfaces as the page's resolve error.
-        let _ = self.tx.send(RenderJob {
+        let spec = RenderSpec {
             index,
             w,
             h,
             hint,
             dw,
             dh,
-            reply,
-        });
-        PendingImage(std::sync::Arc::new(std::sync::Mutex::new(Some(rx))))
+        };
+        let pending = PendingImage(std::sync::Arc::new(std::sync::Mutex::new(Pending {
+            spec,
+            tx: self.tx.clone(),
+            sent: None,
+            taken: false,
+            stats: self.stats.clone(),
+            verdict: None,
+        })));
+        let start = match self.mode {
+            BitmapRender::Eager => true,
+            BitmapRender::Adaptive => self.stats.start_eagerly(),
+            BitmapRender::OnDemand => false,
+        };
+        if start {
+            pending.start();
+        }
+        pending
     }
 
-    /// The helper's loop: runs until the job sender is dropped.
+    /// The helper's loop: runs until every job sender is dropped.
     fn serve(meta: &crate::pdf_meta::PdfMeta, jobs: std::sync::mpsc::Receiver<RenderJob>) {
         let renderer = crate::render::Renderer::new(meta);
-        for job in jobs {
+        for RenderJob {
+            spec,
+            declined,
+            reply,
+        } in jobs
+        {
+            if declined.load(std::sync::atomic::Ordering::Relaxed) {
+                if crate::timing::enabled() {
+                    crate::timing::record("render.skipped", 0);
+                }
+                continue;
+            }
             let out = rust_bitmap(
                 Some(meta),
                 Some(&renderer),
                 false,
-                job.index,
-                job.w,
-                job.h,
-                job.hint,
+                spec.index,
+                spec.w,
+                spec.h,
+                spec.hint,
             )
             .map(|big| {
-                crate::timing::timed("image.resize", || fast_downscale(&big, job.dw, job.dh))
+                crate::timing::timed("image.resize", || fast_downscale(&big, spec.dw, spec.dh))
             })
-            .ok_or_else(|| no_raster(job.index));
-            let _ = job.reply.send(out);
+            .ok_or_else(|| no_raster(spec.index));
+            let _ = reply.send(out);
         }
     }
 }
@@ -1515,6 +1771,32 @@ pub(crate) use native::bind_for_tests;
 #[cfg(test)]
 mod tests {
     use super::{checked_render_dims, max_render_side, to_display_frame};
+
+    /// #897: the adaptive schedule starts renders eagerly for the first
+    /// pages, then while at least half of the last 8 verdicts read the
+    /// bitmap; a declined page that turns out to read it counts as read.
+    #[cfg(feature = "ml")]
+    #[test]
+    fn adaptive_verdicts() {
+        let v = super::Verdicts::default();
+        assert!(v.start_eagerly(), "no verdict yet");
+        v.record(false, false);
+        v.record(false, false);
+        assert!(v.start_eagerly(), "still warming up");
+        v.record(false, false);
+        assert!(!v.start_eagerly(), "three text-only pages");
+        v.record(true, true); // the last declined one was read after all
+        v.record(true, false);
+        assert!(v.start_eagerly(), "2 of 4 read");
+        for _ in 0..8 {
+            v.record(false, false);
+        }
+        assert!(!v.start_eagerly(), "the window forgets the read ones");
+        for _ in 0..4 {
+            v.record(true, false);
+        }
+        assert!(v.start_eagerly(), "4 of the last 8 read");
+    }
 
     /// The pure-Rust object model must answer exactly what pdfium answers —
     /// page count, display size, `/Rotate`, URI links — on every corpus PDF,

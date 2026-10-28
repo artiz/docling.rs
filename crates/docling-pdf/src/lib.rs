@@ -1192,9 +1192,8 @@ impl Worker {
             })
         }
         .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
-        // The 2x bitmap, rendered meanwhile (#682): everything from here on
-        // reads it.
-        page.resolve_image()?;
+        // The 2x bitmap (#682), when the detections read it (#897).
+        self.ensure_bitmap(page, &regions)?;
         self.finish_page(n, page, regions)
     }
 
@@ -1391,8 +1390,8 @@ impl Worker {
                 .iter_mut()
                 .zip(all)
                 .map(|((n, page), regions)| {
-                    // The 2x bitmap, rendered meanwhile (#682).
-                    page.resolve_image()?;
+                    // The 2x bitmap (#682), when the detections read it (#897).
+                    self.ensure_bitmap(page, &regions)?;
                     self.stage_page(*n, page, regions)
                 })
                 .collect(),
@@ -1537,6 +1536,7 @@ impl Worker {
         regions: Vec<layout::Region>,
     ) -> Result<PageOut, PdfError> {
         let prepared = self.prepare_page(n, page, regions)?;
+        self.ensure_bitmap(page, &prepared.regions)?;
         let table_rows = self.table_rows_blocking(page, &prepared.regions);
         self.complete_page(n, page, prepared, table_rows)
     }
@@ -1551,10 +1551,52 @@ impl Worker {
         regions: Vec<layout::Region>,
     ) -> Result<Staged, PdfError> {
         let prepared = self.prepare_page(n, page, regions)?;
+        self.ensure_bitmap(page, &prepared.regions)?;
         match self.table_rows_try(page, &prepared.regions) {
             Some(rows) => Ok(Staged::Done(self.complete_page(n, page, prepared, rows)?)),
             None => Ok(Staged::NeedsTables(prepared)),
         }
+    }
+
+    /// Does this page read its 2x bitmap (#897)? Layout reads the separate
+    /// 1x render; after it, the bitmap feeds TableFormer, picture crops (and
+    /// the picture classifier, in-picture OCR and the image outputs on
+    /// them), the code/formula enrichment crops, page images and OCR. A
+    /// page without any of those — on a text-heavy document most pages —
+    /// never renders it. Decided on the detections as they stand (a
+    /// superset of what survives postprocessing, which only drops or
+    /// demotes pictures and tables), and asked again wherever the regions
+    /// change.
+    fn needs_bitmap(&self, page: &PdfPage, regions: &[layout::Region]) -> bool {
+        self.images.page_images
+            || self.force_full_page_ocr
+            || page.cells.is_empty()
+            || regions.iter().any(|r| {
+                r.label == "picture"
+                    || assemble::is_table_like(r.label)
+                    || (r.label == "code" && self.enrich.code)
+                    || (r.label == "formula" && self.enrich.formula)
+            })
+    }
+
+    /// Install the page's deferred 2x bitmap (#682) if [`Self::needs_bitmap`]
+    /// says it is read — rendering it now when it was not rendered already —
+    /// and otherwise decline it, so the render helper skips it when it has
+    /// not got to it yet (#897). Idempotent, and a declined page can still
+    /// be resolved later (an fp32 layout retry with new detections).
+    fn ensure_bitmap(
+        &self,
+        page: &mut PdfPage,
+        regions: &[layout::Region],
+    ) -> Result<(), PdfError> {
+        if page.image_pending() {
+            if self.needs_bitmap(page, regions) {
+                page.resolve_image()?;
+            } else {
+                page.decline_image();
+            }
+        }
+        Ok(())
     }
 
     /// Does this page need the shared TableFormer at all? Table-free pages
@@ -1574,6 +1616,10 @@ impl Worker {
         regions: &[layout::Region],
     ) -> Vec<Option<tf_core::TableGrid>> {
         let mut table_rows: Vec<Option<tf_core::TableGrid>> = vec![None; regions.len()];
+        debug_assert!(
+            !page.image_pending(),
+            "TableFormer reached an unrendered page bitmap"
+        );
         guard.load();
         if let TfSlot::Ready(tf) = guard {
             // One 1024-px frame per page, shared by all of its tables, and one
@@ -1706,6 +1752,9 @@ impl Worker {
                             cov2 * 100.0
                         );
                         regions = retry;
+                        // New detections may read the bitmap the first ones
+                        // did not (#897).
+                        self.ensure_bitmap(page, &regions)?;
                     }
                 }
             }
@@ -2033,6 +2082,8 @@ impl Worker {
             ocr_confs,
             parse,
         } = prepared;
+        // The crops and the page image below read the bitmap (#897).
+        self.ensure_bitmap(page, &regions)?;
         if env::flag("DOCLING_RS_DEBUG_REGIONS") {
             for (i, r) in regions.iter().enumerate() {
                 eprintln!(
@@ -2788,6 +2839,28 @@ impl Pipeline {
         self.no_ocr || !(self.force_full_page_ocr || self.ocr_mode.forces_full_page())
     }
 
+    /// When the walk renders the 2x bitmaps of pages with a text layer
+    /// (#897). Adaptively by default: while the document's recent pages read
+    /// theirs, each starts on the helper thread as the page leaves the walk,
+    /// overlapping layout (#682); while they do not (prose), only a page that
+    /// reads it renders it, after layout. Page images read every bitmap, so
+    /// they keep the #682 schedule. `DOCLING_RS_PAGE_BITMAP` picks one
+    /// explicitly: `eager` (every bitmap, during layout), `adaptive`,
+    /// `on-demand` (only the bitmaps read — the least CPU, with every render
+    /// after layout).
+    fn bitmap_render(&self) -> pdfium_backend::BitmapRender {
+        use pdfium_backend::BitmapRender;
+        match env::nonempty("DOCLING_RS_PAGE_BITMAP")
+            .map(|v| v.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("eager") => BitmapRender::Eager,
+            Some("on-demand" | "ondemand" | "lazy") => BitmapRender::OnDemand,
+            _ if self.images.page_images => BitmapRender::Eager,
+            _ => BitmapRender::Adaptive,
+        }
+    }
+
     /// Push the current OCR forcing/scale choice onto already-loaded workers
     /// (new workers read it at [`Worker::load`]).
     fn sync_ocr_config(&mut self) {
@@ -3035,8 +3108,15 @@ impl Pipeline {
         let images = self.images;
         let progress = self.progress.clone();
         let mut done = 0usize;
-        let timed_out =
-            Self::render_ahead(bytes, password, false, true, range, deadline, |n, page| {
+        let timed_out = Self::render_ahead(
+            bytes,
+            password,
+            false,
+            pdfium_backend::BitmapRender::Eager,
+            true,
+            range,
+            deadline,
+            |n, page| {
                 let (mut nodes, links, conf) = text_only_page(&page, images.scale);
                 assemble::stamp_page_no(&mut nodes, n + 1);
                 if let Some(img) = page_image_under(images, n, &page) {
@@ -3054,7 +3134,8 @@ impl Pipeline {
                     });
                 }
                 Ok(())
-            })?;
+            },
+        )?;
         assemble::merge_continuations(&mut doc.nodes);
         self.apply_heading_hierarchy(&mut doc.nodes, Some(bytes));
         doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
@@ -3075,6 +3156,7 @@ impl Pipeline {
         let mut doc = DoclingDocument::new(name);
         let mut confs = std::collections::BTreeMap::new();
         let render_image = !self.no_ocr;
+        let bitmap = self.bitmap_render();
         let extract_text = self.extract_text_layer();
         let progress = self.progress.clone();
         let mut done = 0usize;
@@ -3083,6 +3165,7 @@ impl Pipeline {
             bytes,
             password,
             render_image,
+            bitmap,
             extract_text,
             range,
             deadline,
@@ -3123,10 +3206,12 @@ impl Pipeline {
     /// `emit` need not be `Send`). A spent budget (#497) ends the walk at
     /// the renderer and the consumer alike; a consumer error closes the
     /// channel, which stops the renderer, and is the one reported.
+    #[allow(clippy::too_many_arguments)]
     fn render_ahead<F>(
         bytes: &[u8],
         password: Option<&str>,
         render_image: bool,
+        bitmap: pdfium_backend::BitmapRender,
         extract_text: bool,
         range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
@@ -3138,12 +3223,13 @@ impl Pipeline {
         let (tx, rx) = sync_channel::<(usize, PdfPage)>(RENDER_AHEAD);
         std::thread::scope(|s| {
             let render = s.spawn(move || {
-                pdfium_backend::for_each_page(
+                pdfium_backend::walk_pages(
                     bytes,
                     password,
                     render_image,
                     extract_text,
                     range,
+                    bitmap,
                     |n, _total, page| {
                         if expired(deadline) {
                             return Err(timeout_sentinel());
@@ -3202,6 +3288,7 @@ impl Pipeline {
         let timed_out = std::sync::atomic::AtomicBool::new(false);
         let n_workers = self.pool.len();
         let render_image = !self.no_ocr;
+        let bitmap = self.bitmap_render();
         let extract_text = self.extract_text_layer();
         let layout_batch = pdf_layout_batch();
         // Bound sized so every worker can accumulate a full layout batch while
@@ -3258,12 +3345,13 @@ impl Pipeline {
             // when the channel is full. Dropping `work_tx` afterwards signals the
             // workers (recv → Err) to finish. A spent budget ends the walk before
             // the next page is rendered.
-            let render = pdfium_backend::for_each_page(
+            let render = pdfium_backend::walk_pages(
                 bytes,
                 password,
                 render_image,
                 extract_text,
                 range,
+                bitmap,
                 |i, _total, page| {
                     if expired(deadline) {
                         return Err(timeout_sentinel());
@@ -3394,8 +3482,15 @@ impl Pipeline {
         let images = self.images;
         let progress = self.progress.clone();
         let mut done = 0usize;
-        let timed_out =
-            Self::render_ahead(bytes, password, false, true, range, deadline, |n, page| {
+        let timed_out = Self::render_ahead(
+            bytes,
+            password,
+            false,
+            pdfium_backend::BitmapRender::Eager,
+            true,
+            range,
+            deadline,
+            |n, page| {
                 let (nodes, links, _conf) = text_only_page(&page, images.scale);
                 done += 1;
                 if let Some(cb) = &progress {
@@ -3406,7 +3501,8 @@ impl Pipeline {
                     });
                 }
                 emit(asm.push(nodes), links)
-            })?;
+            },
+        )?;
         emit(asm.finish(), Vec::new())?;
         Ok((done, timed_out))
     }
@@ -3427,6 +3523,7 @@ impl Pipeline {
     {
         let mut asm = assemble::StreamAssembler::new();
         let render_image = !self.no_ocr;
+        let bitmap = self.bitmap_render();
         let extract_text = self.extract_text_layer();
         let progress = self.progress.clone();
         let worker = self.primary()?;
@@ -3435,6 +3532,7 @@ impl Pipeline {
             bytes,
             password,
             render_image,
+            bitmap,
             extract_text,
             range,
             deadline,
@@ -3479,6 +3577,7 @@ impl Pipeline {
         self.ensure_pool_for(selected)?;
         let n_workers = self.pool.len();
         let render_image = !self.no_ocr;
+        let bitmap = self.bitmap_render();
         let extract_text = self.extract_text_layer();
         let progress = self.progress.clone();
         let layout_batch = pdf_layout_batch();
@@ -3518,12 +3617,13 @@ impl Pipeline {
             {
                 let res_tx = res_tx.clone();
                 s.spawn(move || {
-                    let render = pdfium_backend::for_each_page(
+                    let render = pdfium_backend::walk_pages(
                         bytes,
                         password,
                         render_image,
                         extract_text,
                         range,
+                        bitmap,
                         |i, _total, page| {
                             if expired(deadline) {
                                 return Err(timeout_sentinel());

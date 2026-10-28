@@ -4,6 +4,11 @@
 //! across all pages and print a sorted breakdown at process exit. Zero cost
 //! when the env var is unset (the `Instant` is still taken but nothing is
 //! recorded — call sites guard the hot path themselves where it matters).
+//!
+//! The totals are process-wide and cumulative ([`report`] prints them after
+//! every conversion). An embedder profiling one document at a time reads
+//! them with [`snapshot`] and clears them with [`reset`] (#897) instead of
+//! parsing stderr.
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
@@ -62,4 +67,61 @@ pub fn report() {
         eprintln!("  {stage:<22} {ms:>9.1} ms  {pct:>5.1}%  ({calls} calls)");
     }
     eprintln!("  {:<22} {:>9.1} ms", "TOTAL (summed)", total as f64 / 1e6);
+}
+
+/// One stage's accumulated time, as [`snapshot`] returns it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StageTiming {
+    /// The stage name (`layout.predict`, `render.page`, `tableformer`, …).
+    pub stage: &'static str,
+    /// Wall-clock time summed over every call (stages on parallel threads
+    /// overlap, so the totals can exceed the conversion's wall time).
+    pub total: std::time::Duration,
+    /// How many times the stage ran.
+    pub calls: u64,
+}
+
+/// The stages accumulated since the process started or the last [`reset`],
+/// longest first. Empty unless `DOCLING_RS_TIMING` is set.
+pub fn snapshot() -> Vec<StageTiming> {
+    let g = store().lock().unwrap_or_else(|p| p.into_inner());
+    let mut rows: Vec<StageTiming> = g
+        .iter()
+        .map(|(stage, (nanos, calls))| StageTiming {
+            stage,
+            total: std::time::Duration::from_nanos(u64::try_from(*nanos).unwrap_or(u64::MAX)),
+            calls: *calls,
+        })
+        .collect();
+    rows.sort_by_key(|r| std::cmp::Reverse(r.total));
+    rows
+}
+
+/// Forget the accumulated stages — e.g. between documents, so the next
+/// [`snapshot`] (and [`report`]) covers one conversion.
+pub fn reset() {
+    store().lock().unwrap_or_else(|p| p.into_inner()).clear();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_and_reset() {
+        // Recording is gated on DOCLING_RS_TIMING, read once per process:
+        // the shape is checked either way, the values when it is on.
+        reset();
+        record("test.stage", 2_000_000);
+        record("test.stage", 1_000_000);
+        let rows = snapshot();
+        if enabled() {
+            let row = rows.iter().find(|r| r.stage == "test.stage").unwrap();
+            assert_eq!((row.total.as_nanos(), row.calls), (3_000_000, 2));
+        } else {
+            assert!(rows.is_empty());
+        }
+        reset();
+        assert!(snapshot().iter().all(|r| r.stage != "test.stage"));
+    }
 }

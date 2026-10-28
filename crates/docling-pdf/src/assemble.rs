@@ -2612,6 +2612,10 @@ pub enum Enrichment {
 /// pass (the page bitmap is already the exact docling render at scale 2).
 #[cfg(feature = "ml")]
 pub fn crop_region_scaled(page: &PdfPage, bbox: [f32; 4], target_scale: f32) -> Option<RgbImage> {
+    debug_assert!(
+        !page.image_pending(),
+        "a crop reached an unrendered page bitmap (#897)"
+    );
     let s = page.scale;
     let [l, t, r, b] = bbox;
     let (iw, ih) = (page.image.width(), page.image.height());
@@ -2674,6 +2678,11 @@ fn png_image(img: &RgbImage, scale: f32) -> Option<PictureImage> {
 /// px/pt (`None` = the render's own), `None` when the page has no bitmap.
 #[cfg(feature = "ocr-prep")]
 pub fn page_image(page: &PdfPage, scale: Option<f32>) -> Option<PictureImage> {
+    #[cfg(feature = "ml")]
+    debug_assert!(
+        !page.image_pending(),
+        "a crop reached an unrendered page bitmap (#897)"
+    );
     if page.image.width() == 0 || page.image.height() == 0 || page.scale <= 0.0 {
         return None;
     }
@@ -2689,6 +2698,11 @@ pub fn page_image(page: &PdfPage, scale: Option<f32>) -> Option<PictureImage> {
 /// is 72·scale (#519).
 #[cfg(feature = "ocr-prep")]
 fn crop_region(page: &PdfPage, region: &Region, scale: Option<f32>) -> Option<PictureImage> {
+    #[cfg(feature = "ml")]
+    debug_assert!(
+        !page.image_pending(),
+        "a crop reached an unrendered page bitmap (#897)"
+    );
     let s = page.scale;
     let (iw, ih) = (page.image.width(), page.image.height());
     let x = (region.l * s).max(0.0) as u32;
