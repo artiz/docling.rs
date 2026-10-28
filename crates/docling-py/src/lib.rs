@@ -1235,6 +1235,7 @@ fn parse_format(name: &str) -> Option<docling::InputFormat> {
         "xml_uspto" => XmlUspto,
         "xml_jats" => XmlJats,
         "xml_xbrl" => XmlXbrl,
+        "xml_ris" => XmlRis,
         "xml_doclang" => XmlDoclang,
         "doctags" => DocTags,
         "mets_gbs" => MetsGbs,

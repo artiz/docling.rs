@@ -285,7 +285,7 @@ converted once more as that format with a warning.
 | Diagrams | Visio `.vsdx` `.vsdm` · SVG `.svg` | Visio: pages as sections, shape text in reading order, connectors as a relations table; SVG rasterized into the image pipeline, or its `<text>` as paragraphs without ML |
 | Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25`; merged cells keep their spans; chart sheets expose their chart |
 | Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` | both container generations (`Index/*.iwa` and iWork '09 XML); Pages and Keynote mirror docling's readers, Keynote charts as classified pictures with their data table; Numbers as sheet/table text |
-| XML dialects | JATS / USPTO / XBRL (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` | XBRL converts without arelle: `dei` title, text blocks, numeric facts as docling's key-value graph, the taxonomy read offline from `xbrl_taxonomy` |
+| XML dialects | JATS / USPTO / XBRL / RIS (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` | XBRL converts without arelle: `dei` title, text blocks, numeric facts as docling's key-value graph, the taxonomy read offline from `xbrl_taxonomy`; RIS (#902, a docling.rs extension) is Austria's federal legal XML (`risdok`) — sections, headings, paragraphs with their formatting, lists, tables, running headers/footers as furniture |
 | PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (`--features heif`) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` | pure-Rust text layer, page renderer and scan raster, ONNX layout + TableFormer + OCR (`docling-pdf`; no native PDF library in the default build, `pdfium` is an opt-in feature — [`docs/PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md)); JPEG 2000 and JBIG2 decode in Rust (#598, #811 — `/JBIG2Globals` included; an image no decoder can read draws a mid-gray placeholder, a stencil too); DjVu reads its hidden text layer without models and falls back to OCR with them |
 | docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` | DocTags — the token markup docling's VLMs emit — read through docling-core's tolerant parser, the one the VLM pipeline uses |
 | Mainframe data | EBCDIC `.ebc` `.ebcdic` | fixed-width records decoded through a COBOL copybook (docling's `EbcdicLayout`): `ebcdic_layout`, or a `<stem>.layout.json` sidecar |
@@ -959,6 +959,24 @@ converted once more as that format with a warning.
 - MarkItDown's shape (`# YouTube`, `## title`, `### Video Metadata`, `### Description`, `### Transcript`)
 - a video without captions is an error
 - Fixtures: `tests/data/youtube` (hand-written to the page's shape — YouTube answers 429 to automated requests), served locally in `tests/youtube.rs`
+
+#### RIS legal XML (`risdok`)
+
+**Backend:** `ris.rs` (roxmltree)\
+**Status:** **docling.rs extension (#902)** — docling has no RIS reader (a `risdok` file saved as `.xml` came out as one `xml` code block, before #671 empty from the JATS reader); no upstream reference exists, so `crates/docling/tests/data/ris/` pins our own output for a public decision of the Austrian data-protection authority (`DSBT_20250904_2025_0_699_550_00.xml`, RIS open data), and docling-core 2.104 loads the JSON and writes the same DocLang from it
+
+- the open-data documents of `ogd.ris.bka.gv.at` (decisions, federal law): a `.xml` whose root is `<risdok>` (namespace `http://www.bka.gv.at`, or none) by the `xml` route's dialect sniff, or the `xml_ris` format id
+- in source order, under one `section` group per `abschnitt` (named `abschnitt {nr}`) so every item keeps the section it came from:
+  - `ueberschrift` → section header (`titel` / `g1` level 1, `g2`…`g4` deeper)
+  - `absatz` → paragraph; `b` / `i` / `u` / `sup` / `sub` keep their formatting (an inline group in the JSON), a `feld` / `span` reads as its text, a `tab` as a space
+  - a bullet `absatz` — a glyph before its first `tab` (`-`, `•`, Word's Symbol-font `U+F0B7`, …) or none in a hanging indent — is a list item, consecutive ones one list; numbered paragraphs (`1.1.`, `3.1.10.`) stay paragraphs, the number part of the legal text
+  - `table` → table (`colspan` / `rowspan`; Word's zero-height layout row dropped)
+  - `kzinhalt` / `fzinhalt` (running header / footer) → `page_header` / `page_footer` furniture, out of the Markdown
+  - `metadaten`, `layoutdaten`, `abstand` skipped; an unknown element read through
+- JSON and HTML from the item tree, DocLang too (docling-core's serializer over the tree, #884); Markdown from the flat nodes
+- **Divergences from docling's conventions** (no upstream to follow):
+  - the Markdown escapes `*` (`\*`) besides docling's `_` and HTML specials — RIS pseudonymizes with stars (`A*** GmbH`, `FN *0*271*h`), which would otherwise turn into emphasis; the plain-text export reads `\*` as a star (a literal `\*` elsewhere — an AbiWord field code — now prints as `*` there too, which is what its Markdown renders)
+  - a styled run's markers hug its text (`„*Werbeagentur*“`), where docling-core joins an inline group's runs with spaces
 
 #### RSS / Atom / RDF feeds
 
@@ -1981,9 +1999,9 @@ These are deliberate or unavoidable divergences, not bugs.
    pixels are correct, but the PNG re-encoding differs from docling's, so the
    base64 in `embedded` mode / JSON `ImageRef`s won't match byte-for-byte.
 
-7. **XML format detection sniffs content.** JATS, USPTO and XBRL all use `.xml`;
+7. **XML format detection sniffs content.** JATS, USPTO, XBRL and RIS all use `.xml`;
    the converter routes by content markers (`us-patent` → USPTO, `us-gaap`/`dei`
-   → XBRL, else JATS) rather than the extension alone.
+   → XBRL, a `<risdok>` root → RIS, else JATS) rather than the extension alone.
    A file whose extension lies gets a second chance (#556): only when the
    conversion as its extension's format *fails* is the content checked —
    RTF's `{\rtf`, the PDF header, a ZIP package's parts (OOXML main part,

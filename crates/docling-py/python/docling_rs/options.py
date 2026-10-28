@@ -48,6 +48,7 @@ class InputFormat(str, enum.Enum):
     LATEX = "latex"
     MHTML = "mhtml"
     XML_XBRL = "xml_xbrl"
+    XML_RIS = "xml_ris"
     XML_DOCLANG = "xml_doclang"
     METS_GBS = "mets_gbs"
     # #671: plain text / source code (also the fallback for an unknown
