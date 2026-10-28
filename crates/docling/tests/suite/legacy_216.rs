@@ -64,3 +64,19 @@ fn hwp_and_hwpx_are_sniffed_by_content() {
         assert_eq!(markdown_of("upload.bin", bytes), named, "{name}");
     }
 }
+
+/// A Computer Graphics Metafile reads as the text its drawing places,
+/// sniffed by its BEGIN METAFILE element when nameless.
+#[test]
+fn cgm_reads_its_text_and_is_sniffed() {
+    let bytes = std::fs::read(
+        repo_root().join("crates/docling/tests/data/cgm/sources/libreoffice_binary_corvette.cgm"),
+    )
+    .unwrap();
+    assert_eq!(
+        docling::InputFormat::detect(&bytes),
+        Some(docling::InputFormat::Cgm)
+    );
+    let md = markdown_of("upload.bin", bytes);
+    assert!(md.contains("GENIGRAPHICS"), "{md}");
+}

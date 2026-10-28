@@ -84,6 +84,12 @@ pub(crate) fn detect_any(bytes: &[u8]) -> Option<InputFormat> {
     if crate::backend::looks_like_palmdoc(bytes) {
         return Some(InputFormat::PalmDoc);
     }
+    // A Computer Graphics Metafile's BEGIN METAFILE element (#216).
+    if crate::backend::cgm::looks_like_binary_cgm(bytes)
+        || crate::backend::cgm::looks_like_clear_text_cgm(bytes)
+    {
+        return Some(InputFormat::Cgm);
+    }
     // A saved T602 document opens with its code-page setting (#216).
     if crate::backend::looks_like_t602(bytes) {
         return Some(InputFormat::T602);

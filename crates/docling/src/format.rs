@@ -127,6 +127,10 @@ pub enum InputFormat {
     /// extension (#216): HWP 5 compound files and HWPX (OWPML) packages read
     /// into paragraphs, headings, lists and tables.
     Hwp,
+    /// Computer Graphics Metafiles (`.cgm`, ISO/IEC 8632), a docling.rs
+    /// extension (#216): the text a drawing places (labels, callouts) in the
+    /// binary and clear-text encodings.
+    Cgm,
     /// DjVu scanned documents (`.djvu`/`.djv`) — a docling.rs extension (#434);
     /// docling has no DjVu reader. Decoded in pure Rust (`djvu-rs`): the
     /// hidden per-page text layer by default, rasterize + OCR for scan-only
@@ -226,6 +230,7 @@ impl InputFormat {
             InputFormat::Prn => "prn",
             InputFormat::PalmDoc => "palmdoc",
             InputFormat::Hwp => "hwp",
+            InputFormat::Cgm => "cgm",
             InputFormat::Djvu => "djvu",
             InputFormat::Text => "text",
             InputFormat::Jsonl => "jsonl",
@@ -292,6 +297,7 @@ impl InputFormat {
             "prn" => InputFormat::Prn,
             "palmdoc" => InputFormat::PalmDoc,
             "hwp" => InputFormat::Hwp,
+            "cgm" => InputFormat::Cgm,
             "djvu" => InputFormat::Djvu,
             "text" => InputFormat::Text,
             "jsonl" => InputFormat::Jsonl,
@@ -761,6 +767,8 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         // the backend tells them apart by content.
         ("hwp", Hwp),
         ("hwpx", Hwp),
+        // Computer Graphics Metafile (#216): the drawing's text.
+        ("cgm", Cgm),
         // DjVu (#434): docling.rs extension, pure-Rust decode via `djvu-rs`.
         ("djvu", Djvu),
         ("djv", Djvu),

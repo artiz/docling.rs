@@ -27,6 +27,7 @@ mod asciidoc;
 #[cfg(feature = "web-browser")]
 pub(crate) mod browser;
 pub(crate) mod cfb;
+pub(crate) mod cgm;
 mod chandra;
 mod code_language;
 mod csv;
@@ -97,6 +98,7 @@ pub mod youtube;
 // DjVu (#434): pure-Rust decode via `djvu-rs`, so it builds everywhere,
 // wasm included.
 pub(crate) mod djvu;
+pub use cgm::CgmBackend;
 pub use djvu::looks_like_djvu;
 mod t602;
 pub(crate) mod uspto;

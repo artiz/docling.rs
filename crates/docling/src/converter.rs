@@ -2954,6 +2954,8 @@ impl DocumentConverter {
                 // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
                 // backend for the whole DOS-era family.
                 InputFormat::Lotus => LotusBackend.convert(source)?,
+                // Computer Graphics Metafile (#216): binary and clear-text.
+                InputFormat::Cgm => crate::backend::CgmBackend.convert(source)?,
                 // Hancom Hangul (#216): HWP 5 and HWPX.
                 InputFormat::Hwp => crate::backend::HwpBackend {
                     track_changes: self.track_changes,
