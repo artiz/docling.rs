@@ -41,9 +41,10 @@ mod vtt;
 pub use confidence::{ConfidenceReport, PageConfidence, QualityGrade};
 pub use doclang::inline_runs_from_markdown;
 pub use document::{
-    inline_paragraph_node, CaptionParent, ContentLayer, ContentLayers, DoclingDocument, FieldItem,
-    GraphCell, GraphLink, HtmlExportOptions, InlineRun, ListItemDclx, MarkdownExportOptions, Node,
-    PictureClass, PictureDescription, PictureImage, Script, Table, TableCell, TableStructure,
+    for_each_picture_in_mut, inline_paragraph_node, CaptionParent, ContentLayer, ContentLayers,
+    DoclingDocument, FieldItem, GraphCell, GraphLink, HtmlExportOptions, InlineRun, ListItemDclx,
+    MarkdownExportOptions, Node, PictureClass, PictureDescription, PictureImage, Script, Table,
+    TableCell, TableStructure,
 };
 pub use encryption::EncryptionError;
 #[doc(hidden)]

@@ -1351,6 +1351,37 @@ pub struct TableStructure {
     pub col_header: Vec<Vec<bool>>,
 }
 
+/// [`DoclingDocument::for_each_picture_mut`] over a node slice — every
+/// picture in `nodes`, however nested (groups, wrappers, table cell blocks),
+/// for a caller that holds page batches rather than a document (the
+/// streaming PDF path, #896).
+pub fn for_each_picture_in_mut(nodes: &mut [Node], f: &mut dyn FnMut(&mut Node)) {
+    for node in nodes {
+        match node {
+            Node::Picture { .. } => f(node),
+            Node::Group { children, .. } | Node::PictureChildren(children) => {
+                for_each_picture_in_mut(children, f)
+            }
+            Node::Located { inner, .. }
+            | Node::Prov { inner, .. }
+            | Node::Track { inner, .. }
+            | Node::Furniture { inner, .. }
+            | Node::Commented { inner, .. }
+            | Node::DoclangOnly(inner) => for_each_picture_in_mut(std::slice::from_mut(inner), f),
+            Node::Table(t) => {
+                if let Some(blocks) = t.cell_blocks.as_mut() {
+                    for row in blocks {
+                        for cell in row {
+                            for_each_picture_in_mut(cell, f);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 impl DoclingDocument {
     /// Create an empty document with the given name.
     pub fn new(name: impl Into<String>) -> Self {
@@ -1416,33 +1447,7 @@ impl DoclingDocument {
     /// enrichment that reads the embedded images (picture OCR, #645) reaches
     /// each one. The callback gets the picture node itself.
     pub fn for_each_picture_mut(&mut self, f: &mut dyn FnMut(&mut Node)) {
-        fn walk(nodes: &mut [Node], f: &mut dyn FnMut(&mut Node)) {
-            for node in nodes {
-                match node {
-                    Node::Picture { .. } => f(node),
-                    Node::Group { children, .. } | Node::PictureChildren(children) => {
-                        walk(children, f)
-                    }
-                    Node::Located { inner, .. }
-                    | Node::Prov { inner, .. }
-                    | Node::Track { inner, .. }
-                    | Node::Furniture { inner, .. }
-                    | Node::Commented { inner, .. }
-                    | Node::DoclangOnly(inner) => walk(std::slice::from_mut(inner), f),
-                    Node::Table(t) => {
-                        if let Some(blocks) = t.cell_blocks.as_mut() {
-                            for row in blocks {
-                                for cell in row {
-                                    walk(cell, f);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        walk(&mut self.nodes, f);
+        for_each_picture_in_mut(&mut self.nodes, f);
     }
 
     /// Convenience: append a heading.

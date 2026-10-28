@@ -109,3 +109,41 @@ fn page_images_land_in_the_page_map() {
             .starts_with("data:image/png;base64,"));
     }
 }
+
+/// #896: `keep_picture_images(false)` on a PDF — the buffered document and
+/// the streamed Markdown alike lose the pictures' bytes, the picture items
+/// stay; both keep them by default.
+#[test]
+fn keep_picture_images_false_reaches_pdf_pictures() {
+    if !ml_stack_ready() {
+        eprintln!("skipping: models not found");
+        return;
+    }
+    let kept = convert(DocumentConverter::new());
+    let dropped = convert(DocumentConverter::new().keep_picture_images(false));
+    let pictures = |json: &Value| json["pictures"].as_array().unwrap().clone();
+    assert!(!pictures(&kept).is_empty(), "the fixture has pictures");
+    assert!(pictures(&kept).iter().all(|p| p.get("image").is_some()));
+    assert_eq!(pictures(&dropped).len(), pictures(&kept).len());
+    assert!(pictures(&dropped).iter().all(|p| p.get("image").is_none()));
+
+    let path = repo_root().join("tests/data/pdf/sources/picture_classification.pdf");
+    let options = docling::MarkdownExportOptions {
+        image_mode: docling::ImageMode::Embedded,
+        ..Default::default()
+    };
+    let stream = |keep: bool| -> String {
+        let source = SourceDocument::from_file(&path).expect("picture fixture");
+        DocumentConverter::new()
+            .no_ocr(true)
+            .keep_picture_images(keep)
+            .convert_streaming_with_options(source, &options)
+            .expect("stream")
+            .map(|chunk| chunk.expect("chunk"))
+            .collect()
+    };
+    assert!(stream(true).contains("data:image/png;base64,"));
+    let slim = stream(false);
+    assert!(!slim.contains("data:image"), "{slim}");
+    assert!(slim.contains("<!-- image -->"), "{slim}");
+}

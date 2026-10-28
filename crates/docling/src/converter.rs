@@ -17,11 +17,7 @@ use crate::backend::{
 /// only their payload goes, so the JSON writes no `image` and Markdown's
 /// embedded mode prints the placeholder.
 fn strip_picture_images(document: &mut docling_core::DoclingDocument) {
-    document.for_each_picture_mut(&mut |node| {
-        if let docling_core::Node::Picture { image, .. } = node {
-            *image = None;
-        }
-    });
+    strip_picture_images_in(&mut document.nodes);
     if let Some(tree) = document.tree.as_mut() {
         for item in tree.items.iter_mut() {
             if let docling_core::tree::TreeKind::Picture { image, .. } = &mut item.kind {
@@ -29,6 +25,17 @@ fn strip_picture_images(document: &mut docling_core::DoclingDocument) {
             }
         }
     }
+}
+
+/// [`strip_picture_images`] over a page batch: what the streaming PDF path
+/// applies to each batch before it is serialized (#896), so the stream
+/// matches the buffered Markdown.
+pub(crate) fn strip_picture_images_in(nodes: &mut [docling_core::Node]) {
+    docling_core::for_each_picture_in_mut(nodes, &mut |node| {
+        if let docling_core::Node::Picture { image, .. } = node {
+            *image = None;
+        }
+    });
 }
 
 /// The picture-OCR reader (#645): the OCR models behind the size floor and
@@ -1594,8 +1601,14 @@ impl DocumentConverter {
     /// [`do_picture_ocr`](Self::do_picture_ocr) asks for it (#645), then
     /// drop the image bytes unless [`keep_picture_images`](Self::keep_picture_images)
     /// keeps them. Runs on every conversion after the backend, before
-    /// [`finish_document`](Self::finish_document).
-    fn enrich_pictures(
+    /// [`finish_document`](Self::finish_document). Public for the same
+    /// callers as `finish_document`: a PDF or image converted on a warm
+    /// `Pipeline` (docling-serve, the CLI batch, the bindings' `Pipeline`)
+    /// bypasses [`convert`](Self::convert), and without this pass
+    /// `keep_picture_images(false)` and the picture description never
+    /// reached it (#896). `reporter` is the conversion's
+    /// ([`Self::reporter`]), still open — the pass reports its progress.
+    pub fn enrich_pictures(
         &self,
         document: &mut docling_core::DoclingDocument,
         source: &SourceDocument,
@@ -2661,6 +2674,7 @@ impl DocumentConverter {
             ocr_scale: self.ocr_scale_choice(),
             ocr_textline_orientation: self.ocr_textline_orientation,
             images_scale: self.images_scale,
+            keep_picture_images: self.keep_picture_images,
             page_break_placeholder: self.page_break_placeholder.clone(),
             compact_tables: self.compact_tables,
             picture_alt_text: self.picture_alt_text,

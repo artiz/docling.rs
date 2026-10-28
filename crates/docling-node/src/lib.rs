@@ -1912,6 +1912,10 @@ fn run_pipeline(
             return Err(convert_err(e));
         }
     };
+    // The picture enrichment `convert` runs (#896): `keepPictureImages:
+    // false` and the picture description reached every other format but
+    // never the warm pipeline's PDFs and images.
+    converter.enrich_pictures(&mut doc, &source, &reporter);
     reporter.document_completed(if errors.is_empty() {
         docling::ConversionStatus::Success
     } else {
