@@ -2949,6 +2949,13 @@ fn convert_document_inner(
                     }),
             };
             pipeline.set_progress(None);
+            // The picture enrichment pass `convert` would have run (#896):
+            // `keep_picture_images=false` and the picture description
+            // reached every other format but never a PDF or image.
+            let converted = converted.map(|mut c| {
+                finish.enrich_pictures(&mut c.document, &source, &reporter);
+                c
+            });
             reporter.document_completed(match &converted {
                 Ok(c) if c.errors.is_empty() => docling::ConversionStatus::Success,
                 Ok(_) => docling::ConversionStatus::PartialSuccess,

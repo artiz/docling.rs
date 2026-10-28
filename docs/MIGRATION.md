@@ -987,6 +987,8 @@ converted once more as that format with a warning.
   - a *referenced* image (a path or `file:` URL, as `--images referenced` writes them) read from disk relative to the JSON file
   - so `--images embedded`/`referenced` work on docling-JSON input as they do on the original document, and a JSON→JSON round trip keeps the image
 - an unreadable reference degrades to the `<!-- image -->` placeholder
+- #899: `prov` and `pages` survive the round trip — the JSON export of a docling-JSON input carries every item's page, box (in its own `coord_origin`) and charspan and the document's page map, and the DocLang export the `<location>` tokens and `<page_break/>`s docling-core derives from them (`multi_page.json`: byte-identical to docling-core 2.104's render). Markdown is unchanged: the page markers render nothing
+  - a list item's box rides the DocLang 512 grid (the serializers group a list from adjacent items, which a wrapper would split): it comes back within a grid cell (under a point on A4) with charspan `[0, len]`; a list that runs onto another page keeps that page's items in the list, without a box
 - Reads docling's native JSON back into the `Node` model ($ref body tree walked through text items' `children` too — docling nests a section's content under its heading, #362 — formatting, list nesting, table grids)
 - A caption leads its picture and its table and trails its code block (a `CodeItem` is docling's only floating text item)
 - a marker docling-core already considers valid Markdown prints verbatim, so a reference list continuing over a page break keeps its numbering

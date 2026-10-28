@@ -326,6 +326,43 @@ async fn compact_tables_applies_to_pdf_input() {
     );
 }
 
+/// #896: `keep_picture_images=false` reaches PDF (and image) input too —
+/// those convert on the warm pipeline, which skipped the picture enrichment
+/// pass `convert` runs for every other format, so every picture came back
+/// with its bytes whatever the request said. Kept by default.
+#[tokio::test]
+async fn keep_picture_images_false_applies_to_pdf_input() {
+    if !ml_models_ready() {
+        eprintln!("skipping: the ML models are not present");
+        return;
+    }
+    let pdf = std::fs::read(repo_root().join("tests/data/pdf/sources/picture_classification.pdf"))
+        .expect("fixture");
+    let mut counts = Vec::new();
+    for keep in ["true", "false"] {
+        let (ct, body) = multipart(
+            "pictures.pdf",
+            &pdf,
+            &[
+                ("to", "json"),
+                ("no_ocr", "true"),
+                ("keep_picture_images", keep),
+            ],
+        );
+        let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+        let pictures = v["pictures"].as_array().expect("pictures");
+        assert!(!pictures.is_empty(), "the fixture has pictures");
+        counts.push((
+            pictures.len(),
+            pictures.iter().filter(|p| p.get("image").is_some()).count(),
+        ));
+    }
+    assert_eq!(counts[0].0, counts[0].1, "kept by default: {counts:?}");
+    assert_eq!(counts[1].1, 0, "dropped on request: {counts:?}");
+}
+
 /// #892: `ui: Some(false)` serves the API without the page — `/` is a 404
 /// naming the API, the logo is gone, while the API description, the probes
 /// and conversions answer as before. On by default.

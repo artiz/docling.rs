@@ -2929,7 +2929,11 @@ fn batch_convert_one(
         };
         p.set_progress(None);
         match converted {
-            Ok(document) => {
+            Ok(mut document) => {
+                // The picture enrichment `convert` runs (#896): without it
+                // `--no-picture-images` reached a batch's PDFs only through
+                // the single-file path.
+                converter.enrich_pictures(&mut document, &source, &reporter);
                 reporter.document_completed(if partial.is_empty() {
                     docling::ConversionStatus::Success
                 } else {

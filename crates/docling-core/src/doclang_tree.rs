@@ -185,6 +185,9 @@ struct Ser<'t> {
     pic_index: HashMap<usize, usize>,
     pictures: Pictures,
     assets: Option<Vec<(String, Vec<u8>)>>,
+    /// The referenced assets' digests and PNG bytes, decoded up front in
+    /// parallel (#898); empty for the other modes.
+    digests: crate::pixel_digest::Assets,
 }
 
 impl<'t> Ser<'t> {
@@ -219,6 +222,20 @@ impl<'t> Ser<'t> {
                 pic_index.insert(id, next);
             }
         }
+        let digests = if matches!(pictures, Pictures::Referenced { .. }) {
+            let mut ids: Vec<usize> = pic_index.keys().copied().collect();
+            ids.sort_unstable();
+            crate::pixel_digest::Assets::prepare(ids.into_iter().filter_map(|id| {
+                match &tree.items[id].kind {
+                    TreeKind::Picture {
+                        image: Some(img), ..
+                    } => Some(img.data.as_slice()),
+                    _ => None,
+                }
+            }))
+        } else {
+            crate::pixel_digest::Assets::empty()
+        };
         Ser {
             tree,
             visited: vec![false; n],
@@ -227,6 +244,7 @@ impl<'t> Ser<'t> {
             pic_index,
             pictures,
             assets: matches!(pictures, Pictures::Referenced { collect: true }).then(Vec::new),
+            digests,
         }
     }
 
@@ -679,15 +697,16 @@ impl<'t> Ser<'t> {
             let uri = match self.pictures {
                 Pictures::Placeholder => None,
                 Pictures::Embedded => Some(crate::pixel_digest::docling_data_uri(img).1),
-                Pictures::Referenced { .. } => self.pic_index.get(&id).map(|&idx| {
+                Pictures::Referenced { .. } => self.pic_index.get(&id).copied().map(|idx| {
                     let path = format!(
                         "assets/image_{idx:06}_{}.png",
-                        crate::pixel_digest::image_digest(&img.data)
+                        self.digests.digest(&img.data)
                     );
-                    if let Some(assets) = self.assets.as_mut() {
-                        let bytes = crate::pixel_digest::asset_png(&img.data)
-                            .unwrap_or_else(|| img.data.clone());
-                        assets.push((path.clone(), bytes));
+                    if self.assets.is_some() {
+                        let bytes = self.digests.take_png(&img.data);
+                        if let Some(assets) = self.assets.as_mut() {
+                            assets.push((path.clone(), bytes));
+                        }
                     }
                     path
                 }),

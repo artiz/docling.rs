@@ -101,6 +101,10 @@ pub(crate) struct StreamSettings {
     pub ocr_textline_orientation: Option<bool>,
     /// Picture-crop scale (#520); page images have no place in a stream.
     pub images_scale: Option<f32>,
+    /// [`DocumentConverter::keep_picture_images`] (#645): off, each page
+    /// batch loses its pictures' bytes before it is serialized (#896), as
+    /// the buffered path's document does.
+    pub keep_picture_images: bool,
     /// [`DocumentConverter::page_break_placeholder`] for the streamer — the
     /// PDF path never builds a `DoclingDocument` to carry it.
     pub page_break_placeholder: Option<String>,
@@ -304,6 +308,9 @@ fn run_pdf(
             if let Some(r) = redactor.as_mut() {
                 r.redact_nodes(&mut nodes);
                 r.redact_links(&mut links);
+            }
+            if !settings.keep_picture_images {
+                crate::converter::strip_picture_images_in(&mut nodes);
             }
             let chunk = streamer.push(&nodes, &links);
             // Referenced mode: this push's images hit the disk as its Markdown is

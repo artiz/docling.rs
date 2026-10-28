@@ -62,6 +62,7 @@ fn long_document(pages: usize, per_page: usize) -> DoclingDocument {
                 page_no: p,
                 bbox: [x, y, x + 40.0, y + 9.0],
                 charspan: [0, 6],
+                bottom_left: false,
                 seq: None,
                 inner: Box::new(Node::Paragraph {
                     text: format!("{:06}", p * per_page + i),
@@ -144,6 +145,7 @@ fn write_json_matches_the_value_off_the_compact_path() {
             page_no: 1,
             bbox: [10.0, 20.0, 700.0, 30.0],
             charspan: [0, 5],
+            bottom_left: false,
             seq: None,
             inner: Box::new(Node::Paragraph {
                 text: "[time: 0.0-1.5] hello".into(),
@@ -250,6 +252,7 @@ fn write_json_matches_the_value_for_tables() {
         page_no: 1,
         bbox: [10.0, 20.0, 700.0, 60.0],
         charspan: [0, 0],
+        bottom_left: false,
         seq: None,
         inner: Box::new(Node::Table(first_class)),
     });

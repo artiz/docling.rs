@@ -416,6 +416,7 @@ impl DeclarativeBackend for XlsxBackend {
                     page_no,
                     bbox: [l as f32, t as f32, r as f32, b as f32],
                     charspan: [0, 0],
+                    bottom_left: false,
                     seq: Some(seq),
                     inner: Box::new(node),
                 });

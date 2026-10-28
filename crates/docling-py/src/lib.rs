@@ -1130,6 +1130,9 @@ impl PyDocumentConverter {
                     .map(docling::ErrorItem::timeout)
                     .into_iter()
                     .collect();
+                // The picture enrichment `convert` runs (#896):
+                // `keep_picture_images=False` and the picture description.
+                converter.enrich_pictures(&mut c.document, &src, &reporter);
                 reporter.document_completed(if errors.is_empty() {
                     docling::ConversionStatus::Success
                 } else {

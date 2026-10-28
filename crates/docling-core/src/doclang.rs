@@ -34,6 +34,9 @@ struct Out {
     assets: Option<Vec<(String, Vec<u8>)>>,
     /// How a picture's image is written.
     pictures: Pictures,
+    /// The referenced assets' digests and PNG bytes, decoded up front in
+    /// parallel (#898); empty for the other modes, which decode as they go.
+    digests: crate::pixel_digest::Assets,
 }
 
 /// docling's `image_mode` for DocLang: where a picture's `<src>` points.
@@ -907,11 +910,26 @@ fn export_to_doclang(nodes: &[Node]) -> String {
 /// order, PNG for PNG and JPEG sources ([`crate::pixel_digest::asset_png`]),
 /// the original encoding for the rest (the archive writer converts those).
 pub(crate) fn render(nodes: &[Node], pictures: Pictures) -> (String, Vec<(String, Vec<u8>)>) {
+    let digests = if matches!(pictures, Pictures::Referenced { .. }) {
+        let mut images: Vec<&[u8]> = Vec::new();
+        crate::document::for_each_picture_in(nodes, &mut |n| {
+            if let Node::Picture {
+                image: Some(img), ..
+            } = n
+            {
+                images.push(img.data.as_slice());
+            }
+        });
+        crate::pixel_digest::Assets::prepare(images)
+    } else {
+        crate::pixel_digest::Assets::empty()
+    };
     let mut out = Out {
         lines: Vec::new(),
         pic_index: 0,
         assets: matches!(pictures, Pictures::Referenced { collect: true }).then(Vec::new),
         pictures,
+        digests,
     };
     out.push(0, "<doclang version=\"0.7\">".to_string());
     let mut i = 0usize;
@@ -1765,12 +1783,13 @@ fn emit_picture(
         }
         let path = format!(
             "assets/image_{idx:06}_{}.png",
-            crate::pixel_digest::image_digest(&img.data)
+            out.digests.digest(&img.data)
         );
-        if let Some(assets) = out.assets.as_mut() {
-            let bytes =
-                crate::pixel_digest::asset_png(&img.data).unwrap_or_else(|| img.data.clone());
-            assets.push((path.clone(), bytes));
+        if out.assets.is_some() {
+            let bytes = out.digests.take_png(&img.data);
+            if let Some(assets) = out.assets.as_mut() {
+                assets.push((path.clone(), bytes));
+            }
         }
         Some(path)
     });

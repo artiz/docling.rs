@@ -1713,3 +1713,55 @@ fn text_layer_only_auto_flag() {
     assert_eq!(code, 2);
     assert!(err.contains("true, false, auto"), "stderr: {err}");
 }
+
+/// #896: `--no-picture-images` reaches a batch's PDFs. The batch converts
+/// them on its own warm pipeline, which skipped the picture enrichment pass
+/// the single-file path runs, so the option held only there. Needs the
+/// layout model (the pictures come from it); skips without it.
+#[test]
+fn batch_drops_picture_images_on_request() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let models = root.join(".models");
+    if !models.join("layout_heron.onnx").exists() && !models.join("layout_heron_int8.onnx").exists()
+    {
+        eprintln!("skipping: models not found");
+        return;
+    }
+    let pdf = root.join("tests/data/pdf/sources/picture_classification.pdf");
+    let mut counts = Vec::new();
+    for drop in [false, true] {
+        let out = Scratch::new(if drop { "nopic" } else { "pic" });
+        let out_dir = out.path("");
+        let mut args = vec![
+            pdf.to_str().unwrap(),
+            "--output",
+            &out_dir,
+            "--to",
+            "json",
+            "--no-ocr",
+        ];
+        if drop {
+            args.push("--no-picture-images");
+        }
+        // Tests run with CWD = the crate dir: point the batch at the repo's
+        // assets (#285), as a deployment would.
+        let run = Command::new(env!("CARGO_BIN_EXE_docling-rs"))
+            .args(&args)
+            .env("DOCLING_RS_MODELS_DIR", &models)
+            .output()
+            .expect("run docling-rs");
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(run.status.success(), "{stderr}");
+        let json = std::fs::read_to_string(out.0.join("picture_classification.json"))
+            .expect("batch output");
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let pictures = v["pictures"].as_array().expect("pictures");
+        assert!(!pictures.is_empty(), "the fixture has pictures");
+        counts.push((
+            pictures.len(),
+            pictures.iter().filter(|p| p.get("image").is_some()).count(),
+        ));
+    }
+    assert_eq!(counts[0].0, counts[0].1, "kept by default: {counts:?}");
+    assert_eq!(counts[1].1, 0, "dropped on request: {counts:?}");
+}
