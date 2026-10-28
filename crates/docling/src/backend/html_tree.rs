@@ -35,7 +35,8 @@
 use std::collections::HashMap;
 
 use docling_core::tree::{
-    BlockOmission, Formatting, ItemTree, ListMeta, SourceBlock, SourceElement, TreeKind,
+    BlockOmission, Formatting, ItemTree, ListMeta, SourceBlock, SourceElement, SourceTextBuilder,
+    TreeKind,
 };
 use docling_core::{ContentLayer, Script, Table, TableCell};
 use ego_tree::{NodeId, NodeRef};
@@ -593,7 +594,7 @@ impl Collector<'_, '_> {
         } else {
             ctx.cell_table
         };
-        let text = own_text(el, self.all);
+        let (text, inlines) = own_text(el, &path, self.all);
         let is_block = !items.is_empty()
             || (!inline_tag(tag) && (!text.is_empty() || LEAF_TAGS.contains(&tag)));
         let mut block = ctx.block;
@@ -622,6 +623,7 @@ impl Collector<'_, '_> {
                 text,
                 items: items.clone(),
                 omitted,
+                inlines,
             });
             if !items.is_empty() {
                 block = Some(idx);
@@ -655,23 +657,44 @@ impl Collector<'_, '_> {
 /// An element's own text (#904): its text nodes and those of the inline
 /// elements inside it that are not blocks themselves (an `<a>` that
 /// produced items is one), a `<br>` as a space, nested blocks' text left
-/// out; whitespace runs collapsed to one space, trimmed.
-fn own_text(el: ElementRef<'_>, all: &HashMap<NodeId, Vec<usize>>) -> String {
-    fn gather(node: NodeRef<'_, HtmlNode>, all: &HashMap<NodeId, Vec<usize>>, out: &mut String) {
+/// out; whitespace runs collapsed to one space, trimmed — with every
+/// inline element's range in it (#911).
+fn own_text(
+    el: ElementRef<'_>,
+    path: &str,
+    all: &HashMap<NodeId, Vec<usize>>,
+) -> (String, Vec<docling_core::tree::SourceInline>) {
+    fn gather(
+        node: NodeRef<'_, HtmlNode>,
+        path: &str,
+        all: &HashMap<NodeId, Vec<usize>>,
+        b: &mut SourceTextBuilder,
+    ) {
+        let mut seen: HashMap<&str, usize> = HashMap::new();
         for child in node.children() {
             match child.value() {
-                HtmlNode::Text(t) => out.push_str(t),
-                HtmlNode::Element(e) if e.name() == "br" => out.push(' '),
+                HtmlNode::Text(t) => b.push_text(t),
+                HtmlNode::Element(e) if e.name() == "br" => b.push_text(" "),
                 HtmlNode::Element(e) if inline_tag(e.name()) && !all.contains_key(&child.id()) => {
-                    gather(child, all, out)
+                    let n = seen.entry(e.name()).or_insert(0);
+                    *n += 1;
+                    let child_path = format!("{path}/{}[{n}]", e.name());
+                    b.open_inline(e.name(), attrs_of(e), child_path.clone());
+                    gather(child, &child_path, all, b);
+                    b.close_inline();
+                }
+                HtmlNode::Element(e) => {
+                    // A nested block keeps its own text, but counts for the
+                    // positions of the inline siblings after it.
+                    *seen.entry(e.name()).or_insert(0) += 1;
                 }
                 _ => {}
             }
         }
     }
-    let mut raw = String::new();
-    gather(*el, all, &mut raw);
-    raw.split_whitespace().collect::<Vec<_>>().join(" ")
+    let mut b = SourceTextBuilder::new();
+    gather(*el, path, all, &mut b);
+    b.finish()
 }
 
 struct Walker<'a> {
@@ -2824,6 +2847,62 @@ mod tests {
             ]
         );
         assert_eq!(t.containers[0].attrs.len(), 2);
+    }
+
+    /// #911: the inline elements of a block keep their identity and their
+    /// range in its text, so a caller can leave one out — the
+    /// screen-reader alternative of a RIS paragraph — without dropping the
+    /// block or guessing from the text.
+    #[test]
+    fn inline_elements_keep_their_ranges() {
+        let visible = "Die Klägerin ist ein gemäß § 29 KSchG klagebefugter Verband.";
+        let alt = "Die Klägerin ist ein gemäß Paragraph 29 KSchG klagebefugter Verband.";
+        let t = tree(&format!(
+            r#"<html><body><p class="ErlText AlignLeft"><span aria-hidden="true">{visible}</span> <span class="sr-only">{alt}</span></p>
+<p>plain <b>bold <i>both</i></b> end</p></body></html>"#
+        ));
+        let b = &t.blocks[0];
+        assert_eq!(b.text, format!("{visible} {alt}"));
+        let spans: Vec<(&str, &str, &str)> = b
+            .inlines
+            .iter()
+            .map(|i| {
+                (
+                    i.path.as_str(),
+                    i.attrs[0].0.as_str(),
+                    &b.text[i.start..i.end],
+                )
+            })
+            .collect();
+        assert_eq!(
+            spans,
+            vec![
+                ("html/body[1]/p[1]/span[1]", "aria-hidden", visible),
+                ("html/body[1]/p[1]/span[2]", "class", alt),
+            ]
+        );
+        assert!(b.inlines[1].has_class("sr-only"));
+        assert_eq!(b.text_excluding(|i| i.has_class("sr-only")), visible);
+        assert_eq!(
+            b.text_excluding(|i| i.attr("aria-hidden") == Some("true")),
+            alt
+        );
+        assert_eq!(b.text_excluding(|_| false), b.text);
+        assert_eq!(b.text_excluding(|_| true), "");
+        assert_eq!(
+            t.source_text_excluding([0, 1], |i| i.has_class("sr-only") || i.tag == "i"),
+            format!("{visible}\nplain bold end")
+        );
+        // Nested inlines: the outer range holds the inner one.
+        let p2 = &t.blocks[1];
+        assert_eq!(p2.text, "plain bold both end");
+        let ranges: Vec<(&str, &str)> = p2
+            .inlines
+            .iter()
+            .map(|i| (i.tag.as_str(), &p2.text[i.start..i.end]))
+            .collect();
+        assert_eq!(ranges, vec![("b", "bold both"), ("i", "both")]);
+        assert_eq!(p2.inlines[1].path, "html/body[1]/p[2]/b[1]/i[1]");
     }
 
     /// Every text node of the source belongs to exactly one block: the

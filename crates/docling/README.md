@@ -131,7 +131,9 @@ it, or why none was — and each `TreeItem::block` points back at its block.
 (#910), `tree.path_of_id(id)` resolves either to its path and
 `tree.blocks_under(path)` selects the blocks inside it.
 `tree.source_text([i, j])` reads selected blocks with one newline between
-them, free of any serializer's separators:
+them, free of any serializer's separators; a block's `inlines` carry its
+inline elements with their ranges in the text, and `text_excluding` /
+`source_text_excluding` leave the ones you name out (#911):
 
 ```rust
 let tree = doc.tree.as_ref().unwrap();
