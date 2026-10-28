@@ -135,6 +135,9 @@ pub enum InputFormat {
     /// Macintosh 1–5 (`.mcw`) and ClarisWorks / AppleWorks 1–6 (`.cwk`), a
     /// docling.rs extension (#216): their text, told apart by content.
     MacWp,
+    /// Lotus Word Pro (`.lwp`, Word Pro 97 on), a docling.rs extension (#216):
+    /// the object store's stories read into paragraphs and headings.
+    Lwp,
     /// DjVu scanned documents (`.djvu`/`.djv`) — a docling.rs extension (#434);
     /// docling has no DjVu reader. Decoded in pure Rust (`djvu-rs`): the
     /// hidden per-page text layer by default, rasterize + OCR for scan-only
@@ -236,6 +239,7 @@ impl InputFormat {
             InputFormat::Hwp => "hwp",
             InputFormat::Cgm => "cgm",
             InputFormat::MacWp => "mac_wp",
+            InputFormat::Lwp => "lwp",
             InputFormat::Djvu => "djvu",
             InputFormat::Text => "text",
             InputFormat::Jsonl => "jsonl",
@@ -304,6 +308,7 @@ impl InputFormat {
             "hwp" => InputFormat::Hwp,
             "cgm" => InputFormat::Cgm,
             "mac_wp" => InputFormat::MacWp,
+            "lwp" => InputFormat::Lwp,
             "djvu" => InputFormat::Djvu,
             "text" => InputFormat::Text,
             "jsonl" => InputFormat::Jsonl,
@@ -780,6 +785,8 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         ("mw", MacWp),
         ("mcw", MacWp),
         ("cwk", MacWp),
+        // Lotus Word Pro (#216).
+        ("lwp", Lwp),
         // DjVu (#434): docling.rs extension, pure-Rust decode via `djvu-rs`.
         ("djvu", Djvu),
         ("djv", Djvu),

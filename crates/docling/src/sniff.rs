@@ -91,6 +91,10 @@ pub(crate) fn detect_any(bytes: &[u8]) -> Option<InputFormat> {
     {
         return Some(InputFormat::MacWp);
     }
+    // Lotus Word Pro's `WordPro` prefix and `LWP7` header tag (#216).
+    if crate::backend::lwp::looks_like_lwp(bytes) {
+        return Some(InputFormat::Lwp);
+    }
     // A Computer Graphics Metafile's BEGIN METAFILE element (#216).
     if crate::backend::cgm::looks_like_binary_cgm(bytes)
         || crate::backend::cgm::looks_like_clear_text_cgm(bytes)

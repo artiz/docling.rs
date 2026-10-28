@@ -102,3 +102,18 @@ fn mac_word_processors_are_sniffed() {
     let mw = std::fs::read(dir.join("libreoffice_macwrite_4.5.mw")).unwrap();
     assert!(markdown_of("t.mw", mw).contains("Exercice"));
 }
+
+/// Lotus Word Pro reads by content too: the `WordPro` / `LWP7` header.
+#[test]
+fn lotus_word_pro_is_sniffed() {
+    let bytes = std::fs::read(
+        repo_root().join("crates/docling/tests/data/lwp/sources/libreoffice_wordpro.lwp"),
+    )
+    .unwrap();
+    assert_eq!(
+        docling::InputFormat::detect(&bytes),
+        Some(docling::InputFormat::Lwp)
+    );
+    let md = markdown_of("upload", bytes);
+    assert!(md.contains("This line is bold"), "{md}");
+}

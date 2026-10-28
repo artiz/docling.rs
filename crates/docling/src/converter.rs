@@ -2954,6 +2954,8 @@ impl DocumentConverter {
                 // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
                 // backend for the whole DOS-era family.
                 InputFormat::Lotus => LotusBackend.convert(source)?,
+                // Lotus Word Pro (#216): Word Pro 97 and later.
+                InputFormat::Lwp => crate::backend::LwpBackend.convert(source)?,
                 // Classic Mac word processors (#216): MacWrite, Word for Mac, ClarisWorks.
                 InputFormat::MacWp => crate::backend::MacWpBackend.convert(source)?,
                 // Computer Graphics Metafile (#216): binary and clear-text.
