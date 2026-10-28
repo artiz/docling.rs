@@ -77,6 +77,49 @@ pub struct DoclingDocument {
     /// `TableItem.get_image` / `FormulaItem.get_image` can crop from it.
     /// Empty otherwise; no other export reads it.
     pub page_images: std::collections::BTreeMap<usize, PictureImage>,
+    /// What the reader ran into and read around (#912): a limit it hit —
+    /// an HTML page nested past `DOCLING_RS_MAX_HTML_DEPTH`, read as flat
+    /// text with no item tree and no source blocks — named, with the
+    /// effective limit, so a caller sees why the document lacks what it
+    /// lacks instead of an unexplained success. The converter reports each
+    /// as a `partial_success` error item.
+    pub notices: Vec<Notice>,
+}
+
+/// Something the reader did instead of what it does by default (#912),
+/// with the reason — see [`DoclingDocument::notices`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub kind: NoticeKind,
+    /// One line: what was hit, the effective limit, what the document
+    /// lacks because of it.
+    pub message: String,
+}
+
+/// What a [`Notice`] is about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoticeKind {
+    /// The source nests deeper than the cap `variable` sets (its effective
+    /// value `limit`): it was read as flat text — the content is there,
+    /// the item tree and the source blocks are not.
+    DepthLimit {
+        /// The environment variable that sets the cap.
+        variable: &'static str,
+        limit: usize,
+    },
+}
+
+impl Notice {
+    /// A [`NoticeKind::DepthLimit`] notice for `what` (the format read).
+    pub fn depth_limit(what: &str, variable: &'static str, limit: usize) -> Self {
+        Notice {
+            kind: NoticeKind::DepthLimit { variable, limit },
+            message: format!(
+                "{what} nested deeper than {limit} elements ({variable}): read as flat text, \
+                 without the item tree and the source blocks"
+            ),
+        }
+    }
 }
 
 /// A single piece of document content.
@@ -1431,6 +1474,7 @@ impl DoclingDocument {
             confidence: None,
             tree: None,
             page_images: std::collections::BTreeMap::new(),
+            notices: Vec::new(),
         }
     }
 

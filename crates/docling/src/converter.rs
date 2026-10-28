@@ -3239,6 +3239,10 @@ impl DocumentConverter {
         let redaction = self.redact(&mut document)?;
         self.finish_document(&mut document);
 
+        // What the reader read around (#912: an HTML page past the depth
+        // cap, flattened) is a problem the conversion survived — reported
+        // like one, so the status and every surface's error list say so.
+        errors.extend(document.notices.iter().map(crate::ErrorItem::notice));
         let status = if errors.is_empty() {
             ConversionStatus::Success
         } else {

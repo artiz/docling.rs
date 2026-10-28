@@ -244,6 +244,10 @@ pub struct SourceBlock {
     pub id: Option<String>,
     /// Its `class` attribute, as written.
     pub class: Option<String>,
+    /// Every attribute of the element, by name (#910): `id` and `class`
+    /// among them, and whatever else the source put there — `style`,
+    /// `aria-hidden`, a RIS element's `typ`.
+    pub attrs: Vec<(String, String)>,
     /// The element's path from the document root — each step the tag and
     /// the 1-based position among the parent's same-tag element children,
     /// `html/body/div[3]/p[1]` — stable for the document and unique to the
@@ -262,6 +266,186 @@ pub struct SourceBlock {
     /// Why no item was made from this block; `None` when `items` is not
     /// empty.
     pub omitted: Option<BlockOmission>,
+    /// The inline elements inside the block (#911) — a `<span
+    /// class="sr-only">`, a `<b>`, an `<a>` — each with its range in `text`,
+    /// in document order, nested ones after the ones they sit in.
+    pub inlines: Vec<SourceInline>,
+}
+
+impl SourceBlock {
+    /// The block's text without the inline elements `exclude` selects
+    /// (#911): their ranges cut out, whitespace normalized again. A
+    /// screen-reader alternative (`.sr-only`) left out, say — the caller
+    /// chooses, nothing is inferred from a class.
+    pub fn text_excluding(&self, exclude: impl Fn(&SourceInline) -> bool) -> String {
+        let mut cut: Vec<(usize, usize)> = self
+            .inlines
+            .iter()
+            .filter(|i| exclude(i))
+            .map(|i| (i.start, i.end))
+            .collect();
+        if cut.is_empty() {
+            return self.text.clone();
+        }
+        cut.sort_unstable();
+        let mut out = String::with_capacity(self.text.len());
+        let mut pos = 0;
+        for (start, end) in cut {
+            if start > pos {
+                out.push_str(&self.text[pos..start]);
+                out.push(' ');
+            }
+            pos = pos.max(end);
+        }
+        out.push_str(&self.text[pos.min(self.text.len())..]);
+        out.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+}
+
+/// An inline element inside a [`SourceBlock`] (#911): where its text sits
+/// in the block's, so a caller can select or leave out the text of one
+/// element — not a whole block — by what the source says about it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceInline {
+    /// The element's tag name (`span`, `b`, `a`, …).
+    pub tag: String,
+    /// Every attribute, by name.
+    pub attrs: Vec<(String, String)>,
+    /// Its path from the document root, as [`SourceBlock::path`].
+    pub path: String,
+    /// The byte range of its text in [`SourceBlock::text`] — always on
+    /// char boundaries, so `&text[start..end]` is the element's normalized
+    /// text; empty for an element with no text.
+    pub start: usize,
+    pub end: usize,
+}
+
+impl SourceInline {
+    /// The value of attribute `name`.
+    pub fn attr(&self, name: &str) -> Option<&str> {
+        self.attrs
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Its `id` attribute.
+    pub fn id(&self) -> Option<&str> {
+        self.attr("id")
+    }
+
+    /// Its `class` attribute, as written.
+    pub fn class(&self) -> Option<&str> {
+        self.attr("class")
+    }
+
+    /// Whether `class` is one of the element's classes.
+    pub fn has_class(&self, class: &str) -> bool {
+        self.class()
+            .is_some_and(|c| c.split_whitespace().any(|x| x == class))
+    }
+}
+
+/// Builds a [`SourceBlock`]'s normalized text while recording the inline
+/// elements' ranges in it (#911) — for a backend walking its source: text
+/// nodes through [`push_text`](Self::push_text), a line break as
+/// whitespace, an inline element between [`open_inline`](Self::open_inline)
+/// and [`close_inline`](Self::close_inline). Whitespace runs collapse to one
+/// space, the text is trimmed, and a range never starts with the space
+/// that separates it from what precedes.
+#[derive(Debug, Default)]
+pub struct SourceTextBuilder {
+    text: String,
+    /// Whitespace seen since the last non-space char, not yet written.
+    pending: bool,
+    inlines: Vec<SourceInline>,
+    /// The inlines open right now, as indices into `inlines`.
+    open: Vec<usize>,
+}
+
+impl SourceTextBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A text node (or any text) of the block.
+    pub fn push_text(&mut self, raw: &str) {
+        for c in raw.chars() {
+            if c.is_whitespace() {
+                self.pending = true;
+            } else {
+                self.flush_space();
+                self.text.push(c);
+            }
+        }
+    }
+
+    fn flush_space(&mut self) {
+        if self.pending {
+            // One space, however many elements' whitespace fell between two
+            // words (an empty spacing `<span>` between two others).
+            if !self.text.is_empty() && !self.text.ends_with(' ') {
+                self.text.push(' ');
+            }
+            self.pending = false;
+        }
+    }
+
+    /// An inline element starts here.
+    pub fn open_inline(&mut self, tag: &str, attrs: Vec<(String, String)>, path: String) {
+        self.flush_space();
+        let at = self.text.len();
+        self.open.push(self.inlines.len());
+        self.inlines.push(SourceInline {
+            tag: tag.to_string(),
+            attrs,
+            path,
+            start: at,
+            end: at,
+        });
+    }
+
+    /// The innermost open inline element ends here.
+    pub fn close_inline(&mut self) {
+        if let Some(i) = self.open.pop() {
+            self.inlines[i].end = self.text.len();
+        }
+    }
+
+    /// The text and the inline ranges; the text has no trailing space.
+    pub fn finish(mut self) -> (String, Vec<SourceInline>) {
+        while let Some(i) = self.open.pop() {
+            self.inlines[i].end = self.text.len();
+        }
+        if self.text.ends_with(' ') {
+            self.text.pop();
+            let len = self.text.len();
+            for i in &mut self.inlines {
+                i.start = i.start.min(len);
+                i.end = i.end.min(len);
+            }
+        }
+        (self.text, self.inlines)
+    }
+}
+
+/// An element of the source that is not a block but carries an `id` or a
+/// `class` (#910): a container — the `<div id="art_23">` an article's
+/// paragraphs sit in — so an excerpt selected by a container's identity
+/// resolves to a path and, through [`ItemTree::blocks_under`], to the blocks
+/// inside it. A block's own identity is on the block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceElement {
+    /// The element's tag name.
+    pub tag: String,
+    /// Its `id` attribute, when it has one.
+    pub id: Option<String>,
+    /// Its `class` attribute, as written.
+    pub class: Option<String>,
+    /// Every attribute, by name.
+    pub attrs: Vec<(String, String)>,
+    /// Its path from the document root, as [`SourceBlock::path`].
+    pub path: String,
 }
 
 /// Why a [`SourceBlock`] produced no item.
@@ -374,6 +558,9 @@ pub struct ItemTree {
     /// enumerates them (HTML); each item's [`TreeItem::block`] points into
     /// this. Empty otherwise.
     pub blocks: Vec<SourceBlock>,
+    /// The source's containers that carry an `id` or a `class` (#910), in
+    /// document order; see [`SourceElement`]. Empty when `blocks` is.
+    pub containers: Vec<SourceElement>,
 }
 
 impl ItemTree {
@@ -442,6 +629,58 @@ impl ItemTree {
         out
     }
 
+    /// [`source_text`](Self::source_text) without the inline elements
+    /// `exclude` selects in each block ([`SourceBlock::text_excluding`]).
+    pub fn source_text_excluding(
+        &self,
+        blocks: impl IntoIterator<Item = usize>,
+        exclude: impl Fn(&SourceInline) -> bool,
+    ) -> String {
+        let mut out = String::new();
+        for b in blocks {
+            let Some(block) = self.blocks.get(b) else {
+                continue;
+            };
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&block.text_excluding(&exclude));
+        }
+        out
+    }
+
+    /// The blocks under `path` (#910), in document order: those whose
+    /// [`SourceBlock::path`] is `path` or starts with `path/` — the block
+    /// itself, or everything inside a container.
+    pub fn blocks_under(&self, path: &str) -> Vec<usize> {
+        let prefix = format!("{path}/");
+        self.blocks
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.path == path || b.path.starts_with(&prefix))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// The path of the element with `id` (#910): a block's or a container's,
+    /// the first in document order when the source repeats an id.
+    pub fn path_of_id(&self, id: &str) -> Option<&str> {
+        let block = self
+            .blocks
+            .iter()
+            .find(|b| b.id.as_deref() == Some(id))
+            .map(|b| b.path.as_str());
+        let container = self
+            .containers
+            .iter()
+            .find(|c| c.id.as_deref() == Some(id))
+            .map(|c| c.path.as_str());
+        match (block, container) {
+            (Some(b), Some(c)) => Some(if b.len() <= c.len() && b < c { b } else { c }),
+            (b, c) => b.or(c),
+        }
+    }
+
     /// Append every item of `other` after this tree's, renumbering its
     /// indices (parents, children, comments, table/picture caption and
     /// rich-cell refs) and adding its body children to this body — so a
@@ -497,6 +736,7 @@ impl ItemTree {
                 *b += block_off;
             }
         }
+        self.containers.extend(other.containers);
     }
 
     /// Move `id` under `new_parent`, dropping it from its current parent's
