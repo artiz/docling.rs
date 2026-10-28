@@ -48,7 +48,7 @@ paths:
         **Batch**: several `file` parts in one multipart request convert as a
         batch, and the response format does not depend on how many. `to=md`
         and `to=text` answer in that format — the documents in request
-        order, a line of 56 dashes between blank lines separating them (a
+        order, a line of 80 dashes between blank lines separating them (a
         Markdown thematic break); `to=html` one page, the first document's
         skeleton holding every document's `page` div with `<hr><hr><hr>`
         between them; `to=latex` one document, `\clearpage` between the

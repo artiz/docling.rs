@@ -45,7 +45,7 @@ accepts the same request and returns a task id immediately — poll
 default 10 min; at most `--queue-size` jobs queue at once). Several `file`
 parts in one request convert as a batch, and the response format does not
 depend on how many: Markdown and text answer in that format — the documents
-in request order, a line of 56 dashes between blank lines separating them,
+in request order, a line of 80 dashes between blank lines separating them,
 Markdown streaming document by document; HTML as one page with
 `<hr><hr><hr>` between the documents; LaTeX as one document with
 `\clearpage` between the bodies — a failed file as an

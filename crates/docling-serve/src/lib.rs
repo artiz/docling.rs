@@ -2490,7 +2490,8 @@ fn text_string(state: &AppState, document: &DoclingDocument, options: &ConvertOp
 /// break in Markdown, a visible rule in text. Several inputs thus answer in
 /// the format one input does, in request order, instead of a JSON array
 /// whose shape depended on how many files were sent.
-pub const BATCH_SEPARATOR: &str = "--------------------------------------------------------";
+pub const BATCH_SEPARATOR: &str =
+    "--------------------------------------------------------------------------------";
 
 /// The separator to write after `tail` (the end of what was written so far):
 /// the blank line before the dashes is only what the text does not already
