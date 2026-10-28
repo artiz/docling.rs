@@ -103,7 +103,7 @@ pub enum InputFormat {
     /// record streams, content-sniffed on the BOF record and split into data
     /// regions like an ODS sheet.
     Lotus,
-    /// StarOffice 5 binaries (`.sdw`/`.sda`/`.sdd`/`.vor`) — a docling.rs
+    /// StarOffice 5 binaries (`.sdw`/`.sgl`/`.sda`/`.sdd`/`.vor`) — a docling.rs
     /// extension (#215); CFB containers parsed natively (text-level
     /// extraction). The document kind comes from the stream inside, so a
     /// `.vor` template of any application dispatches by content. StarCalc
@@ -702,6 +702,12 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         // container — Excel 97's own layout under another extension, so the
         // XLS reader takes it.
         ("xlr", Xls),
+        // Kingsoft (WPS Office) Spreadsheets (#216): `.et` and its templates
+        // `.ett` / `.eth` are BIFF8 in an OLE container as well — WPS writes
+        // Excel 97's `Workbook` stream under its own extension.
+        ("et", Xls),
+        ("ett", Xls),
+        ("eth", Xls),
         // StarOffice 5 binaries (#215): .vor templates dispatch by the CFB
         // stream inside (writer/draw/impress share the container). .sdc
         // routes here too so StarCalc gets its targeted "save as .ods" error
@@ -711,6 +717,10 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         ("sdd", StarOffice5),
         ("sdc", StarOffice5),
         ("vor", StarOffice5),
+        // The StarWriter 5 global (master) document (#216): libstaroffice
+        // reads it as the `StarWriterDocument` stream it is, its linked
+        // sections' text included as stored.
+        ("sgl", StarOffice5),
         // DjVu (#434): docling.rs extension, pure-Rust decode via `djvu-rs`.
         ("djvu", Djvu),
         ("djv", Djvu),

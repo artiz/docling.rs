@@ -1,4 +1,4 @@
-//! StarOffice 5 binary backend (`.sdw`/`.sda`/`.sdd`/`.vor`) — a docling.rs
+//! StarOffice 5 binary backend (`.sdw`/`.sgl`/`.sda`/`.sdd`/`.vor`) — a docling.rs
 //! extension (#215); docling reaches these only via LibreOffice, whose modern
 //! import goes through the reverse-engineered libstaroffice library.
 //!
@@ -14,6 +14,7 @@
 //!   exact record sequence is recursed). This is text-level extraction:
 //!   paragraphs in document order, tables flattening to their cell texts and
 //!   redline-deleted fragments kept (they live inline in the node string).
+//!   A global (master) document (`.sgl`, #216) is the same stream.
 //! - **`StarDrawDocument3`** (StarDraw / StarImpress 3–5, `.sda`/`.sdd`):
 //!   chunked (four ASCII bytes + version + total size). Master pages
 //!   (`DrMP`) hold the layout placeholders ("Doubleclick to edit …") and are

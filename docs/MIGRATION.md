@@ -280,10 +280,10 @@ converted once more as that format with a warning.
 | Category | Extensions | Notes |
 |---|---|---|
 | Text & markup | `.md` `.markdown` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` · HTML `.html` `.htm` `.xhtml` · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` · plain text & code `.py` `.rs` `.js` `.ts` `.java` `.go` `.sh` `.yaml` `.toml` `.ini` `.sql` `.log` … (and any extension whose bytes are text) · JSON Lines `.jsonl` `.ndjson` · bare `.xml` · feeds `.rss` `.atom` `.rdf` · Jupyter `.ipynb` | text encodings detected like docling's `decode_text`, or set with `encoding`; HTML JSON is docling's item tree; MHTML is parsed as MIME and routed through the HTML backend; LaTeX is docling's backend on a pylatexenc port — multi-file arXiv projects, math, `\newcommand`, `tabular`, figures; plain text (#671, MarkItDown's plain-text converter): a code extension is one code block in its language, anything else paragraphs; a `.json` that is not a `DoclingDocument`, a `.jsonl`, and an `.xml` matching no dialect (JATS/USPTO/XBRL/DocLang) are kept as one `json` / `xml` code block, never an empty document; Jupyter notebooks (#673, MarkItDown's `IpynbConverter`): markdown cells through the Markdown backend, code cells as code items in the kernel's language, raw cells as code blocks, `metadata.title` as the first heading when the notebook does not open with one, a UTF-8 BOM dropped, display formulas (`$$…$$`) as formula items, and the outputs under `ipynb_outputs` (`none` default; `text` keeps stream / `text/plain` results as code blocks and image outputs as pictures) |
-| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.vor` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
+| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.sgl` `.vor` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
 | Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` `.fodp` · OpenOffice 1.x `.sxi` `.sti` · StarImpress/StarDraw `.sdd` `.sda` | PPTX JSON is docling's item tree — slides, lists, tables, pictures, charts, notes, comments |
 | Diagrams | Visio `.vsdx` `.vsdm` · SVG `.svg` | Visio: pages as sections, shape text in reading order, connectors as a relations table; SVG rasterized into the image pipeline, or its `<text>` as paragraphs without ML |
-| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25`; merged cells keep their spans; chart sheets expose their chart |
+| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` · Kingsoft `.et` `.ett` `.eth` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25`; merged cells keep their spans; chart sheets expose their chart |
 | Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` | both container generations (`Index/*.iwa` and iWork '09 XML); Pages and Keynote mirror docling's readers, Keynote charts as classified pictures with their data table; Numbers as sheet/table text |
 | XML dialects | JATS / USPTO / XBRL / RIS (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` | XBRL converts without arelle: `dei` title, text blocks, numeric facts as docling's key-value graph, the taxonomy read offline from `xbrl_taxonomy`; RIS (#902, a docling.rs extension) is Austria's federal legal XML (`risdok`) — sections, headings, paragraphs with their formatting, lists, tables, running headers/footers as furniture |
 | PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (`--features heif`) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` | pure-Rust text layer, page renderer and scan raster, ONNX layout + TableFormer + OCR (`docling-pdf`; no native PDF library in the default build, `pdfium` is an opt-in feature — [`docs/PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md)); JPEG 2000 and JBIG2 decode in Rust (#598, #811 — `/JBIG2Globals` included; an image no decoder can read draws a mid-gray placeholder, a stencil too); DjVu reads its hidden text layer without models and falls back to OCR with them |
@@ -1188,6 +1188,14 @@ converted once more as that format with a warning.
 - Unverified against a real file — no public `.xlr` sample exists (format-corpus, Tika, LibreOffice and govdocs1 have none)
 - a non-BIFF `.xlr` (Works 5 or older) fails with the XLS reader's error
 
+#### Kingsoft Spreadsheets (.et, .ett, .eth)
+
+**Backend:** `xls.rs` via extension routing (#216)\
+**Status:** **docling.rs extension**
+
+- WPS Office's spreadsheet format is an Excel 97 BIFF8 `Workbook` stream in an OLE container under its own extension (`.et`; `.ett` / `.eth` its templates), so the XLS reader takes it unchanged
+- Unverified against a real file — no public `.et` sample was found (LibreOffice's test corpus has none); a WPS file in another container fails with the XLS reader's error
+
 #### AbiWord (.abw, .zabw, .awt)
 
 **Backend:** `abw.rs` (roxmltree; gzip via flate2 for .zabw, #216)\
@@ -1240,7 +1248,7 @@ converted once more as that format with a warning.
 - Corpus: LibreOffice's five libwps smoke files (Works 2.00A DOS, 3.0, 4.5, 5.0, 6.0) pin detection and the header/index/zone walk
 - content decoding is pinned by synthetic WPS4/WPS8 streams in the unit tests — no public corpus with real Works prose exists (govdocs1 has none)
 
-#### StarOffice 5 binaries (.sdw, .sda/.sdd, .vor)
+#### StarOffice 5 binaries (.sdw, .sgl, .sda/.sdd, .vor)
 
 **Backend:** `staroffice5.rs` (CFB via the shared `cfb.rs`, record/chunk walk per libstaroffice's reverse engineering, #215)\
 **Status:** **docling.rs extension — docling reaches these only via LibreOffice (libstaroffice)**
@@ -1253,6 +1261,7 @@ converted once more as that format with a warning.
   - pages (`DrPg`) as sections with outliner (`xV4B`) texts, outline depth as list nesting
   - master pages, the object-less handout and `~LT~Notizen` notes pages dropped (the binary format's notes pages are not read; ODP speaker notes are notes-layer items since #862)
 - `.vor` templates dispatch by the contained stream
+- a StarWriter 5 global (master) document (`.sgl`, #216) is the same `StarWriterDocument` stream, read the same way: the text it stores, its linked sub-documents not followed
 - Strings decode as cp1252
 - StarCalc (.sdc) has a different cell-record model and errors with a targeted save-as-.ods message — a follow-up
 

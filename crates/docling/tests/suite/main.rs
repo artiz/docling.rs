@@ -40,6 +40,7 @@ mod iwork;
 mod jpx_pictures;
 mod json_prov;
 mod latex_upstream;
+mod legacy_216;
 mod md_upstream;
 mod odf_upstream;
 mod options_inventory;
