@@ -17,6 +17,14 @@
 //!   backends never keep such an image).
 //!
 //! Anything else (GIF, BMP, EMF, …) keeps the encoded-bytes digest.
+//!
+//! Decoding every picture for its digest is the cost of a referenced-image
+//! export (#898: 4 s for 1359 pictures, on one thread, against 0.2 s to
+//! write the archive), so [`Assets`] decodes each distinct image once — the
+//! digest and the PNG bytes from one decode — across the host's cores,
+//! before the serializer walks the document.
+
+use std::collections::HashMap;
 
 use sha2::{Digest, Sha256};
 
@@ -69,7 +77,141 @@ pub(crate) fn asset_png(data: &[u8]) -> Option<Vec<u8>> {
     if is_png(data) {
         return Some(data.to_vec());
     }
-    let j = decode_jpeg(data)?;
+    encode_png(&decode_jpeg(data)?)
+}
+
+/// [`image_digest`] and [`asset_png`] of one image from one decode (a JPEG
+/// is decoded once, not twice).
+pub(crate) fn asset_of(data: &[u8]) -> (String, Option<Vec<u8>>) {
+    if is_png(data) {
+        let digest = match pil_png_bytes(data) {
+            Some(px) => sha256_hex(&px),
+            None => sha256_hex(data),
+        };
+        return (digest, Some(data.to_vec()));
+    }
+    match decode_jpeg(data) {
+        Some(j) => (sha256_hex(&j.data), encode_png(&j)),
+        None => (sha256_hex(data), None),
+    }
+}
+
+/// The digests and PNG bytes of a document's pictures, computed ahead of a
+/// referenced-image export (#898): each distinct image — keyed by its bytes'
+/// address, stable for the document being exported — decoded once, in
+/// parallel on the host's cores. The serializers take the PNG out as they
+/// name the asset; an image the cache does not hold (or holds no longer) is
+/// decoded on the spot, so the output is the same either way.
+pub(crate) struct Assets {
+    map: HashMap<AssetKey, (String, Option<Vec<u8>>)>,
+}
+
+/// An image's bytes by address and length.
+type AssetKey = (usize, usize);
+
+impl Assets {
+    /// Nothing prepared: every lookup decodes.
+    pub(crate) fn empty() -> Self {
+        Assets {
+            map: HashMap::new(),
+        }
+    }
+
+    /// Decode and digest every distinct image in `images`.
+    pub(crate) fn prepare<'a>(images: impl IntoIterator<Item = &'a [u8]>) -> Self {
+        let mut keys = Vec::new();
+        let mut distinct: Vec<&[u8]> = Vec::new();
+        for data in images {
+            let key = Self::key(data);
+            if !keys.contains(&key) {
+                keys.push(key);
+                distinct.push(data);
+            }
+        }
+        let assets = parallel_map(&distinct, |data| asset_of(data));
+        Assets {
+            map: keys.into_iter().zip(assets).collect(),
+        }
+    }
+
+    fn key(data: &[u8]) -> AssetKey {
+        (data.as_ptr() as usize, data.len())
+    }
+
+    /// [`image_digest`] of `data`.
+    pub(crate) fn digest(&self, data: &[u8]) -> String {
+        match self.map.get(&Self::key(data)) {
+            Some((digest, _)) => digest.clone(),
+            None => image_digest(data),
+        }
+    }
+
+    /// [`asset_png`] of `data`, or its own bytes for an encoding it does
+    /// not cover — moved out of the cache on the first call (a second asset
+    /// of the same image re-encodes).
+    pub(crate) fn take_png(&mut self, data: &[u8]) -> Vec<u8> {
+        self.map
+            .get_mut(&Self::key(data))
+            .and_then(|(_, png)| png.take())
+            .or_else(|| asset_png(data))
+            .unwrap_or_else(|| data.to_vec())
+    }
+}
+
+/// `f` over every item, on up to one thread per core (the host's
+/// parallelism, at most one thread per item), results in item order. Serial
+/// for one item, on wasm32 (no threads), or when a thread cannot be spawned.
+fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let threads = std::thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .min(items.len());
+        if threads > 1 {
+            let f = &f;
+            let mut slots: Vec<Option<R>> = items.iter().map(|_| None).collect();
+            let done = std::thread::scope(|scope| {
+                let mut handles = Vec::with_capacity(threads);
+                for t in 0..threads {
+                    // Strided, so a run of large images spreads across the
+                    // threads instead of landing on one.
+                    let worker = move || -> Vec<(usize, R)> {
+                        items
+                            .iter()
+                            .enumerate()
+                            .skip(t)
+                            .step_by(threads)
+                            .map(|(i, item)| (i, f(item)))
+                            .collect()
+                    };
+                    match std::thread::Builder::new()
+                        .name("docling-assets".into())
+                        .spawn_scoped(scope, worker)
+                    {
+                        Ok(h) => handles.push(h),
+                        Err(_) => return false,
+                    }
+                }
+                for h in handles {
+                    let Ok(part) = h.join() else {
+                        return false;
+                    };
+                    for (i, r) in part {
+                        slots[i] = Some(r);
+                    }
+                }
+                true
+            });
+            if done && slots.iter().all(Option::is_some) {
+                return slots.into_iter().map(|s| s.unwrap()).collect();
+            }
+        }
+    }
+    items.iter().map(f).collect()
+}
+
+/// The PNG file of a decoded gray/RGB JPEG.
+fn encode_png(j: &crate::jpeg::Image) -> Option<Vec<u8>> {
     let mut buf = Vec::new();
     {
         let mut enc = png::Encoder::new(&mut buf, j.width as u32, j.height as u32);
@@ -260,6 +402,54 @@ mod tests {
                 Some(want)
             );
         }
+    }
+
+    /// The prepared cache (#898) answers exactly what the one-at-a-time
+    /// functions do — PNG, JPEG, an encoding neither covers, duplicates —
+    /// and an image it was not prepared with, or already handed out, too.
+    #[test]
+    fn prepared_assets_match_the_serial_functions() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docling-pdf/tests/data/jpeg");
+        let jpg = std::fs::read(dir.join("rgb_420.jpg")).unwrap_or_default();
+        let gray = png(2, 1, 8, 0, &[&[7, 200]], None);
+        let rgb = png(1, 1, 8, 2, &[&[1, 2, 3]], None);
+        let gif = b"GIF89a-not-really".to_vec();
+        let mut images: Vec<&[u8]> = vec![&gray, &rgb, &gif, &gray];
+        if !jpg.is_empty() {
+            images.push(&jpg);
+        }
+        let mut cache = Assets::prepare(images.iter().copied());
+        assert_eq!(
+            cache.map.len(),
+            images.len() - 1,
+            "the duplicate is one entry"
+        );
+        for data in &images {
+            assert_eq!(cache.digest(data), image_digest(data));
+        }
+        for data in &images {
+            let want = asset_png(data).unwrap_or_else(|| data.to_vec());
+            assert_eq!(cache.take_png(data), want, "first take");
+            assert_eq!(cache.take_png(data), want, "re-encoded after the take");
+        }
+        // Not prepared: decoded on the spot.
+        let other = png(1, 1, 8, 0, &[&[9]], None);
+        assert_eq!(cache.digest(&other), image_digest(&other));
+        assert_eq!(cache.take_png(&other), other);
+        let empty = Assets::empty();
+        assert_eq!(empty.digest(&rgb), image_digest(&rgb));
+    }
+
+    #[test]
+    fn parallel_map_keeps_item_order() {
+        let items: Vec<u32> = (0..1000).collect();
+        assert_eq!(
+            parallel_map(&items, |&x| x * 3),
+            items.iter().map(|x| x * 3).collect::<Vec<_>>()
+        );
+        assert_eq!(parallel_map(&[5u32], |&x| x + 1), vec![6]);
+        assert!(parallel_map::<u32, u32>(&[], |&x| x).is_empty());
     }
 
     #[test]

@@ -1351,6 +1351,35 @@ pub struct TableStructure {
     pub col_header: Vec<Vec<bool>>,
 }
 
+/// [`for_each_picture_in_mut`], read-only: every picture in `nodes`, however
+/// nested, for a pass that only looks (the DocLang asset digests, #898).
+pub fn for_each_picture_in<'a>(nodes: &'a [Node], f: &mut dyn FnMut(&'a Node)) {
+    for node in nodes {
+        match node {
+            Node::Picture { .. } => f(node),
+            Node::Group { children, .. } | Node::PictureChildren(children) => {
+                for_each_picture_in(children, f)
+            }
+            Node::Located { inner, .. }
+            | Node::Prov { inner, .. }
+            | Node::Track { inner, .. }
+            | Node::Furniture { inner, .. }
+            | Node::Commented { inner, .. }
+            | Node::DoclangOnly(inner) => for_each_picture_in(std::slice::from_ref(inner), f),
+            Node::Table(t) => {
+                if let Some(blocks) = t.cell_blocks.as_ref() {
+                    for row in blocks {
+                        for cell in row {
+                            for_each_picture_in(cell, f);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// [`DoclingDocument::for_each_picture_mut`] over a node slice — every
 /// picture in `nodes`, however nested (groups, wrappers, table cell blocks),
 /// for a caller that holds page batches rather than a document (the
