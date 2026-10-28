@@ -279,8 +279,8 @@ converted once more as that format with a warning.
 
 | Category | Extensions | Notes |
 |---|---|---|
-| Text & markup | `.md` `.markdown` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` · HTML `.html` `.htm` `.xhtml` · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` · plain text & code `.py` `.rs` `.js` `.ts` `.java` `.go` `.sh` `.yaml` `.toml` `.ini` `.sql` `.log` … (and any extension whose bytes are text) · JSON Lines `.jsonl` `.ndjson` · bare `.xml` · feeds `.rss` `.atom` `.rdf` · Jupyter `.ipynb` | text encodings detected like docling's `decode_text`, or set with `encoding`; HTML JSON is docling's item tree; MHTML is parsed as MIME and routed through the HTML backend; LaTeX is docling's backend on a pylatexenc port — multi-file arXiv projects, math, `\newcommand`, `tabular`, figures; plain text (#671, MarkItDown's plain-text converter): a code extension is one code block in its language, anything else paragraphs; a `.json` that is not a `DoclingDocument`, a `.jsonl`, and an `.xml` matching no dialect (JATS/USPTO/XBRL/DocLang) are kept as one `json` / `xml` code block, never an empty document; Jupyter notebooks (#673, MarkItDown's `IpynbConverter`): markdown cells through the Markdown backend, code cells as code items in the kernel's language, raw cells as code blocks, `metadata.title` as the first heading when the notebook does not open with one, a UTF-8 BOM dropped, display formulas (`$$…$$`) as formula items, and the outputs under `ipynb_outputs` (`none` default; `text` keeps stream / `text/plain` results as code blocks and image outputs as pictures) |
-| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.sgl` `.vor` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
+| Text & markup | `.md` `.markdown` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` · HTML `.html` `.htm` `.xhtml` · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` · plain text & code `.py` `.rs` `.js` `.ts` `.java` `.go` `.sh` `.yaml` `.toml` `.ini` `.sql` `.log` … (and any extension whose bytes are text) · print files `.prn` · JSON Lines `.jsonl` `.ndjson` · bare `.xml` · feeds `.rss` `.atom` `.rdf` · Jupyter `.ipynb` | text encodings detected like docling's `decode_text`, or set with `encoding`; HTML JSON is docling's item tree; MHTML is parsed as MIME and routed through the HTML backend; LaTeX is docling's backend on a pylatexenc port — multi-file arXiv projects, math, `\newcommand`, `tabular`, figures; plain text (#671, MarkItDown's plain-text converter): a code extension is one code block in its language, anything else paragraphs; a `.json` that is not a `DoclingDocument`, a `.jsonl`, and an `.xml` matching no dialect (JATS/USPTO/XBRL/DocLang) are kept as one `json` / `xml` code block, never an empty document; Jupyter notebooks (#673, MarkItDown's `IpynbConverter`): markdown cells through the Markdown backend, code cells as code items in the kernel's language, raw cells as code blocks, `metadata.title` as the first heading when the notebook does not open with one, a UTF-8 BOM dropped, display formulas (`$$…$$`) as formula items, and the outputs under `ipynb_outputs` (`none` default; `text` keeps stream / `text/plain` results as code blocks and image outputs as pictures) |
+| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.sgl` `.vor` · T602 `.602` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
 | Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` `.fodp` · OpenOffice 1.x `.sxi` `.sti` · StarImpress/StarDraw `.sdd` `.sda` | PPTX JSON is docling's item tree — slides, lists, tables, pictures, charts, notes, comments |
 | Diagrams | Visio `.vsdx` `.vsdm` · SVG `.svg` | Visio: pages as sections, shape text in reading order, connectors as a relations table; SVG rasterized into the image pipeline, or its `<text>` as paragraphs without ML |
 | Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` · Kingsoft `.et` `.ett` `.eth` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25`; merged cells keep their spans; chart sheets expose their chart |
@@ -1195,6 +1195,29 @@ converted once more as that format with a warning.
 
 - WPS Office's spreadsheet format is an Excel 97 BIFF8 `Workbook` stream in an OLE container under its own extension (`.et`; `.ett` / `.eth` its templates), so the XLS reader takes it unchanged
 - Unverified against a real file — no public `.et` sample was found (LibreOffice's test corpus has none); a WPS file in another container fails with the XLS reader's error
+
+#### T602 (.602)
+
+**Backend:** `t602.rs` (#216, after LibreOffice's T602 import filter)\
+**Status:** **docling.rs extension** — docling reaches T602 only through LibreOffice
+
+- the Czechoslovak DOS word processor's 8-bit text: `@` setting lines (`@CT n` picks the code page — 0 Kamenický, the default; 1 Latin-2 / CP852; 2 KOI8-ČS — the rest are layout and skipped), `.` dot-command and comment lines left out, `0x1A` ends the text
+- style control bytes as runs: `0x02` bold, `0x04` italic, `0x0F` wide (read as bold), `0x13` underline, `0x14` / `0x16` super- / subscript
+- **Divergence from LibreOffice's default:** T602 has no paragraph mark (its text is hard-wrapped to the page), so a blank line ends a paragraph and the lines between read through — LibreOffice's "reformat paragraphs" option; its default keeps each line with a line break. A soft hyphen at a wrap (`0xAD 0x8D`) joins the word. A block drawn with box characters (a frame, a table) stays preformatted; a line opening with a `-` / `*` / `•` bullet starts a list item
+- **Divergence:** LibreOffice's code-page tables approximate (Kamenický `ĺ` as `ô`, its line-drawing range as letters); the code pages here are the standard ones (`dos_codepage.rs`)
+- Corpus: LibreOffice's two T602 test files (`crates/docling/tests/data/t602/`)
+
+#### Print files (.prn)
+
+**Backend:** `prn.rs` (#216)\
+**Status:** **docling.rs extension** — docling has no reader
+
+- a DOS or Windows "print to file": a report's fixed-width text (Lotus 1-2-3, dBase, the Generic / Text Only printer) or a printer stream for a PCL (LaserJet) or ESC/P (Epson) printer
+- printer codes out: PCL's parameterized escape sequences (their `W` data blocks — raster, font downloads — skipped by length) and the PJL job header; ESC/P commands by their parameter counts, bit images by length
+- overstrikes undone: a backspace overprints (`_⌫X` reads `X`), a bare carriage return's second pass (bold, underline) is dropped; a form feed is a page break
+- UTF-8 when the bytes are, else code page 437; blank-line-separated blocks become paragraphs, a block in columns (most lines hold an inner run of three or more spaces — a report's table) stays preformatted so the columns line up
+- PostScript is a program, not text: refused, with `ps2pdf` named
+- Corpus: two fixtures of our own (`crates/docling/tests/data/prn/`)
 
 #### AbiWord (.abw, .zabw, .awt)
 

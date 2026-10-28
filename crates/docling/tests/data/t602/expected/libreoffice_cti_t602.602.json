@@ -1,0 +1,518 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "libreoffice_cti_t602",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 6173875896694641001,
+    "filename": "libreoffice_cti_t602"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/groups/0"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
+      },
+      {
+        "$ref": "#/texts/8"
+      },
+      {
+        "$ref": "#/texts/9"
+      },
+      {
+        "$ref": "#/texts/10"
+      },
+      {
+        "$ref": "#/texts/11"
+      },
+      {
+        "$ref": "#/texts/12"
+      },
+      {
+        "$ref": "#/texts/13"
+      },
+      {
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/groups/1"
+      },
+      {
+        "$ref": "#/texts/19"
+      },
+      {
+        "$ref": "#/texts/20"
+      },
+      {
+        "$ref": "#/groups/2"
+      },
+      {
+        "$ref": "#/texts/24"
+      },
+      {
+        "$ref": "#/texts/25"
+      },
+      {
+        "$ref": "#/texts/26"
+      },
+      {
+        "$ref": "#/texts/27"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/15"
+        },
+        {
+          "$ref": "#/texts/16"
+        },
+        {
+          "$ref": "#/texts/17"
+        },
+        {
+          "$ref": "#/texts/18"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/21"
+        },
+        {
+          "$ref": "#/texts/22"
+        },
+        {
+          "$ref": "#/texts/23"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "┌───────────────────────────────────────────────────────────────┐\n│          Textový  editor Text602          │\n│                                                               │\n│                           verze: 3.00                         │\n│                                                               │\n│                    Software602, spol. s r.o.                  │\n│                                                               │\n│                          Pod pramenem 3,                      │\n│                          Praha 4, Nusle                       │\n│                                                               │\n│  Objednávky ................. P.O.Box 1, 140 00  Praha 4      │\n│  Prodejny :                                                   │\n│               Praha 1, Spálená 19     (Po-Pá  9,00-17,00)     │\n│               Praha 1, Biskupský Dvůr (Po-Pá 10,00-18,00)     │\n│                                                               │\n│  Ústředna :    (02)423817      nebo           (02)421368      │\n│                                                               │\n│  Hotline a záznam hovorů v mimopracovní době                  │\n│                                                               │\n│                (02)422506      nebo           (02)420905      │\n│                                                               │\n│  Fax :         (02)421105      Mail602 :      (02)420448      │\n│                                                               │\n│  Expedice :    (02)421517                                     │\n│                                                               │\n└───────────────────────────────────────────────────────────────┘",
+      "text": "┌───────────────────────────────────────────────────────────────┐\n│          Textový  editor Text602          │\n│                                                               │\n│                           verze: 3.00                         │\n│                                                               │\n│                    Software602, spol. s r.o.                  │\n│                                                               │\n│                          Pod pramenem 3,                      │\n│                          Praha 4, Nusle                       │\n│                                                               │\n│  Objednávky ................. P.O.Box 1, 140 00  Praha 4      │\n│  Prodejny :                                                   │\n│               Praha 1, Spálená 19     (Po-Pá  9,00-17,00)     │\n│               Praha 1, Biskupský Dvůr (Po-Pá 10,00-18,00)     │\n│                                                               │\n│  Ústředna :    (02)423817      nebo           (02)421368      │\n│                                                               │\n│  Hotline a záznam hovorů v mimopracovní době                  │\n│                                                               │\n│                (02)422506      nebo           (02)420905      │\n│                                                               │\n│  Fax :         (02)421105      Mail602 :      (02)420448      │\n│                                                               │\n│  Expedice :    (02)421517                                     │\n│                                                               │\n└───────────────────────────────────────────────────────────────┘",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Textový editor Text602 verze 3.00 je součástí dvou obchodních produktů:",
+      "text": "Textový editor Text602 verze 3.00 je součástí dvou obchodních produktů:"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Text602 verze 3.00",
+      "text": "Text602 verze 3.00",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Text602 KOMPLET",
+      "text": "Text602 KOMPLET",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Doplňující komponenty KOMPLETU jsou popsány v kapitolách informačního souboru CTI_KOMP.602. Součástí standardní dodávky jsou vždy tyto soubory:",
+      "text": "Doplňující komponenty KOMPLETU jsou popsány v kapitolách informačního souboru CTI_KOMP.602. Součástí standardní dodávky jsou vždy tyto soubory:"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "o **T602.EXE**, **T602.KLV** Exekuční soubor editoru **Text602** a připravené klávesnice KL8 a KL9 pro případnou redefinici.",
+      "text": "o **T602.EXE**, **T602.KLV** Exekuční soubor editoru **Text602** a připravené klávesnice KL8 a KL9 pro případnou redefinici."
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "o **T602.HLP** Soubor s nápovědou pro Text602.",
+      "text": "o **T602.HLP** Soubor s nápovědou pro Text602."
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "o ***.FNT** Soubory fontů pro standardní grafické drivery devíti a čtyřiadvacetijehličkových maticových tiskáren v kvalitě: DRAFT, NLQ, LQ a pro tryskové a laserové tiskárny.",
+      "text": "o ***.FNT** Soubory fontů pro standardní grafické drivery devíti a čtyřiadvacetijehličkových maticových tiskáren v kvalitě: DRAFT, NLQ, LQ a pro tryskové a laserové tiskárny."
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "o ***.DST** Definiční soubory pro tiskárny. Podrobný přehled a popis vlastností DST souborů najdete v informačním souboru CTI_MATD.602.",
+      "text": "o ***.DST** Definiční soubory pro tiskárny. Podrobný přehled a popis vlastností DST souborů najdete v informačním souboru CTI_MATD.602."
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "o **PREVIEW.DST** Definiční soubor pro tisk zrcadlového obrazu tiskové stránky (A4) na obrazovku.",
+      "text": "o **PREVIEW.DST** Definiční soubor pro tisk zrcadlového obrazu tiskové stránky (A4) na obrazovku."
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "o **FAX.DST** Definiční soubor pro výstup do faxového souboru.",
+      "text": "o **FAX.DST** Definiční soubor pro výstup do faxového souboru."
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "o **SLOV.MNU** Soubor pro slovenská menu (aktivuje se příkazem T602 /SLOV.MNU).",
+      "text": "o **SLOV.MNU** Soubor pro slovenská menu (aktivuje se příkazem T602 /SLOV.MNU)."
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "o **HC602.COM**, **PCXTF602.EXE**, **LOGO602.TIF** Program na snímání obsahu obrazovky a ukládání do souborů ve formátu TIFF. Převodní program pro obrázky uložené ve formátu PCX (např. z programu PaintBrush (Windows)) do formátu TIFF. Jako vzor je přiložen soubor LOGO602.TIF, který obsahuje znak naší firmy",
+      "text": "o **HC602.COM**, **PCXTF602.EXE**, **LOGO602.TIF** Program na snímání obsahu obrazovky a ukládání do souborů ve formátu TIFF. Převodní program pro obrázky uložené ve formátu PCX (např. z programu PaintBrush (Windows)) do formátu TIFF. Jako vzor je přiložen soubor LOGO602.TIF, který obsahuje znak naší firmy"
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Všechny soubory jsou dodávány v komprimované podobě a je nutné je instalovat pomocí programu INST602 (viz soubor CTI_1111.602).",
+      "text": "Všechny soubory jsou dodávány v komprimované podobě a je nutné je instalovat pomocí programu INST602 (viz soubor CTI_1111.602)."
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Změny a doplňky k manuálu",
+      "text": "Změny a doplňky k manuálu"
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "spouštěcí příkaz rezidentně instalovaného programu **HC602** byl změněn z povelu <Ctrl O><L> na <Ctrl Alt><O>.",
+      "text": "spouštěcí příkaz rezidentně instalovaného programu **HC602** byl změněn z povelu <Ctrl O><L> na <Ctrl Alt><O>.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "při tisku více kopií je možnost zvolit režim \"**Spojitě**\" nebo \"**Po stránkách**\". Bližší informace najdete v nápovědě k příkazu **počet Kopií**.",
+      "text": "při tisku více kopií je možnost zvolit režim \"**Spojitě**\" nebo \"**Po stránkách**\". Bližší informace najdete v nápovědě k příkazu **počet Kopií**.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Každá klávesnice si \"pamatuje\" polohu přepínače **Z > Y**. Přepínač se nastaví podle polohy, kterou měl naposledy při použití té které klávesnice. Nápověda k rozložení kláves je zobrazena vždy pro standardní tvar; t.j. bez prohození \"Z\" a \"Y\".",
+      "text": "Každá klávesnice si \"pamatuje\" polohu přepínače **Z > Y**. Přepínač se nastaví podle polohy, kterou měl naposledy při použití té které klávesnice. Nápověda k rozložení kláves je zobrazena vždy pro standardní tvar; t.j. bez prohození \"Z\" a \"Y\".",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Vedle programu HC602 (Orion) je zařazena další grafická utilita: program PCXTF602. Program je určen ke konverzi souborů obsahujících obrazové informace ve formátu PCX do formátu TIFF. Program se spouští z příkazové řádky operačního systému:",
+      "text": "Vedle programu HC602 (Orion) je zařazena další grafická utilita: program PCXTF602. Program je určen ke konverzi souborů obsahujících obrazové informace ve formátu PCX do formátu TIFF. Program se spouští z příkazové řádky operačního systému:",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "PCXTF602 *PCX_SOUBOR TIFF_SOUBOR* [/B|/C]",
+      "text": "PCXTF602 *PCX_SOUBOR TIFF_SOUBOR* [/B|/C]"
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "parametr /B znamená bílé pozadí (default), /C znamená černé pozadí.",
+      "text": "parametr /B znamená bílé pozadí (default), /C znamená černé pozadí."
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Editor umožňuje načíst soubory označené atributem Read Only. Tyto soubory jsou indikovány hvězdičkou, zobrazenou před názvem souboru. Soubor můžete **pouze prohlížet**, nemůžete jej však uložit ! Pokud jste však již v souboru provedli \"nenahraditelné\" úpravy a té hvězdičky jste si všimli až pozdě, poradíme vám malý trik: označte text jako blok a uložte jej do nového souboru.",
+      "text": "Editor umožňuje načíst soubory označené atributem Read Only. Tyto soubory jsou indikovány hvězdičkou, zobrazenou před názvem souboru. Soubor můžete **pouze prohlížet**, nemůžete jej však uložit ! Pokud jste však již v souboru provedli \"nenahraditelné\" úpravy a té hvězdičky jste si všimli až pozdě, poradíme vám malý trik: označte text jako blok a uložte jej do nového souboru.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Pokud spustíte Preview klávesovým povelem <Ctrl PrtScr>, ukazuje aktuální stránku textu. Spustíte-li jej příkazem Preview z menu Tisk, ukazuje stránky zvolené příkazy Od stránky a Do stránky.",
+      "text": "Pokud spustíte Preview klávesovým povelem <Ctrl PrtScr>, ukazuje aktuální stránku textu. Spustíte-li jej příkazem Preview z menu Tisk, ukazuje stránky zvolené příkazy Od stránky a Do stránky.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Budete-li chtít Váš Text602 trvale používat ve slovenském režimu, zadejte příkaz:",
+      "text": "Budete-li chtít Váš Text602 trvale používat ve slovenském režimu, zadejte příkaz:",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "COPY /B T602.EXE + SLOV.MNU T602.EXE",
+      "text": "COPY /B T602.EXE + SLOV.MNU T602.EXE"
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Reklamace",
+      "text": "Reklamace"
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Oprávněné reklamace budou vyřízeny **výměnným způsobem**. Vyměňuje se zásadně **celý** komplet dodávky (bez manuálu). Při telefonických dotazech zásadně uvádějte verzi editoru (3.00), své sériové číslo (uvedené na obalu diskety), případně verzi instalačního programu. Převážná většina reklamací je způsobena nekompatibilitou disketových mechanik. Při prvním neúspěchu proto nejprve zkuste instalovat z jiné disketové mechaniky nebo na jiném zařízení. **Před prvním spuštěním instalačních disket je zajistěte proti přepisu a tedy i zavirování (zalepte nebo u 3.5\" přesuňte šoupátko do \"otevřené\" polohy)**.",
+      "text": "Oprávněné reklamace budou vyřízeny **výměnným způsobem**. Vyměňuje se zásadně **celý** komplet dodávky (bez manuálu). Při telefonických dotazech zásadně uvádějte verzi editoru (3.00), své sériové číslo (uvedené na obalu diskety), případně verzi instalačního programu. Převážná většina reklamací je způsobena nekompatibilitou disketových mechanik. Při prvním neúspěchu proto nejprve zkuste instalovat z jiné disketové mechaniky nebo na jiném zařízení. **Před prvním spuštěním instalačních disket je zajistěte proti přepisu a tedy i zavirování (zalepte nebo u 3.5\" přesuňte šoupátko do \"otevřené\" polohy)**."
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Při problémech s instalací (je hlášena hardwarová chyba apod.) je (podle našich zkušeností) možné usuzovat na nákazu počítače virem. Nepokračujte v další práci bez důkladného otestování všech diskových médií a paměti počítače !!!!!",
+      "text": "Při problémech s instalací (je hlášena hardwarová chyba apod.) je (podle našich zkušeností) možné usuzovat na nákazu počítače virem. Nepokračujte v další práci bez důkladného otestování všech diskových médií a paměti počítače !!!!!"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

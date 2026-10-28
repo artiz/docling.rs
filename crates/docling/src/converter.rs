@@ -2954,6 +2954,10 @@ impl DocumentConverter {
                 // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
                 // backend for the whole DOS-era family.
                 InputFormat::Lotus => LotusBackend.convert(source)?,
+                // Print files (#216): text out of a report or a printer stream.
+                InputFormat::Prn => crate::backend::PrnBackend.convert(source)?,
+                // T602 (#216): docling.rs extension, after LibreOffice's filter.
+                InputFormat::T602 => crate::backend::T602Backend.convert(source)?,
                 // Quattro Pro (#216): docling.rs extension, native parse after
                 // libwps (DOS/Windows record streams, QPW OLE zones).
                 InputFormat::QuattroPro => QuattroBackend.convert(source)?,

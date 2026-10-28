@@ -109,6 +109,15 @@ pub enum InputFormat {
     /// `.vor` template of any application dispatches by content. StarCalc
     /// (`.sdc`) is a follow-up.
     StarOffice5,
+    /// T602 / Text602 (`.602`) — the Czechoslovak DOS word processor, a
+    /// docling.rs extension (#216): its 8-bit text with `@` settings, style
+    /// control bytes and the Kamenický / Latin-2 / KOI8-ČS code pages, read
+    /// natively after LibreOffice's T602 filter.
+    T602,
+    /// Print files (`.prn`) — a DOS or Windows "print to file": a report's
+    /// fixed-width text, or a PCL / ESC/P printer stream, a docling.rs extension
+    /// (#216); escape sequences and overstrikes taken out, columns kept.
+    Prn,
     /// DjVu scanned documents (`.djvu`/`.djv`) — a docling.rs extension (#434);
     /// docling has no DjVu reader. Decoded in pure Rust (`djvu-rs`): the
     /// hidden per-page text layer by default, rasterize + OCR for scan-only
@@ -204,6 +213,8 @@ impl InputFormat {
             InputFormat::Lotus => "lotus",
             InputFormat::QuattroPro => "quattro",
             InputFormat::StarOffice5 => "staroffice5",
+            InputFormat::T602 => "t602",
+            InputFormat::Prn => "prn",
             InputFormat::Djvu => "djvu",
             InputFormat::Text => "text",
             InputFormat::Jsonl => "jsonl",
@@ -266,6 +277,8 @@ impl InputFormat {
             "lotus" => InputFormat::Lotus,
             "quattro" => InputFormat::QuattroPro,
             "staroffice5" => InputFormat::StarOffice5,
+            "t602" => InputFormat::T602,
+            "prn" => InputFormat::Prn,
             "djvu" => InputFormat::Djvu,
             "text" => InputFormat::Text,
             "jsonl" => InputFormat::Jsonl,
@@ -721,6 +734,11 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         // reads it as the `StarWriterDocument` stream it is, its linked
         // sections' text included as stored.
         ("sgl", StarOffice5),
+        // T602 (#216): the Czechoslovak DOS word processor's own extension; a
+        // file also opens by its `@CT` header (the content sniff).
+        ("602", T602),
+        // Print-to-file output (#216): report text or a PCL / ESC/P stream.
+        ("prn", Prn),
         // DjVu (#434): docling.rs extension, pure-Rust decode via `djvu-rs`.
         ("djvu", Djvu),
         ("djv", Djvu),

@@ -28,6 +28,10 @@
 //! ```bash
 //! DOCLING_RS_REGEN=1 cargo test -p docling --test regression
 //! ```
+//!
+//! `DOCLING_RS_REGRESSION_FORMATS=t602,prn` restricts a run (checking or
+//! regenerating) to those format directories — for working on one backend
+//! without converting the whole corpus.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -77,6 +81,14 @@ fn sources() -> Vec<Source> {
         .filter(|p| p.is_dir())
         .collect();
     formats.sort();
+    if let Some(only) = std::env::var_os("DOCLING_RS_REGRESSION_FORMATS") {
+        let only = only.to_string_lossy().to_string();
+        let keep: Vec<&str> = only.split(',').map(str::trim).collect();
+        formats.retain(|p| {
+            p.file_name()
+                .is_some_and(|n| keep.contains(&n.to_string_lossy().as_ref()))
+        });
+    }
 
     let mirror = mirror_dir();
     let mut out = Vec::new();
