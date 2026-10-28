@@ -1731,10 +1731,11 @@ fn batch_drops_picture_images_on_request() {
     let mut counts = Vec::new();
     for drop in [false, true] {
         let out = Scratch::new(if drop { "nopic" } else { "pic" });
+        let out_dir = out.path("");
         let mut args = vec![
             pdf.to_str().unwrap(),
             "--output",
-            &out.path(""),
+            &out_dir,
             "--to",
             "json",
             "--no-ocr",
