@@ -51,6 +51,7 @@ pub use encryption::EncryptionError;
 pub use html::to_html_with_picture_refs;
 pub use json::code_language_label;
 pub use labels::DocItemLabel;
+pub use latex::escape_latex;
 pub use limits::LimitExceeded;
 pub use markdown::{code_fence, code_span, longest_backtick_run, ImageMode, MarkdownStreamer};
 pub use metadata::{DocumentMetadata, GpsPosition, MetadataOutput};

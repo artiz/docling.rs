@@ -46,9 +46,19 @@ paths:
         JSON), honoring `pages` and `scale`.
 
         **Batch**: several `file` parts in one multipart request convert as a
-        batch — the response is then `{"results": [...]}` with per-item
-        status (one bad file fails its item, not the batch), regardless of
-        `to`; binary dclx output is base64 in `dclx_base64`. A `.zip` file
+        batch, and the response format does not depend on how many. `to=md`
+        and `to=text` answer in that format — the documents in request
+        order, a line of 80 dashes between blank lines separating them (a
+        Markdown thematic break); `to=html` one page, the first document's
+        skeleton holding every document's `page` div with `<hr><hr><hr>`
+        between them; `to=latex` one document, `\clearpage` between the
+        bodies. A failed file is an `Error converting <name>: <reason>`
+        line (paragraph) in its place, and in `X-Docling-Errors` when the
+        response is buffered; Markdown streams document by document. The
+        formats that cannot be joined — `json`, `chunks`, `pandoc`, `vtt`
+        (one media file's cues), `dclx` (a binary archive, base64 in
+        `dclx_base64`), `images` — answer `{"results": [...]}` with per-item
+        status (one bad file fails its item, not the batch). A `.zip` file
         (upload, `sources[]` file item or cloud object) is such a batch of
         the documents inside it (#557); entries that do not convert —
         unsupported types, nested archives, unsafe paths, over the
@@ -389,8 +399,9 @@ paths:
       summary: Async job result
       description: >
         The finished conversion, with the same body, content type, and headers
-        the sync endpoint would have answered with (batches: the JSON results
-        array). Stays fetchable until the TTL evicts it.
+        the sync endpoint would have answered with (batches: the separated
+        Markdown / text body, else the JSON results array). Stays fetchable
+        until the TTL evicts it.
       operationId: jobResult
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
@@ -674,19 +685,22 @@ components:
       enum: [md, json, html, text, dclx, chunks, latex, pandoc, vtt, images]
       default: md
       description: |
-        `md` — Markdown, streamed as it converts.
+        `md` — Markdown, streamed as it converts (a batch: document by
+        document, the separator line between them).
         `json` — docling `DoclingDocument` JSON.
-        `html` — a complete HTML page (docling-core's HTML serializer, #492).
+        `html` — a complete HTML page (docling-core's HTML serializer, #492);
+        a batch is one page, `<hr><hr><hr>` between the documents.
         `text` — plain text (docling's `--to text`, `export_to_text`, #613):
         the Markdown without `#`, emphasis, link URLs, code fences or image
-        placeholders; lists and tables stay. `text/plain`; in a batch, inline
-        under `text`.
+        placeholders; lists and tables stay. `text/plain`; a batch is one
+        text body, the separator line between the documents.
         `pandoc` — Pandoc's AST as JSON (#515), `application/json`, for
         `pandoc -f json -t docx|odt|rst|typst|…`; pictures per `images`; in a
         batch, inline under `pandoc` as an object.
         `dclx` — DocLang OPC archive, returned as a download.
         `latex` — a complete LaTeX document (docling 2.124's `--to latex`,
-        #317), `text/x-tex`; in a batch, inline under `latex`.
+        #317), `text/x-tex`; a batch is one document, `\clearpage` between
+        the bodies.
         `vtt` — WebVTT subtitles (docling's `--to vtt`, #614): a cue per
         timed text item — an audio/video transcript's segments, a WebVTT
         input's cues — or the bare `WEBVTT` header when there is none;

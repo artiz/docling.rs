@@ -21,7 +21,8 @@ cargo run --release -p docling-serve                 # 127.0.0.1:5001
 curl -F file=@paper.pdf localhost:5001/v1/convert                # Markdown
 curl -F file=@report.docx 'localhost:5001/v1/convert?to=json'    # docling JSON
 curl -F file=@page.html   'localhost:5001/v1/convert?to=chunks'  # chunk records
-curl -F file=@a.pdf -F file=@b.docx localhost:5001/v1/convert    # batch → JSON results array
+curl -F file=@a.pdf -F file=@b.docx localhost:5001/v1/convert    # batch → one Markdown, a dashed line between the documents
+curl -F file=@a.pdf -F file=@b.docx 'localhost:5001/v1/convert?to=json'  # batch → JSON results array
 curl -H 'content-type: application/json' \
      -d '{"url": "https://example.com/doc.pdf", "to": "md"}' \
      localhost:5001/v1/convert     # fetch a URL (needs --allow-url-fetch)
@@ -42,7 +43,15 @@ Long conversions don't have to hold the connection: `POST /v1/convert/async`
 accepts the same request and returns a task id immediately — poll
 `/v1/status/{id}`, fetch `/v1/result/{id}` (kept `--result-ttl` seconds,
 default 10 min; at most `--queue-size` jobs queue at once). Several `file`
-parts in one request convert as a batch with per-item status. PDF/image
+parts in one request convert as a batch, and the response format does not
+depend on how many: Markdown and text answer in that format — the documents
+in request order, a line of 80 dashes between blank lines separating them,
+Markdown streaming document by document; HTML as one page with
+`<hr><hr><hr>` between the documents; LaTeX as one document with
+`\clearpage` between the bodies — a failed file as an
+`Error converting <name>: …` line in its place; the formats that cannot be
+joined (JSON, chunks, Pandoc, VTT, dclx, images) as a JSON `results` array
+with per-item status. PDF/image
 responses carry a conversion-confidence report (docling-serve v1.25 parity):
 an `X-Docling-Confidence` summary header (grades `poor`/`fair`/`good`/
 `excellent` + layout/OCR/parse scores) on every format, and the full per-page

@@ -19,7 +19,14 @@
 //!
 //! `POST /v1/convert` accepts either `multipart/form-data` with a `file` part
 //! (the filename's extension selects the input format; **several file parts
-//! make a batch**, #182 — the response is then a JSON `results` array with
+//! make a batch**, #182 — a Markdown, text, HTML or LaTeX batch answers in
+//! that format, the documents in request order: [`BATCH_SEPARATOR`] lines
+//! between them for Markdown and text (Markdown streaming document by
+//! document), `<hr><hr><hr>` between the documents' `page` divs of one HTML
+//! page, `\clearpage` between them in one LaTeX document, a failed one as
+//! an `Error converting <name>: …` line in its place; the formats that
+//! cannot be joined — JSON, chunks, Pandoc, VTT (one media file's cues),
+//! dclx (a binary archive), images — answer a JSON `results` array with
 //! per-item status) or an `application/json` body
 //! `{"url": "https://…", "file_name"?: "override.pdf"}`.
 //! Options ride along as multipart text parts, JSON fields, or query
@@ -1241,17 +1248,12 @@ async fn convert(
         .await
         .map_err(|e| ApiError::Internal(format!("semaphore: {e}")))?;
 
-    // A single Markdown conversion streams; everything else (other formats,
-    // #182 batches — which need per-item framing, and cloud targets — whose
-    // outputs leave through the store, #139) buffers.
+    // A Markdown conversion streams — a batch too, document after document
+    // with the separator between them; everything else (other formats and
+    // cloud targets — whose outputs leave through the store, #139) buffers.
     let is_markdown = matches!(to.as_str(), "md" | "markdown");
-    if is_markdown && sources.len() == 1 && target.is_none() {
-        let source = sources
-            .into_iter()
-            .next()
-            .expect("checked len")
-            .map_err(|(_, e)| e)?;
-        return stream_markdown(state.clone(), source, options, image_mode, permit).await;
+    if is_markdown && target.is_none() {
+        return stream_markdown(state.clone(), sources, options, image_mode, permit).await;
     }
 
     let st = state.clone();
@@ -1632,9 +1634,11 @@ async fn job_result(
             }
             // Clone rather than remove: the result stays re-fetchable until
             // the TTL evicts it (a client retrying a dropped response must not
-            // find a 404).
+            // find a 404). The survived problems too, so the result carries
+            // the `X-Docling-Status` / `X-Docling-Errors` the sync response
+            // would have.
             JobState::Success(stored) => StoredResponse {
-                errors: Vec::new(),
+                errors: stored.errors.clone(),
                 content_type: stored.content_type,
                 disposition: stored.disposition.clone(),
                 confidence: stored.confidence.clone(),
@@ -1700,8 +1704,10 @@ impl StoredResponse {
 
 /// Convert one or more sources on the current (blocking) thread and serialize
 /// the result. A single source renders as the plain output format; multiple
-/// sources (#182 batch) render as a JSON results array with per-item status,
-/// so one bad file fails its item, not the whole batch. With a cloud
+/// sources (#182 batch) render as that format too when it is Markdown or
+/// plain text ([`text_batch`]), else as a JSON results array with per-item
+/// status — either way one bad file fails its item, not the whole batch.
+/// With a cloud
 /// `target` (#139) every rendered output is uploaded instead and the
 /// response is a `RemoteTargetResult` acknowledgment (uploads run on the
 /// runtime `rt` — `Handle::block_on` is the sanctioned bridge from a
@@ -1727,6 +1733,12 @@ fn run_conversion(
             return run_conversion_to_put(state, sources, options, to, image_mode, url);
         }
         None => {}
+    }
+    // A Markdown / text / HTML / LaTeX batch answers in that format — for
+    // Markdown what the streaming handler sends, so an async job's result is
+    // the sync response.
+    if sources.len() > 1 && matches!(to, "md" | "markdown" | "text" | "html" | "latex") {
+        return Ok(text_batch(state, sources, options, to, image_mode));
     }
     if sources.len() == 1 {
         let source = sources
@@ -2473,6 +2485,238 @@ fn text_string(state: &AppState, document: &DoclingDocument, options: &ConvertOp
     doc.export_to_text()
 }
 
+/// What separates the documents of a batch in a Markdown or plain-text
+/// response: a line of dashes with a blank line on each side — a thematic
+/// break in Markdown, a visible rule in text. Several inputs thus answer in
+/// the format one input does, in request order, instead of a JSON array
+/// whose shape depended on how many files were sent.
+pub const BATCH_SEPARATOR: &str =
+    "--------------------------------------------------------------------------------";
+
+/// The separator to write after `tail` (the end of what was written so far):
+/// the blank line before the dashes is only what the text does not already
+/// end with, so a document ending in a newline gets no extra blank lines.
+fn batch_separator(tail: &str) -> String {
+    let lead = if tail.is_empty() || tail.ends_with("\n\n") {
+        ""
+    } else if tail.ends_with('\n') {
+        "\n"
+    } else {
+        "\n\n"
+    };
+    format!("{lead}{BATCH_SEPARATOR}\n\n")
+}
+
+/// A batch item that failed, in its place in a Markdown / text body: one
+/// line naming the file and the reason, so the rest of the batch still
+/// arrives (and, streamed, the body is already on its way).
+fn batch_error_text(name: &str, message: &str) -> String {
+    format!("Error converting {name}: {message}")
+}
+
+/// The same failure for the `X-Docling-Errors` header of a buffered batch.
+fn batch_error_item(name: &str, message: &str) -> docling::ErrorItem {
+    docling::ErrorItem {
+        component_type: "document_backend".into(),
+        module_name: name.to_string(),
+        error_message: message.to_string(),
+        page_no: None,
+    }
+}
+
+/// A Markdown / text / HTML / LaTeX batch, buffered: the documents in
+/// request order, a failed item in its place as a [`batch_error_text`] line
+/// — between [`BATCH_SEPARATOR`] lines for Markdown and text, as one page
+/// with `<hr><hr><hr>` between the documents' `page` divs for HTML
+/// ([`merge_html`]), as one LaTeX document with `\clearpage` between them
+/// ([`merge_latex`]). The failures and the problems the conversions
+/// survived (#497) go in the `X-Docling-Status` / `X-Docling-Errors` headers
+/// as for a single document.
+fn text_batch(
+    state: &AppState,
+    sources: Vec<SourceItem>,
+    options: &ConvertOptions,
+    to: &str,
+    image_mode: ImageMode,
+) -> StoredResponse {
+    // Each document rendered, or the failed item's name and reason.
+    let mut parts: Vec<Result<String, (String, String)>> = Vec::new();
+    let mut errors: Vec<docling::ErrorItem> = Vec::new();
+    for item in sources {
+        let source = match item {
+            Ok(source) => source,
+            Err((name, e)) => {
+                let msg = api_error_message(e);
+                errors.push(batch_error_item(&name, &msg));
+                parts.push(Err((name, msg)));
+                continue;
+            }
+        };
+        let name = source.name.clone();
+        match convert_document(state, source, options) {
+            Ok(mut converted) => {
+                errors.append(&mut converted.errors);
+                let doc = &converted.document;
+                parts.push(Ok(match to {
+                    "text" => text_string(state, doc, options),
+                    "html" => html_string(doc, image_mode),
+                    "latex" => doc.export_to_latex(),
+                    _ => markdown_string(state, doc, image_mode, options),
+                }));
+            }
+            Err(e) => {
+                let msg = api_error_message(e);
+                errors.push(batch_error_item(&name, &msg));
+                parts.push(Err((name, msg)));
+            }
+        }
+    }
+    let (content_type, body) = match to {
+        "text" => ("text/plain; charset=utf-8", join_separated(parts)),
+        "html" => ("text/html; charset=utf-8", merge_html(parts)),
+        "latex" => ("text/x-tex; charset=utf-8", merge_latex(parts)),
+        _ => ("text/markdown; charset=utf-8", join_separated(parts)),
+    };
+    StoredResponse {
+        errors,
+        content_type,
+        disposition: None,
+        confidence: None,
+        redaction: None,
+        body: body.into_bytes(),
+    }
+}
+
+/// Markdown / text batch body: the parts with [`BATCH_SEPARATOR`] between
+/// them — byte for byte what the streaming handler sends.
+fn join_separated(parts: Vec<Result<String, (String, String)>>) -> String {
+    let mut body = String::new();
+    for (i, part) in parts.into_iter().enumerate() {
+        if i > 0 {
+            let sep = batch_separator(&body);
+            body.push_str(&sep);
+        }
+        match part {
+            Ok(text) => body.push_str(&text),
+            Err((name, msg)) => body.push_str(&batch_error_text(&name, &msg)),
+        }
+    }
+    body
+}
+
+/// Python's `html.escape` without the quotes: text into an HTML element.
+fn html_text(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// HTML batch body: one page — the first rendered document's skeleton
+/// (`<!DOCTYPE html>` … `<body>` and `</body></html>`, its `<head>`'s title
+/// and style) holding every document's `<div class='page'>` in request
+/// order, `<hr><hr><hr>` between them, a failed item as a `<p>` with its
+/// [`batch_error_text`]. No document rendered → a bare skeleton of the
+/// error paragraphs.
+fn merge_html(parts: Vec<Result<String, (String, String)>>) -> String {
+    /// The page's `(prefix through "<body>\n", page content, suffix from
+    /// "</body>")`.
+    fn split(page: &str) -> Option<(&str, &str, &str)> {
+        let body_at = page.find("<body>\n")? + "<body>\n".len();
+        let end_at = page.rfind("\n</body>")?;
+        Some((
+            &page[..body_at],
+            &page[body_at..end_at],
+            &page[end_at + 1..],
+        ))
+    }
+    let skeleton = parts
+        .iter()
+        .find_map(|p| p.as_ref().ok())
+        .and_then(|page| split(page).map(|(pre, _, post)| (pre.to_string(), post.to_string())))
+        .unwrap_or_else(|| {
+            (
+                "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\"/>\n</head>\n<body>\n"
+                    .to_string(),
+                "</body>\n</html>".to_string(),
+            )
+        });
+    let inner: Vec<String> = parts
+        .into_iter()
+        .map(|p| match p {
+            Ok(page) => match split(&page) {
+                Some((_, content, _)) => content.to_string(),
+                None => page,
+            },
+            Err((name, msg)) => format!("<p>{}</p>", html_text(&batch_error_text(&name, &msg))),
+        })
+        .collect();
+    format!(
+        "{}{}\n{}",
+        skeleton.0,
+        inner.join("\n<hr><hr><hr>\n"),
+        skeleton.1
+    )
+}
+
+/// LaTeX batch body: one document — the first rendered document's preamble
+/// (the class and packages are the same for every document; its `\title`
+/// stays there), every document's body between `\begin{document}` and
+/// `\end{document}` in request order with `\clearpage` between them, a
+/// later document's `\title` moved in front of its `\maketitle` (set in the
+/// body, where LaTeX accepts it), a failed item as a bold
+/// [`batch_error_text`] paragraph.
+fn merge_latex(parts: Vec<Result<String, (String, String)>>) -> String {
+    /// `(preamble through "\begin{document}", body)`.
+    fn split(tex: &str) -> Option<(&str, &str)> {
+        let begin = "\\begin{document}";
+        let at = tex.find(begin)? + begin.len();
+        let end = tex.rfind("\\end{document}")?;
+        Some((&tex[..at], tex[at..end].trim_matches('\n')))
+    }
+    let mut preamble: Option<String> = None;
+    let mut bodies: Vec<String> = Vec::new();
+    for part in parts {
+        match part {
+            Ok(tex) => match split(&tex) {
+                Some((pre, body)) => {
+                    if preamble.is_none() {
+                        preamble = Some(pre.to_string());
+                        bodies.push(body.to_string());
+                    } else {
+                        // Its own `\title{…}` line, if any, ahead of its body.
+                        let title = pre
+                            .lines()
+                            .find(|l| l.starts_with("\\title{"))
+                            .map(|l| format!("{l}\n"))
+                            .unwrap_or_default();
+                        bodies.push(format!("{title}{body}"));
+                    }
+                }
+                None => bodies.push(tex),
+            },
+            Err((name, msg)) => bodies.push(format!(
+                "\\textbf{{{}}}",
+                docling_core::escape_latex(&batch_error_text(&name, &msg))
+            )),
+        }
+    }
+    let preamble = preamble.unwrap_or_else(|| {
+        let empty = docling_core::DoclingDocument::new("").export_to_latex();
+        split(&empty)
+            .map(|(pre, _)| pre.to_string())
+            .unwrap_or_else(|| "\\documentclass{article}\n\n\\begin{document}".to_string())
+    });
+    let bodies: Vec<String> = bodies.into_iter().filter(|b| !b.is_empty()).collect();
+    if bodies.is_empty() {
+        format!("{preamble}\n\n\\end{{document}}")
+    } else {
+        format!(
+            "{preamble}\n\n{}\n\n\\end{{document}}",
+            bodies.join("\n\n\\clearpage\n\n")
+        )
+    }
+}
+
 /// The HTML body for `to=html` (#492): the page carries its pictures per
 /// `images` the way the Markdown body does — embedded as `data:` URIs, or
 /// linked under `artifacts/` for `referenced` (the bytes are not served,
@@ -3117,20 +3361,50 @@ fn request_converter(
         })
 }
 
+/// A chunk of a streamed Markdown body: its text plus (first chunk of a
+/// single pipeline conversion only) the confidence summary header —
+/// computable only after conversion, which is exactly when the PDF/image
+/// branch sends its single chunk.
+type Chunk = (String, Option<header::HeaderValue>);
+
+/// The streaming worker's side of the channel, keeping the end of what it
+/// sent so the batch separator adds only the blank line the text lacks.
+struct ChunkSender {
+    tx: tokio::sync::mpsc::Sender<Result<Chunk, ApiError>>,
+    tail: String,
+}
+
+impl ChunkSender {
+    /// `false` when the receiver is gone — the client went away — stop.
+    fn send(&mut self, item: Result<Chunk, ApiError>) -> bool {
+        if let Ok((text, _)) = &item {
+            if !text.is_empty() {
+                self.tail = text
+                    .chars()
+                    .rev()
+                    .take(2)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+            }
+        }
+        self.tx.blocking_send(item).is_ok()
+    }
+}
+
 /// Markdown response: converted through the streaming serializer, body sent
-/// chunked as pages finish. The semaphore permit moves into the worker so the
-/// slot stays held until the stream ends.
+/// chunked as pages finish — a batch document after document, with
+/// [`BATCH_SEPARATOR`] between them and a failed document as one
+/// [`batch_error_text`] line in its place. The semaphore permit moves into
+/// the worker so the slot stays held until the stream ends.
 async fn stream_markdown(
     state: Arc<AppState>,
-    source: SourceDocument,
+    sources: Vec<SourceItem>,
     options: ConvertOptions,
     image_mode: ImageMode,
     permit: tokio::sync::OwnedSemaphorePermit,
 ) -> Result<Response, ApiError> {
-    // A chunk is its text plus (first chunk of a pipeline conversion only) the
-    // confidence summary header — computable only after conversion, which is
-    // exactly when the PDF/image branch sends its single chunk.
-    type Chunk = (String, Option<header::HeaderValue>);
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Chunk, ApiError>>(8);
     let st = state.clone();
     tokio::task::spawn_blocking(move || {
@@ -3144,89 +3418,33 @@ async fn stream_markdown(
             }
         }
         let _trim = TrimOnDrop;
-        let send = |item: Result<Chunk, ApiError>| {
-            // The receiver disappearing means the client went away — stop.
-            tx.blocking_send(item).is_ok()
+        let batch = sources.len() > 1;
+        let mut tx = ChunkSender {
+            tx,
+            tail: String::new(),
         };
-        // #304: the VLM pipeline buffers whatever the input format — it is a
-        // per-page remote conversion, and its "wrong input format" rejection
-        // must reach the client instead of the declarative streamer running a
-        // standard conversion the caller didn't ask for.
-        let buffered = options.convert.pipeline().ok() == Some(docling::PipelineKind::Vlm)
-            || matches!(source.format, InputFormat::Pdf | InputFormat::Image);
-        if buffered {
-            // Buffered document → streamed serialization is pointless for
-            // images (one step); PDFs stream page by page through the
-            // warm pipeline's converter equivalent: convert, then stream
-            // the serializer output. (True page-by-page pipeline
-            // streaming holds the model mutex anyway, so the wall-clock
-            // is the same; the client still gets incremental output.)
-            match convert_document(&st, source, &options) {
-                Ok(converted) => {
-                    // A partial document (#497) streams like a whole one; the
-                    // body is already on its way, so the reason is only logged.
-                    for e in &converted.errors {
-                        eprintln!("docling-serve: partial document: {}", e.describe());
-                    }
-                    let mut doc = converted.document;
-                    doc.strict_markdown = options.convert.strict.unwrap_or(st.cfg.strict);
-                    doc.page_break_placeholder = options.convert.page_break_placeholder.clone();
-                    let md = match image_mode {
-                        ImageMode::Placeholder => doc.export_to_markdown(),
-                        _ => {
-                            doc.export_to_markdown_with_images(image_mode, "artifacts")
-                                .0
-                        }
-                    };
-                    send(Ok((md, confidence_header(&doc))));
-                }
-                Err(e) => {
-                    send(Err(e));
-                }
+        for (i, item) in sources.into_iter().enumerate() {
+            if i > 0 && !tx.send(Ok((batch_separator(&tx.tail), None))) {
+                return;
             }
-        } else {
-            let converter = match request_converter(&st, &options) {
-                Ok(c) => c,
-                Err(e) => {
-                    send(Err(e));
+            let source = match item {
+                Ok(source) => source,
+                // A bad upload: alone, the error is the response; in a
+                // batch, its line.
+                Err((name, e)) if batch => {
+                    let line = batch_error_text(&name, &api_error_message(e));
+                    if !tx.send(Ok((line, None))) {
+                        return;
+                    }
+                    continue;
+                }
+                Err((_, e)) => {
+                    tx.send(Err(e));
                     return;
                 }
             };
-            // The streaming path bypasses `convert_document`, so the
-            // conversion metric (#297) is recorded here: success once the
-            // stream drains, failure on a conversion error (a client that
-            // disconnects mid-stream abandons the conversion and counts as
-            // neither).
-            match converter.convert_streaming_images(source, image_mode) {
-                Ok(stream) => {
-                    for chunk in stream {
-                        match chunk {
-                            Ok(s) => {
-                                if !send(Ok((s, None))) {
-                                    return;
-                                }
-                            }
-                            // The stream's last item on a spent document
-                            // budget (#497): the chunks before it are the
-                            // partial document and the body is already on
-                            // its way, so this ends the stream cleanly.
-                            Err(ConversionError::Timeout(msg)) => {
-                                eprintln!("docling-serve: partial document: {msg}");
-                                break;
-                            }
-                            Err(e) => {
-                                o11y::record_conversion(false);
-                                send(Err(conversion_api_error(&e)));
-                                return;
-                            }
-                        }
-                    }
-                    o11y::record_conversion(true);
-                }
-                Err(e) => {
-                    o11y::record_conversion(false);
-                    send(Err(conversion_api_error(&e)));
-                }
+            if !stream_one(&st, source, &options, image_mode, batch, &mut tx) {
+                return;
             }
         }
     });
@@ -3267,6 +3485,108 @@ async fn stream_markdown(
                 response.headers_mut().insert("x-docling-confidence", value);
             }
             Ok(response)
+        }
+    }
+}
+
+/// One document of a streamed Markdown response. `false` when the stream
+/// is over: the client went away, or (alone, not in a batch) the document
+/// failed — in a batch a failure is one [`batch_error_text`] line in the
+/// document's place and the next document follows.
+fn stream_one(
+    st: &AppState,
+    source: SourceDocument,
+    options: &ConvertOptions,
+    image_mode: ImageMode,
+    batch: bool,
+    tx: &mut ChunkSender,
+) -> bool {
+    let name = source.name.clone();
+    // Alone, the error itself: the status code when nothing was sent yet, a
+    // truncated body after.
+    let fail = |tx: &mut ChunkSender, e: ApiError| -> bool {
+        if batch {
+            tx.send(Ok((batch_error_text(&name, &api_error_message(e)), None)))
+        } else {
+            tx.send(Err(e));
+            false
+        }
+    };
+    // #304: the VLM pipeline buffers whatever the input format — it is a
+    // per-page remote conversion, and its "wrong input format" rejection
+    // must reach the client instead of the declarative streamer running a
+    // standard conversion the caller didn't ask for.
+    let buffered = options.convert.pipeline().ok() == Some(docling::PipelineKind::Vlm)
+        || matches!(source.format, InputFormat::Pdf | InputFormat::Image);
+    if buffered {
+        // Buffered document → streamed serialization is pointless for
+        // images (one step); PDFs stream page by page through the
+        // warm pipeline's converter equivalent: convert, then stream
+        // the serializer output. (True page-by-page pipeline
+        // streaming holds the model mutex anyway, so the wall-clock
+        // is the same; the client still gets incremental output.)
+        return match convert_document(st, source, options) {
+            Ok(converted) => {
+                // A partial document (#497) streams like a whole one; the
+                // body is already on its way, so the reason is only logged.
+                for e in &converted.errors {
+                    eprintln!("docling-serve: partial document: {}", e.describe());
+                }
+                let mut doc = converted.document;
+                doc.strict_markdown = options.convert.strict.unwrap_or(st.cfg.strict);
+                doc.page_break_placeholder = options.convert.page_break_placeholder.clone();
+                let md = match image_mode {
+                    ImageMode::Placeholder => doc.export_to_markdown(),
+                    _ => {
+                        doc.export_to_markdown_with_images(image_mode, "artifacts")
+                            .0
+                    }
+                };
+                // The confidence header is one document's: none for a batch.
+                let confidence = if batch { None } else { confidence_header(&doc) };
+                tx.send(Ok((md, confidence)))
+            }
+            Err(e) => fail(tx, e),
+        };
+    }
+    let converter = match request_converter(st, options) {
+        Ok(c) => c,
+        Err(e) => return fail(tx, e),
+    };
+    // The streaming path bypasses `convert_document`, so the
+    // conversion metric (#297) is recorded here: success once the
+    // stream drains, failure on a conversion error (a client that
+    // disconnects mid-stream abandons the conversion and counts as
+    // neither).
+    match converter.convert_streaming_images(source, image_mode) {
+        Ok(stream) => {
+            for chunk in stream {
+                match chunk {
+                    Ok(s) => {
+                        if !tx.send(Ok((s, None))) {
+                            return false;
+                        }
+                    }
+                    // The stream's last item on a spent document
+                    // budget (#497): the chunks before it are the
+                    // partial document and the body is already on
+                    // its way, so this ends the stream cleanly.
+                    Err(ConversionError::Timeout(msg)) => {
+                        eprintln!("docling-serve: partial document: {msg}");
+                        break;
+                    }
+                    Err(e) => {
+                        o11y::record_conversion(false);
+                        return fail(tx, conversion_api_error(&e));
+                    }
+                }
+            }
+            o11y::record_conversion(true);
+            true
+        }
+        Err(e) => {
+            o11y::record_conversion(false);
+            fail(tx, conversion_api_error(&e))
         }
     }
 }
