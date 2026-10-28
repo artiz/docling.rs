@@ -1,0 +1,3200 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "DSBT_20250904_2025_0_699_550_00",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 3697116267629042631,
+    "filename": "DSBT_20250904_2025_0_699_550_00"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/groups/0"
+      },
+      {
+        "$ref": "#/groups/1"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/texts/5"
+        },
+        {
+          "$ref": "#/texts/6"
+        },
+        {
+          "$ref": "#/texts/7"
+        },
+        {
+          "$ref": "#/texts/8"
+        },
+        {
+          "$ref": "#/texts/9"
+        },
+        {
+          "$ref": "#/texts/10"
+        },
+        {
+          "$ref": "#/texts/11"
+        }
+      ],
+      "content_layer": "body",
+      "name": "abschnitt 1",
+      "label": "section"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/12"
+        },
+        {
+          "$ref": "#/texts/13"
+        },
+        {
+          "$ref": "#/texts/14"
+        },
+        {
+          "$ref": "#/texts/15"
+        },
+        {
+          "$ref": "#/texts/16"
+        },
+        {
+          "$ref": "#/texts/17"
+        },
+        {
+          "$ref": "#/texts/18"
+        },
+        {
+          "$ref": "#/texts/19"
+        },
+        {
+          "$ref": "#/groups/2"
+        },
+        {
+          "$ref": "#/texts/23"
+        },
+        {
+          "$ref": "#/texts/24"
+        },
+        {
+          "$ref": "#/texts/25"
+        },
+        {
+          "$ref": "#/tables/0"
+        },
+        {
+          "$ref": "#/texts/26"
+        },
+        {
+          "$ref": "#/texts/27"
+        },
+        {
+          "$ref": "#/groups/3"
+        },
+        {
+          "$ref": "#/groups/4"
+        },
+        {
+          "$ref": "#/texts/33"
+        },
+        {
+          "$ref": "#/texts/34"
+        },
+        {
+          "$ref": "#/texts/35"
+        },
+        {
+          "$ref": "#/groups/5"
+        },
+        {
+          "$ref": "#/groups/6"
+        },
+        {
+          "$ref": "#/texts/44"
+        },
+        {
+          "$ref": "#/groups/7"
+        },
+        {
+          "$ref": "#/groups/8"
+        },
+        {
+          "$ref": "#/groups/9"
+        },
+        {
+          "$ref": "#/texts/57"
+        },
+        {
+          "$ref": "#/groups/10"
+        },
+        {
+          "$ref": "#/texts/63"
+        },
+        {
+          "$ref": "#/groups/11"
+        },
+        {
+          "$ref": "#/groups/12"
+        },
+        {
+          "$ref": "#/texts/74"
+        },
+        {
+          "$ref": "#/texts/75"
+        },
+        {
+          "$ref": "#/texts/76"
+        },
+        {
+          "$ref": "#/texts/77"
+        },
+        {
+          "$ref": "#/texts/78"
+        },
+        {
+          "$ref": "#/groups/13"
+        },
+        {
+          "$ref": "#/texts/81"
+        },
+        {
+          "$ref": "#/texts/82"
+        },
+        {
+          "$ref": "#/groups/14"
+        },
+        {
+          "$ref": "#/texts/86"
+        },
+        {
+          "$ref": "#/groups/15"
+        },
+        {
+          "$ref": "#/texts/95"
+        },
+        {
+          "$ref": "#/groups/18"
+        },
+        {
+          "$ref": "#/groups/19"
+        },
+        {
+          "$ref": "#/texts/100"
+        },
+        {
+          "$ref": "#/texts/101"
+        },
+        {
+          "$ref": "#/texts/102"
+        },
+        {
+          "$ref": "#/texts/103"
+        },
+        {
+          "$ref": "#/texts/104"
+        },
+        {
+          "$ref": "#/groups/20"
+        },
+        {
+          "$ref": "#/texts/107"
+        },
+        {
+          "$ref": "#/texts/108"
+        },
+        {
+          "$ref": "#/texts/109"
+        },
+        {
+          "$ref": "#/groups/21"
+        },
+        {
+          "$ref": "#/texts/113"
+        },
+        {
+          "$ref": "#/texts/114"
+        },
+        {
+          "$ref": "#/texts/115"
+        },
+        {
+          "$ref": "#/texts/116"
+        },
+        {
+          "$ref": "#/groups/22"
+        },
+        {
+          "$ref": "#/texts/119"
+        },
+        {
+          "$ref": "#/texts/120"
+        },
+        {
+          "$ref": "#/groups/23"
+        },
+        {
+          "$ref": "#/texts/124"
+        },
+        {
+          "$ref": "#/groups/24"
+        },
+        {
+          "$ref": "#/texts/132"
+        },
+        {
+          "$ref": "#/texts/133"
+        },
+        {
+          "$ref": "#/groups/25"
+        },
+        {
+          "$ref": "#/texts/136"
+        },
+        {
+          "$ref": "#/texts/137"
+        },
+        {
+          "$ref": "#/groups/26"
+        },
+        {
+          "$ref": "#/texts/141"
+        },
+        {
+          "$ref": "#/texts/142"
+        },
+        {
+          "$ref": "#/texts/143"
+        },
+        {
+          "$ref": "#/groups/27"
+        },
+        {
+          "$ref": "#/texts/147"
+        },
+        {
+          "$ref": "#/texts/148"
+        },
+        {
+          "$ref": "#/texts/149"
+        },
+        {
+          "$ref": "#/texts/150"
+        },
+        {
+          "$ref": "#/texts/151"
+        },
+        {
+          "$ref": "#/texts/152"
+        }
+      ],
+      "content_layer": "body",
+      "name": "abschnitt 2",
+      "label": "section"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/20"
+        },
+        {
+          "$ref": "#/texts/21"
+        },
+        {
+          "$ref": "#/texts/22"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/28"
+        },
+        {
+          "$ref": "#/texts/29"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/30"
+        },
+        {
+          "$ref": "#/texts/31"
+        },
+        {
+          "$ref": "#/texts/32"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/5",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/36"
+        },
+        {
+          "$ref": "#/texts/37"
+        },
+        {
+          "$ref": "#/texts/38"
+        },
+        {
+          "$ref": "#/texts/39"
+        },
+        {
+          "$ref": "#/texts/40"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/6",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/41"
+        },
+        {
+          "$ref": "#/texts/42"
+        },
+        {
+          "$ref": "#/texts/43"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/7",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/45"
+        },
+        {
+          "$ref": "#/texts/46"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/8",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/47"
+        },
+        {
+          "$ref": "#/texts/48"
+        },
+        {
+          "$ref": "#/texts/49"
+        },
+        {
+          "$ref": "#/texts/50"
+        },
+        {
+          "$ref": "#/texts/51"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/9",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/52"
+        },
+        {
+          "$ref": "#/texts/53"
+        },
+        {
+          "$ref": "#/texts/54"
+        },
+        {
+          "$ref": "#/texts/55"
+        },
+        {
+          "$ref": "#/texts/56"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/10",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/58"
+        },
+        {
+          "$ref": "#/texts/59"
+        },
+        {
+          "$ref": "#/texts/60"
+        },
+        {
+          "$ref": "#/texts/61"
+        },
+        {
+          "$ref": "#/texts/62"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/11",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/64"
+        },
+        {
+          "$ref": "#/texts/65"
+        },
+        {
+          "$ref": "#/texts/66"
+        },
+        {
+          "$ref": "#/texts/67"
+        },
+        {
+          "$ref": "#/texts/68"
+        },
+        {
+          "$ref": "#/texts/69"
+        },
+        {
+          "$ref": "#/texts/70"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/12",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/71"
+        },
+        {
+          "$ref": "#/texts/72"
+        },
+        {
+          "$ref": "#/texts/73"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/13",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/79"
+        },
+        {
+          "$ref": "#/texts/80"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/14",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/83"
+        },
+        {
+          "$ref": "#/texts/84"
+        },
+        {
+          "$ref": "#/texts/85"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/15",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/87"
+        },
+        {
+          "$ref": "#/texts/91"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/16",
+      "parent": {
+        "$ref": "#/texts/87"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/88"
+        },
+        {
+          "$ref": "#/texts/89"
+        },
+        {
+          "$ref": "#/texts/90"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/17",
+      "parent": {
+        "$ref": "#/texts/91"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/92"
+        },
+        {
+          "$ref": "#/texts/93"
+        },
+        {
+          "$ref": "#/texts/94"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/18",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/96"
+        },
+        {
+          "$ref": "#/texts/97"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/19",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/98"
+        },
+        {
+          "$ref": "#/texts/99"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/20",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/105"
+        },
+        {
+          "$ref": "#/texts/106"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/21",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/110"
+        },
+        {
+          "$ref": "#/texts/111"
+        },
+        {
+          "$ref": "#/texts/112"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/22",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/117"
+        },
+        {
+          "$ref": "#/texts/118"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/23",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/121"
+        },
+        {
+          "$ref": "#/texts/122"
+        },
+        {
+          "$ref": "#/texts/123"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/24",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/125"
+        },
+        {
+          "$ref": "#/texts/126"
+        },
+        {
+          "$ref": "#/texts/127"
+        },
+        {
+          "$ref": "#/texts/128"
+        },
+        {
+          "$ref": "#/texts/129"
+        },
+        {
+          "$ref": "#/texts/130"
+        },
+        {
+          "$ref": "#/texts/131"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/25",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/134"
+        },
+        {
+          "$ref": "#/texts/135"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/26",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/138"
+        },
+        {
+          "$ref": "#/texts/139"
+        },
+        {
+          "$ref": "#/texts/140"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/27",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/144"
+        },
+        {
+          "$ref": "#/texts/145"
+        },
+        {
+          "$ref": "#/texts/146"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "page_header",
+      "prov": [],
+      "orig": "Datenschutzbehörde 04.09.2025",
+      "text": "Datenschutzbehörde 04.09.2025"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "page_header",
+      "prov": [],
+      "orig": "04.09.2025",
+      "text": "04.09.2025"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "page_footer",
+      "prov": [],
+      "orig": "www.ris.bka.gv.at Seite 2 von 2",
+      "text": "www.ris.bka.gv.at Seite 2 von 2"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "page_footer",
+      "prov": [],
+      "orig": "www.ris.bka.gv.at Seite 1 von 1",
+      "text": "www.ris.bka.gv.at Seite 1 von 1"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Entscheidende Behörde",
+      "text": "Entscheidende Behörde",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Datenschutzbehörde",
+      "text": "Datenschutzbehörde"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Entscheidungsdatum",
+      "text": "Entscheidungsdatum",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "04.09.2025",
+      "text": "04.09.2025"
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Geschäftszahl",
+      "text": "Geschäftszahl",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2025-0.699.550",
+      "text": "2025-0.699.550"
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Anfechtung beim BVwG/VwGH/VfGH",
+      "text": "Anfechtung beim BVwG/VwGH/VfGH",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Dieses Straferkenntnis ist rechtskräftig.",
+      "text": "Dieses Straferkenntnis ist rechtskräftig."
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "page_header",
+      "prov": [],
+      "orig": "Datenschutzbehörde 04.09.2025",
+      "text": "Datenschutzbehörde 04.09.2025"
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "page_footer",
+      "prov": [],
+      "orig": "www.ris.bka.gv.at Seite 2 von 2",
+      "text": "www.ris.bka.gv.at Seite 2 von 2"
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Text",
+      "text": "Text",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "GZ: 2025-0.699.550 vom 4. September 2025 (Verfahrenszahl: DSB-D550.1221)",
+      "text": "GZ: 2025-0.699.550 vom 4. September 2025 (Verfahrenszahl: DSB-D550.1221)"
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[Anmerkung Bearbeiter/in: Namen und Firmen, Rechtsformen und Produktbezeichnungen, Adressen (inkl. URLs, IP- und E-Mail-Adressen), Aktenzahlen (und dergleichen), statistische Angaben etc., sowie deren Initialen und Abkürzungen können aus Pseudonymisierungsgründen abgekürzt und/oder verändert sein. Offenkundige Rechtschreib-, Grammatik- und Satzzeichenfehler wurden korrigiert.]",
+      "text": "[Anmerkung Bearbeiter/in: Namen und Firmen, Rechtsformen und Produktbezeichnungen, Adressen (inkl. URLs, IP- und E-Mail-Adressen), Aktenzahlen (und dergleichen), statistische Angaben etc., sowie deren Initialen und Abkürzungen können aus Pseudonymisierungsgründen abgekürzt und/oder verändert sein. Offenkundige Rechtschreib-, Grammatik- und Satzzeichenfehler wurden korrigiert.]"
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Straferkenntnis",
+      "text": "Straferkenntnis",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Beschuldigte: A*** GmbH (FN *0*271*h)",
+      "text": "Beschuldigte: A*** GmbH (FN *0*271*h)",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Die beschuldigte juristische Person mit Sitz in **** L***berg, M***platz *6/*2, hat als Verantwortliche im Sinne des Art. 4 Z 7 der Verordnung (EU) 2016/679 zum Schutz natürlicher Personen bei der Verarbeitung personenbezogener Daten, zum freien Datenverkehr und zur Aufhebung der Richtlinie 95/46/EG (Datenschutz-Grundverordnung, im Folgenden: „DSGVO“), ABl. Nr. L 119 vom 04.05.2016, S. 1 idgF, nachstehenden Sachverhalt verwirklicht und dadurch folgende Verwaltungsübertretung begangen:",
+      "text": "Die beschuldigte juristische Person mit Sitz in **** L***berg, M***platz *6/*2, hat als Verantwortliche im Sinne des Art. 4 Z 7 der Verordnung (EU) 2016/679 zum Schutz natürlicher Personen bei der Verarbeitung personenbezogener Daten, zum freien Datenverkehr und zur Aufhebung der Richtlinie 95/46/EG (Datenschutz-Grundverordnung, im Folgenden: „DSGVO“), ABl. Nr. L 119 vom 04.05.2016, S. 1 idgF, nachstehenden Sachverhalt verwirklicht und dadurch folgende Verwaltungsübertretung begangen:"
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Die Beschuldigte hat im Zeitraum vom 31.01.2025 bis 01.05.2025 innerhalb des Bundesgebietes Österreich gegen ihre Pflicht als Verantwortliche nach Art. 33 Abs. 1 DSGVO verstoßen, indem sie nach Kenntnis vom Vorfall über eine Verletzung des Schutzes personenbezogener Daten im Rahmen einer von ihr betriebenen Webseite unter „",
+      "text": "Die Beschuldigte hat im Zeitraum vom 31.01.2025 bis 01.05.2025 innerhalb des Bundesgebietes Österreich gegen ihre Pflicht als Verantwortliche nach Art. 33 Abs. 1 DSGVO verstoßen, indem sie nach Kenntnis vom Vorfall über eine Verletzung des Schutzes personenbezogener Daten im Rahmen einer von ihr betriebenen Webseite unter „"
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "https://h***.a***.at/",
+      "text": "https://h***.a***.at/",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ keine entsprechende Meldung im Sinne des Art. 33 Abs. 3 DSGVO unverzüglich und möglichst binnen 72 Stunden an die Datenschutzbehörde als zuständige Aufsichtsbehörde erstattet hat. Der Ausnahmetatbestand gemäß Art. 33 Abs. 1 DSGVO (Kein Risiko für die Rechte und Freiheiten natürlicher Personen) lag nicht vor.",
+      "text": "“ keine entsprechende Meldung im Sinne des Art. 33 Abs. 3 DSGVO unverzüglich und möglichst binnen 72 Stunden an die Datenschutzbehörde als zuständige Aufsichtsbehörde erstattet hat. Der Ausnahmetatbestand gemäß Art. 33 Abs. 1 DSGVO (Kein Risiko für die Rechte und Freiheiten natürlicher Personen) lag nicht vor."
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Verwaltungsübertretung nach:",
+      "text": "Verwaltungsübertretung nach:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Art. 33 Abs. 1 iVm Art. 83 Abs. 1 und 4 lit. a DSGVO ABl. L 2016/119, S. 1, idgF",
+      "text": "Art. 33 Abs. 1 iVm Art. 83 Abs. 1 und 4 lit. a DSGVO ABl. L 2016/119, S. 1, idgF"
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Wegen dieser Verwaltungsübertretung wird gemäß Art. 83 DSGVO folgende Strafe verhängt:",
+      "text": "Wegen dieser Verwaltungsübertretung wird gemäß Art. 83 DSGVO folgende Strafe verhängt:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Ferner haben Sie gemäß § 64 des Verwaltungsstrafgesetzes 1991 – VStG zu zahlen:",
+      "text": "Ferner haben Sie gemäß § 64 des Verwaltungsstrafgesetzes 1991 – VStG zu zahlen:"
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "87,-",
+      "text": "87,-",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/28",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Euro",
+      "text": "Euro",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/29",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " als Beitrag zu den Kosten des Strafverfahrens, das sind 10% der Strafe, mindestens jedoch 10 Euro;",
+      "text": " als Beitrag zu den Kosten des Strafverfahrens, das sind 10% der Strafe, mindestens jedoch 10 Euro;"
+    },
+    {
+      "self_ref": "#/texts/30",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Der zu zahlende ",
+      "text": "Der zu zahlende "
+    },
+    {
+      "self_ref": "#/texts/31",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Gesamtbetrag",
+      "text": "Gesamtbetrag",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/32",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " (Strafe/Kosten/Barauslagen) beträgt daher",
+      "text": " (Strafe/Kosten/Barauslagen) beträgt daher"
+    },
+    {
+      "self_ref": "#/texts/33",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "957,-",
+      "text": "957,-",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/34",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Euro",
+      "text": "Euro",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/35",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Zahlungsfrist:",
+      "text": "Zahlungsfrist:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/36",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Wird keine Beschwerde erhoben, ist dieses Straferkenntnis sofort vollstreckbar. Der Gesamtbetrag ist in diesem Fall binnen zwei Wochen nach Eintreten der Rechtskraft ",
+      "text": "Wird keine Beschwerde erhoben, ist dieses Straferkenntnis sofort vollstreckbar. Der Gesamtbetrag ist in diesem Fall binnen zwei Wochen nach Eintreten der Rechtskraft "
+    },
+    {
+      "self_ref": "#/texts/37",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "auf das Konto",
+      "text": "auf das Konto",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/38",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " [hier gekürzt] ",
+      "text": " [hier gekürzt] "
+    },
+    {
+      "self_ref": "#/texts/39",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "lautend auf die Datenschutzbehörde, einzuzahlen. Als Verwendungszweck möge die Geschäftszahl sowie das Erledigungsdatum angegeben werden",
+      "text": "lautend auf die Datenschutzbehörde, einzuzahlen. Als Verwendungszweck möge die Geschäftszahl sowie das Erledigungsdatum angegeben werden",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/40",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/41",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Erfolgt binnen dieser Frist keine Zahlung, kann der Gesamtbetrag eingemahnt werden. In diesem Fall ist ein pauschalierter Kostenbeitrag in der Höhe von fünf Euro zu entrichten. Erfolgt dennoch keine Zahlung, wird der ausstehende Betrag ",
+      "text": "Erfolgt binnen dieser Frist keine Zahlung, kann der Gesamtbetrag eingemahnt werden. In diesem Fall ist ein pauschalierter Kostenbeitrag in der Höhe von fünf Euro zu entrichten. Erfolgt dennoch keine Zahlung, wird der ausstehende Betrag "
+    },
+    {
+      "self_ref": "#/texts/42",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "vollstreckt",
+      "text": "vollstreckt",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/43",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/44",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Begründung:",
+      "text": "Begründung:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/45",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1. ",
+      "text": "1. ",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/46",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Folgender entscheidungsrelevanter Sachverhalt steht auf Grund des durchgeführten Beweisverfahrens fest:",
+      "text": "Folgender entscheidungsrelevanter Sachverhalt steht auf Grund des durchgeführten Beweisverfahrens fest:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/47",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.1. Die Beschuldigte ist eine Gesellschaft mit beschränkter Haftung und übt seit 13.11.2015 das freie Gewerbe „",
+      "text": "1.1. Die Beschuldigte ist eine Gesellschaft mit beschränkter Haftung und übt seit 13.11.2015 das freie Gewerbe „"
+    },
+    {
+      "self_ref": "#/texts/48",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Werbeagentur",
+      "text": "Werbeagentur",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/49",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ aus. Hierfür betreibt sie eine Webseite, die unter ",
+      "text": "“ aus. Hierfür betreibt sie eine Webseite, die unter "
+    },
+    {
+      "self_ref": "#/texts/50",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "„https://www.a***.at/“",
+      "text": "„https://www.a***.at/“",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/51",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " (Hauptdomain) abrufbar ist.",
+      "text": " (Hauptdomain) abrufbar ist."
+    },
+    {
+      "self_ref": "#/texts/52",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.2. Die Beschuldigte betreibt zudem eine Subdomain, die unter „",
+      "text": "1.2. Die Beschuldigte betreibt zudem eine Subdomain, die unter „"
+    },
+    {
+      "self_ref": "#/texts/53",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "https://h***.a***.at/",
+      "text": "https://h***.a***.at/",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/54",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ abrufbar ist. Dadurch können beispielweise interne Projekte von der Hauptdomain getrennt werden. Die Beschuldigte nutzte diese Domain konkret als „",
+      "text": "“ abrufbar ist. Dadurch können beispielweise interne Projekte von der Hauptdomain getrennt werden. Die Beschuldigte nutzte diese Domain konkret als „"
+    },
+    {
+      "self_ref": "#/texts/55",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Development Server",
+      "text": "Development Server",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/56",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“.",
+      "text": "“."
+    },
+    {
+      "self_ref": "#/texts/57",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.3. Die Beschuldigte wurde erstmals von einer bisher unbekannten Person zu einem nicht näher feststellbaren Zeitpunkt, jedoch jedenfalls im Januar 2025 und somit zumindest seit dem 31.01.2025, über eine Sicherheitslücke im Rahmen dieser Subdomain informiert.",
+      "text": "1.3. Die Beschuldigte wurde erstmals von einer bisher unbekannten Person zu einem nicht näher feststellbaren Zeitpunkt, jedoch jedenfalls im Januar 2025 und somit zumindest seit dem 31.01.2025, über eine Sicherheitslücke im Rahmen dieser Subdomain informiert."
+    },
+    {
+      "self_ref": "#/texts/58",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.4. Durch diese Lücke war ein Zugang durch unbefugte Personen auf personenbezogene Daten, die von der Beschuldigten aufbewahrt wurden (konkret Vor- und Nachname, E-Mail-Adresse, Geburtsdatum, Geschlecht, Telefonnummern, Unternehmenszugehörigkeit, Postleitzahlen), möglich. Zusammengefasst war das „",
+      "text": "1.4. Durch diese Lücke war ein Zugang durch unbefugte Personen auf personenbezogene Daten, die von der Beschuldigten aufbewahrt wurden (konkret Vor- und Nachname, E-Mail-Adresse, Geburtsdatum, Geschlecht, Telefonnummern, Unternehmenszugehörigkeit, Postleitzahlen), möglich. Zusammengefasst war das „"
+    },
+    {
+      "self_ref": "#/texts/59",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "File Directory",
+      "text": "File Directory",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/60",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ über die genannte Domain ungesichert zugänglich, wodurch das Herunterladen der auf dem „",
+      "text": "“ über die genannte Domain ungesichert zugänglich, wodurch das Herunterladen der auf dem „"
+    },
+    {
+      "self_ref": "#/texts/61",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Development Server",
+      "text": "Development Server",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/62",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ befindlichen Daten möglich war.",
+      "text": "“ befindlichen Daten möglich war."
+    },
+    {
+      "self_ref": "#/texts/63",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.5. Dieser erste Hinweis per E-Mail an die Beschuldigte wurde zwar empfangen, jedoch von einer Arbeitnehmerin der Beschuldigten als eine Spam-Nachricht gewertet und daher auch nicht weiter berücksichtigt. Es erfolgte demnach auch keine interne Weiterleitung an die Geschäftsführung oder an die IT-Abteilung.",
+      "text": "1.5. Dieser erste Hinweis per E-Mail an die Beschuldigte wurde zwar empfangen, jedoch von einer Arbeitnehmerin der Beschuldigten als eine Spam-Nachricht gewertet und daher auch nicht weiter berücksichtigt. Es erfolgte demnach auch keine interne Weiterleitung an die Geschäftsführung oder an die IT-Abteilung."
+    },
+    {
+      "self_ref": "#/texts/64",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.6. Da keine Maßnahmen im Zusammenhang mit dieser Sicherheitslücke ergriffen wurden, erfolgte am 16.02.2025 erneut ein Hinweis an die Beschuldigte durch einen Vertreter des „",
+      "text": "1.6. Da keine Maßnahmen im Zusammenhang mit dieser Sicherheitslücke ergriffen wurden, erfolgte am 16.02.2025 erneut ein Hinweis an die Beschuldigte durch einen Vertreter des „"
+    },
+    {
+      "self_ref": "#/texts/65",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "B*** IKT-Klubs",
+      "text": "B*** IKT-Klubs",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/66",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ (in Folge „B***“). Der Vertreter hat konkret per E-Mail an „",
+      "text": "“ (in Folge „B***“). Der Vertreter hat konkret per E-Mail an „"
+    },
+    {
+      "self_ref": "#/texts/67",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "office@a***.at",
+      "text": "office@a***.at",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/68",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ mit dem Betreff „",
+      "text": "“ mit dem Betreff „"
+    },
+    {
+      "self_ref": "#/texts/69",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "IT-Sicherheitslücke erlaubt Zugriff auf Kundendaten",
+      "text": "IT-Sicherheitslücke erlaubt Zugriff auf Kundendaten",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/70",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ die Beschuldigte über die mögliche Sicherheitsverletzung personenbezogener Daten informiert. Diese E-Mail-Nachricht des B*** wurde zeitgleich in Kopie an die Datenschutzbehörde (in Folge „DSB“) übermittelt.",
+      "text": "“ die Beschuldigte über die mögliche Sicherheitsverletzung personenbezogener Daten informiert. Diese E-Mail-Nachricht des B*** wurde zeitgleich in Kopie an die Datenschutzbehörde (in Folge „DSB“) übermittelt."
+    },
+    {
+      "self_ref": "#/texts/71",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.7. Der Hinweis vom B*** wurde schließlich an die Geschäftsführung der Beschuldigten weitergeleitet und es wurde noch am selben Tag die IT-Abteilung mit einem „",
+      "text": "1.7. Der Hinweis vom B*** wurde schließlich an die Geschäftsführung der Beschuldigten weitergeleitet und es wurde noch am selben Tag die IT-Abteilung mit einem „"
+    },
+    {
+      "self_ref": "#/texts/72",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Emergency-Ticket",
+      "text": "Emergency-Ticket",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/73",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ beauftragt, um die behauptete Sicherheitslücke näher zu beleuchten und gegebenenfalls Maßnahmen zu ergreifen. Die Beschuldigte schloss daraufhin die Lücke. Der Vertreter des B***, dem der Zugang zu den Daten möglich war, bestätigte gegenüber der Beschuldigten, dass er alle heruntergeladenen Daten unwiderruflich gelöscht hat. Abschließend wurde der Vorfall von der IT-Abteilung der Beschuldigten intern dokumentiert.",
+      "text": "“ beauftragt, um die behauptete Sicherheitslücke näher zu beleuchten und gegebenenfalls Maßnahmen zu ergreifen. Die Beschuldigte schloss daraufhin die Lücke. Der Vertreter des B***, dem der Zugang zu den Daten möglich war, bestätigte gegenüber der Beschuldigten, dass er alle heruntergeladenen Daten unwiderruflich gelöscht hat. Abschließend wurde der Vorfall von der IT-Abteilung der Beschuldigten intern dokumentiert."
+    },
+    {
+      "self_ref": "#/texts/74",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.8. Es erfolgte keine Meldung an die DSB durch die Beschuldigte.",
+      "text": "1.8. Es erfolgte keine Meldung an die DSB durch die Beschuldigte."
+    },
+    {
+      "self_ref": "#/texts/75",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.9. In Reaktion darauf leitete die DSB ein amtswegiges Prüfverfahren zur GZ: D213.3376 ein und forderte sie zur Stellungnahme auf, weil mit keiner Meldung durch die Beschuldigte zu rechnen war.",
+      "text": "1.9. In Reaktion darauf leitete die DSB ein amtswegiges Prüfverfahren zur GZ: D213.3376 ein und forderte sie zur Stellungnahme auf, weil mit keiner Meldung durch die Beschuldigte zu rechnen war."
+    },
+    {
+      "self_ref": "#/texts/76",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.10. Mit E-Mail vom 02.05.2025 informierte die Beschuldigte die DSB erstmals über die festgestellte Sicherheitsverletzung und die von ihr in Reaktion darauf ergriffenen Maßnahmen. Diese Informationen wurden nach einer erneuten Aufforderung der DSB mit E-Mail vom 14.07.2025 ergänzt, weshalb das genannte Verfahren zur Einstellung gebracht werden konnte.",
+      "text": "1.10. Mit E-Mail vom 02.05.2025 informierte die Beschuldigte die DSB erstmals über die festgestellte Sicherheitsverletzung und die von ihr in Reaktion darauf ergriffenen Maßnahmen. Diese Informationen wurden nach einer erneuten Aufforderung der DSB mit E-Mail vom 14.07.2025 ergänzt, weshalb das genannte Verfahren zur Einstellung gebracht werden konnte."
+    },
+    {
+      "self_ref": "#/texts/77",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.11. Gefragt nach der verspäteten Meldung an die DSB gab die Beschuldigte an, dass sie davon ausgegangen sei, die E-Mail des Vertreters vom B*** in Kopie an die DSB am 16.02.2025 sei ausreichend gewesen. Sie folgte daraus, dass eine weitere Meldung an die DSB durch die Beschuldigte nicht erforderlich gewesen sei.",
+      "text": "1.11. Gefragt nach der verspäteten Meldung an die DSB gab die Beschuldigte an, dass sie davon ausgegangen sei, die E-Mail des Vertreters vom B*** in Kopie an die DSB am 16.02.2025 sei ausreichend gewesen. Sie folgte daraus, dass eine weitere Meldung an die DSB durch die Beschuldigte nicht erforderlich gewesen sei."
+    },
+    {
+      "self_ref": "#/texts/78",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1.12. Die Beschuldigte erzielte im letzten Geschäftsjahr einen weltweiten Jahresumsatz in der Höhe von rund EUR 2.000.000,-.",
+      "text": "1.12. Die Beschuldigte erzielte im letzten Geschäftsjahr einen weltweiten Jahresumsatz in der Höhe von rund EUR 2.000.000,-."
+    },
+    {
+      "self_ref": "#/texts/79",
+      "parent": {
+        "$ref": "#/groups/13"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2. ",
+      "text": "2. ",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/80",
+      "parent": {
+        "$ref": "#/groups/13"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Die Feststellungen werden auf Grund folgender Beweiswürdigung getroffen:",
+      "text": "Die Feststellungen werden auf Grund folgender Beweiswürdigung getroffen:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/81",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2.1. Die unter Punkt 1. getroffenen Feststellungen ergeben sich im Wesentlichen aus dem Akteninhalt des amtswegigen Prüfverfahrens zur GZ: D213.3376, insbesondere der verfahrenseinleitenden Mail vom 16.02.2025 in Kopie an die DSB und die Stellungnahmen der Verantwortlichen vom 02.05.2025 sowie 14.07.2025. Die Feststellungen zum Sicherheitsvorfall per se und Reaktionsmaßnahmen der Beschuldigten ergaben sich durch die der DSB vorgelegten internen Dokumentation der Beschuldigten vom 16.02.2025",
+      "text": "2.1. Die unter Punkt 1. getroffenen Feststellungen ergeben sich im Wesentlichen aus dem Akteninhalt des amtswegigen Prüfverfahrens zur GZ: D213.3376, insbesondere der verfahrenseinleitenden Mail vom 16.02.2025 in Kopie an die DSB und die Stellungnahmen der Verantwortlichen vom 02.05.2025 sowie 14.07.2025. Die Feststellungen zum Sicherheitsvorfall per se und Reaktionsmaßnahmen der Beschuldigten ergaben sich durch die der DSB vorgelegten internen Dokumentation der Beschuldigten vom 16.02.2025"
+    },
+    {
+      "self_ref": "#/texts/82",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2.2. Die Beschuldigte brachte im Rahmen der schriftlichen Rechtfertigung vom 02.09.2025 im vorliegenden Ermittlungsverfahren keine im Widerspruch zum festgestellten Sachverhalt stehende Stellungnahme ein. Sie bestritt insbesondere nicht, dass sie keine Meldung an die DSB erstattet hat. Sie brachte lediglich in rechtlicher Hinsicht vor, dass sie davon ausgegangen sei, die ursprüngliche Mail des B*** vom 16.02.2025 in Kopie an die DSB sei ausreichend gewesen.",
+      "text": "2.2. Die Beschuldigte brachte im Rahmen der schriftlichen Rechtfertigung vom 02.09.2025 im vorliegenden Ermittlungsverfahren keine im Widerspruch zum festgestellten Sachverhalt stehende Stellungnahme ein. Sie bestritt insbesondere nicht, dass sie keine Meldung an die DSB erstattet hat. Sie brachte lediglich in rechtlicher Hinsicht vor, dass sie davon ausgegangen sei, die ursprüngliche Mail des B*** vom 16.02.2025 in Kopie an die DSB sei ausreichend gewesen."
+    },
+    {
+      "self_ref": "#/texts/83",
+      "parent": {
+        "$ref": "#/groups/14"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2.3. Die Feststellung unter Punkt 1.1 und 1.2 ergab sich durch eine amtswegige Recherche im Rahmen der genannten Webseite und eine Abfrage im „",
+      "text": "2.3. Die Feststellung unter Punkt 1.1 und 1.2 ergab sich durch eine amtswegige Recherche im Rahmen der genannten Webseite und eine Abfrage im „"
+    },
+    {
+      "self_ref": "#/texts/84",
+      "parent": {
+        "$ref": "#/groups/14"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Gewerbeinformationssystem Austria",
+      "text": "Gewerbeinformationssystem Austria",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/85",
+      "parent": {
+        "$ref": "#/groups/14"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“.",
+      "text": "“."
+    },
+    {
+      "self_ref": "#/texts/86",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2.4. Der unter Punkt 1.3 sowie 1.5 festgestellte Sachverhalt, wonach der Beschuldigten bereits im Januar 2025 ein Hinweis auf die Sicherheitslücke erteilt wurde, ergibt sich unter Berücksichtigung folgender Umstände:",
+      "text": "2.4. Der unter Punkt 1.3 sowie 1.5 festgestellte Sachverhalt, wonach der Beschuldigten bereits im Januar 2025 ein Hinweis auf die Sicherheitslücke erteilt wurde, ergibt sich unter Berücksichtigung folgender Umstände:"
+    },
+    {
+      "self_ref": "#/texts/87",
+      "parent": {
+        "$ref": "#/groups/15"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/16"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/88",
+      "parent": {
+        "$ref": "#/groups/16"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Mit E-Mail vom 29.05.2025 informierte der Vertreter des B*** die DSB zusätzlich darüber, dass eine nicht genannte „",
+      "text": "Mit E-Mail vom 29.05.2025 informierte der Vertreter des B*** die DSB zusätzlich darüber, dass eine nicht genannte „"
+    },
+    {
+      "self_ref": "#/texts/89",
+      "parent": {
+        "$ref": "#/groups/16"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "dritte Person",
+      "text": "dritte Person",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/90",
+      "parent": {
+        "$ref": "#/groups/16"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ die Beschuldigte bereits im Januar 2025 über die Sicherheitslücke informiert habe.",
+      "text": "“ die Beschuldigte bereits im Januar 2025 über die Sicherheitslücke informiert habe."
+    },
+    {
+      "self_ref": "#/texts/91",
+      "parent": {
+        "$ref": "#/groups/15"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/17"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/92",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Mit Stellungnahme vom 14.07.2025 bestätigte die Beschuldigte in diesem Zusammenhang, dass nach interner Nachforschung der Hinweis im Januar entdeckt worden sei. Dieser Hinweis wurde ursprünglich von einer Mitarbeiterin der Beschuldigten „",
+      "text": "Mit Stellungnahme vom 14.07.2025 bestätigte die Beschuldigte in diesem Zusammenhang, dass nach interner Nachforschung der Hinweis im Januar entdeckt worden sei. Dieser Hinweis wurde ursprünglich von einer Mitarbeiterin der Beschuldigten „"
+    },
+    {
+      "self_ref": "#/texts/93",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "fälschlicherweise als Spam eingestuft und daher nicht weiter eskaliert",
+      "text": "fälschlicherweise als Spam eingestuft und daher nicht weiter eskaliert",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/94",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“. Daher sei auch eine Schulung in Reaktion darauf erfolgt, um die Mitarbeiter dahingehend zu sensibilisieren. Das Datum der ersten Mail mit dem Hinweis konnte jedoch nicht festgestellt werden, weshalb davon ausgegangen werden kann, dass die Beschuldigte zumindest seit dem 31.01.2025 Kenntnis über den Vorfall hatte.",
+      "text": "“. Daher sei auch eine Schulung in Reaktion darauf erfolgt, um die Mitarbeiter dahingehend zu sensibilisieren. Das Datum der ersten Mail mit dem Hinweis konnte jedoch nicht festgestellt werden, weshalb davon ausgegangen werden kann, dass die Beschuldigte zumindest seit dem 31.01.2025 Kenntnis über den Vorfall hatte."
+    },
+    {
+      "self_ref": "#/texts/95",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2.5. Der festgestellte Jahresumsatz wurde von der Beschuldigten in der schriftlichen Rechtfertigung vom 02.09.2025 dargelegt.",
+      "text": "2.5. Der festgestellte Jahresumsatz wurde von der Beschuldigten in der schriftlichen Rechtfertigung vom 02.09.2025 dargelegt."
+    },
+    {
+      "self_ref": "#/texts/96",
+      "parent": {
+        "$ref": "#/groups/18"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3. ",
+      "text": "3. ",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/97",
+      "parent": {
+        "$ref": "#/groups/18"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Rechtlich folgt daraus:",
+      "text": "Rechtlich folgt daraus:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/98",
+      "parent": {
+        "$ref": "#/groups/19"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1. ",
+      "text": "3.1. ",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/99",
+      "parent": {
+        "$ref": "#/groups/19"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Zur objektiven Tatseite:",
+      "text": "Zur objektiven Tatseite:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/100",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.1. Nach Art. 33 Abs. 1 DSGVO müssen Verantwortliche im Falle einer Verletzung des Schutzes personenbezogener Daten den Vorfall unverzüglich und möglichst binnen 72 Stunden, nachdem die Verletzung bekannt wurde, der zuständigen Aufsichtsbehörde melden, es sei denn, dass die Verletzung des Schutzes personenbezogener Daten voraussichtlich nicht zu einem Risiko für die Rechte und Freiheiten natürlicher Personen führt. In Bezug auf die genannte Ausnahme ist die in Art. 5 Abs. 2 DSGVO normierte Rechenschaftspflicht zu berücksichtigen (siehe Erwägungsgrund 83, zweiter Satz DSGVO).",
+      "text": "3.1.1. Nach Art. 33 Abs. 1 DSGVO müssen Verantwortliche im Falle einer Verletzung des Schutzes personenbezogener Daten den Vorfall unverzüglich und möglichst binnen 72 Stunden, nachdem die Verletzung bekannt wurde, der zuständigen Aufsichtsbehörde melden, es sei denn, dass die Verletzung des Schutzes personenbezogener Daten voraussichtlich nicht zu einem Risiko für die Rechte und Freiheiten natürlicher Personen führt. In Bezug auf die genannte Ausnahme ist die in Art. 5 Abs. 2 DSGVO normierte Rechenschaftspflicht zu berücksichtigen (siehe Erwägungsgrund 83, zweiter Satz DSGVO)."
+    },
+    {
+      "self_ref": "#/texts/101",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.2. Der Unionsgesetzgeber hat gemäß Abs. 3 leg. cit. für eine solche Meldung eine Reihe von obligatorischen Informationen festgelegt, die der Aufsichtsbehörde übermittelt werden müssen. Wenn diese Informationen nicht zur gleichen Zeit bereitgestellt werden können, kann der Verantwortliche diese Informationen ohne unangemessene weitere Verzögerung auch schrittweise zur Verfügung stellen.",
+      "text": "3.1.2. Der Unionsgesetzgeber hat gemäß Abs. 3 leg. cit. für eine solche Meldung eine Reihe von obligatorischen Informationen festgelegt, die der Aufsichtsbehörde übermittelt werden müssen. Wenn diese Informationen nicht zur gleichen Zeit bereitgestellt werden können, kann der Verantwortliche diese Informationen ohne unangemessene weitere Verzögerung auch schrittweise zur Verfügung stellen."
+    },
+    {
+      "self_ref": "#/texts/102",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.3. Die DSB ist für die vorliegende Sicherheitsverletzung die gemäß Art. 55 DSGVO zuständige Aufsichtsbehörde (siehe § 18 Abs. 1 Datenschutzgesetz – DSG).",
+      "text": "3.1.3. Die DSB ist für die vorliegende Sicherheitsverletzung die gemäß Art. 55 DSGVO zuständige Aufsichtsbehörde (siehe § 18 Abs. 1 Datenschutzgesetz – DSG)."
+    },
+    {
+      "self_ref": "#/texts/103",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.4. Die Rolle der Beschuldigten als Verantwortliche gemäß Art. 4 Z 7 DSGVO und eine erfolgte Verletzung des Schutzes personenbezogener Daten nach Z 12 leg. cit. werden in der internen Dokumentation der Beschuldigten vom 16.02.2025 bestätigt und muss an dieser Stelle nicht näher behandelt werden.",
+      "text": "3.1.4. Die Rolle der Beschuldigten als Verantwortliche gemäß Art. 4 Z 7 DSGVO und eine erfolgte Verletzung des Schutzes personenbezogener Daten nach Z 12 leg. cit. werden in der internen Dokumentation der Beschuldigten vom 16.02.2025 bestätigt und muss an dieser Stelle nicht näher behandelt werden."
+    },
+    {
+      "self_ref": "#/texts/104",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.5. Es stellen sich im vorliegenden Fall im Kern die folgenden Fragen ob,",
+      "text": "3.1.5. Es stellen sich im vorliegenden Fall im Kern die folgenden Fragen ob,"
+    },
+    {
+      "self_ref": "#/texts/105",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "eine Ausnahme für die Meldung an die Aufsichtsbehörde besteht, wenn ein Dritter die Behörde über einen möglichen Vorfall bei einem Verantwortlichen informiert und",
+      "text": "eine Ausnahme für die Meldung an die Aufsichtsbehörde besteht, wenn ein Dritter die Behörde über einen möglichen Vorfall bei einem Verantwortlichen informiert und",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/106",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "ab wann die Beschuldigte konkret Kenntnis vom Vorfall erlangt hat",
+      "text": "ab wann die Beschuldigte konkret Kenntnis vom Vorfall erlangt hat",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/107",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.6. Zur ersten Frage ist der Beschuldigten zu entgegnen, dass eine solche Ausnahme aus dem Wortlaut der einschlägigen Bestimmung in Art. 33 DSGVO nicht entnommen und auch durch keine sonstige Auslegung angenommen werden kann. Der Unionsgesetzgeber hat nur eine einzelne Ausnahme normiert, wenn die Sicherheitsverletzung voraussichtlich nicht zu einem Risiko für die Rechte und Freiheiten natürlicher Personen führt.",
+      "text": "3.1.6. Zur ersten Frage ist der Beschuldigten zu entgegnen, dass eine solche Ausnahme aus dem Wortlaut der einschlägigen Bestimmung in Art. 33 DSGVO nicht entnommen und auch durch keine sonstige Auslegung angenommen werden kann. Der Unionsgesetzgeber hat nur eine einzelne Ausnahme normiert, wenn die Sicherheitsverletzung voraussichtlich nicht zu einem Risiko für die Rechte und Freiheiten natürlicher Personen führt."
+    },
+    {
+      "self_ref": "#/texts/108",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.7. Wenn eine dritte Person die DSB über einen Vorfall informiert, handelt es sich hierbei um eine Verdachtsmeldung bzw. Sachverhaltsanzeige. Der Verdacht einer Sicherheitsverletzung kann nur vom Verantwortlichen nach einer internen Prüfung bestätigt oder widerlegt werden. Außerdem muss vom Verantwortlichen im Zuge der Meldung nicht nur der bestätigte Vorfall beschrieben, sondern auch die in Reaktion darauf ergriffenen Maßnahmen dargelegt werden (siehe Art. 33 Abs. 3 lit. d DSGVO).",
+      "text": "3.1.7. Wenn eine dritte Person die DSB über einen Vorfall informiert, handelt es sich hierbei um eine Verdachtsmeldung bzw. Sachverhaltsanzeige. Der Verdacht einer Sicherheitsverletzung kann nur vom Verantwortlichen nach einer internen Prüfung bestätigt oder widerlegt werden. Außerdem muss vom Verantwortlichen im Zuge der Meldung nicht nur der bestätigte Vorfall beschrieben, sondern auch die in Reaktion darauf ergriffenen Maßnahmen dargelegt werden (siehe Art. 33 Abs. 3 lit. d DSGVO)."
+    },
+    {
+      "self_ref": "#/texts/109",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.8. Unter diesen Gesichtspunkten kann nicht angenommen werden, dass die zuständige Aufsichtsbehörde sich mit der Meldung einer dritten Person über eine mögliche Sicherheitsverletzung zufrieden zu geben hat und daher keine Meldung (mehr) durch die Verantwortliche erforderlich sei. Nur durch die Meldung der Verantwortlichen kann die Aufsichtsbehörde ihren gesetzlich übertragenen Aufgaben ordnungsgemäß nachkommen.",
+      "text": "3.1.8. Unter diesen Gesichtspunkten kann nicht angenommen werden, dass die zuständige Aufsichtsbehörde sich mit der Meldung einer dritten Person über eine mögliche Sicherheitsverletzung zufrieden zu geben hat und daher keine Meldung (mehr) durch die Verantwortliche erforderlich sei. Nur durch die Meldung der Verantwortlichen kann die Aufsichtsbehörde ihren gesetzlich übertragenen Aufgaben ordnungsgemäß nachkommen."
+    },
+    {
+      "self_ref": "#/texts/110",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.9. In Bezug auf die zweite Frage ist der Beschuldigten entgegenzuhalten, dass sie nicht erstmals mit E-Mail des B*** vom 16.02.2025 Kenntnis von der Sicherheitsverletzung erlangt hat, sondern bereits durch den ersten Hinweis im Januar 2025, welcher von einer Mitarbeiterin als „",
+      "text": "3.1.9. In Bezug auf die zweite Frage ist der Beschuldigten entgegenzuhalten, dass sie nicht erstmals mit E-Mail des B*** vom 16.02.2025 Kenntnis von der Sicherheitsverletzung erlangt hat, sondern bereits durch den ersten Hinweis im Januar 2025, welcher von einer Mitarbeiterin als „"
+    },
+    {
+      "self_ref": "#/texts/111",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Spam-Nachricht",
+      "text": "Spam-Nachricht",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/112",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ eingestuft wurde (der konkrete Zeitpunkt war nicht näher feststellbar, konnte aber zumindest mit 31.05.2025 [Anmerkung Bearbeiter/in: offenkundiger Redaktionsirrtum, gemeint ist wohl der 31.01.2025] angenommen werden, weil der Monat von der Beschuldigten bestätigt wurde).",
+      "text": "“ eingestuft wurde (der konkrete Zeitpunkt war nicht näher feststellbar, konnte aber zumindest mit 31.05.2025 [Anmerkung Bearbeiter/in: offenkundiger Redaktionsirrtum, gemeint ist wohl der 31.01.2025] angenommen werden, weil der Monat von der Beschuldigten bestätigt wurde)."
+    },
+    {
+      "self_ref": "#/texts/113",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.10. Die Beschuldigte übersieht hierbei, dass das Verhalten ihrer Arbeitnehmerin ihr unmittelbar zugerechnet wird. Für die Strafbarkeit nach Art. 83 DSGVO ist im Falle einer juristischen Person nämlich keine Handlung und nicht einmal eine Kenntnis seitens des Leitungsorgans erforderlich (vgl. EuGH vom 05.12.2023, C-807/21, Rz. 77; siehe auch VwGH 29.07.2025, Ro 2022/04/0017, wonach ein allfälliges Fehlverhalten eines Mitarbeiters im Rahmen seiner dienstlichen Aufgaben der Organisation und nicht dem Mitarbeiter zuzurechnen ist).",
+      "text": "3.1.10. Die Beschuldigte übersieht hierbei, dass das Verhalten ihrer Arbeitnehmerin ihr unmittelbar zugerechnet wird. Für die Strafbarkeit nach Art. 83 DSGVO ist im Falle einer juristischen Person nämlich keine Handlung und nicht einmal eine Kenntnis seitens des Leitungsorgans erforderlich (vgl. EuGH vom 05.12.2023, C-807/21, Rz. 77; siehe auch VwGH 29.07.2025, Ro 2022/04/0017, wonach ein allfälliges Fehlverhalten eines Mitarbeiters im Rahmen seiner dienstlichen Aufgaben der Organisation und nicht dem Mitarbeiter zuzurechnen ist)."
+    },
+    {
+      "self_ref": "#/texts/114",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.11. Mit anderen Worten: Der Umstand, dass der erste Hinweis von einer Arbeitnehmerin als Spam-Nachricht verworfen und der Geschäftsführung der Beschuldigten nicht mitgeteilt wurde, ist für die Strafbarkeit irrelevant. Somit hat die Beschuldigte über die ihr unmittelbar zuzurechnenden Arbeitnehmerin zumindest seit dem 31.01.2025 Kenntnis von der Sicherheitsverletzung erlangt und hat eine Meldung an die DSB gemäß Art. 33 Abs. 1 DSGVO bis zur ersten Stellungnahme vom 02.05.2025 unterlassen.",
+      "text": "3.1.11. Mit anderen Worten: Der Umstand, dass der erste Hinweis von einer Arbeitnehmerin als Spam-Nachricht verworfen und der Geschäftsführung der Beschuldigten nicht mitgeteilt wurde, ist für die Strafbarkeit irrelevant. Somit hat die Beschuldigte über die ihr unmittelbar zuzurechnenden Arbeitnehmerin zumindest seit dem 31.01.2025 Kenntnis von der Sicherheitsverletzung erlangt und hat eine Meldung an die DSB gemäß Art. 33 Abs. 1 DSGVO bis zur ersten Stellungnahme vom 02.05.2025 unterlassen."
+    },
+    {
+      "self_ref": "#/texts/115",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.12. Der Ausnahmetatbestand nach Art. 33 Abs. 1 DSGVO (= kein Risiko für die Rechte und Freiheiten natürlicher Personen) ist im vorliegenden Fall nicht einschlägig.",
+      "text": "3.1.12. Der Ausnahmetatbestand nach Art. 33 Abs. 1 DSGVO (= kein Risiko für die Rechte und Freiheiten natürlicher Personen) ist im vorliegenden Fall nicht einschlägig."
+    },
+    {
+      "self_ref": "#/texts/116",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.1.13. Gemessen daran hat die Beschuldigte die objektive Tatseite der Strafbestimmung des Art. 83 Abs. 4 lit. a DSGVO verwirklicht.",
+      "text": "3.1.13. Gemessen daran hat die Beschuldigte die objektive Tatseite der Strafbestimmung des Art. 83 Abs. 4 lit. a DSGVO verwirklicht."
+    },
+    {
+      "self_ref": "#/texts/117",
+      "parent": {
+        "$ref": "#/groups/22"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.2. ",
+      "text": "3.2. ",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/118",
+      "parent": {
+        "$ref": "#/groups/22"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Zur subjektiven Tatseite:",
+      "text": "Zur subjektiven Tatseite:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/119",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.2.1. Für die Strafbarkeit nach Art. 83 DSGVO ist Vorsatz oder zumindest Fahrlässigkeit erforderlich. Fahrlässigkeit liegt bereits dann vor, wenn der Verantwortliche sich über die Rechtswidrigkeit seines Verhaltens nicht im Unklaren sein konnte, gleichviel, ob ihm dabei bewusst war, dass es gegen die Vorschriften der DSGVO verstößt (vgl. EuGH vom 05.12.2023, C-807/21, Rz. 76).",
+      "text": "3.2.1. Für die Strafbarkeit nach Art. 83 DSGVO ist Vorsatz oder zumindest Fahrlässigkeit erforderlich. Fahrlässigkeit liegt bereits dann vor, wenn der Verantwortliche sich über die Rechtswidrigkeit seines Verhaltens nicht im Unklaren sein konnte, gleichviel, ob ihm dabei bewusst war, dass es gegen die Vorschriften der DSGVO verstößt (vgl. EuGH vom 05.12.2023, C-807/21, Rz. 76)."
+    },
+    {
+      "self_ref": "#/texts/120",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.2.2. Der Beschuldigten ist im vorliegenden Fall Fahrlässigkeit vorzuwerfen:",
+      "text": "3.2.2. Der Beschuldigten ist im vorliegenden Fall Fahrlässigkeit vorzuwerfen:"
+    },
+    {
+      "self_ref": "#/texts/121",
+      "parent": {
+        "$ref": "#/groups/23"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Zunächst war es fahrlässig, den ersten Hinweis auf die Sicherheitsverletzung ohne weitere Behandlung als „",
+      "text": "Zunächst war es fahrlässig, den ersten Hinweis auf die Sicherheitsverletzung ohne weitere Behandlung als „"
+    },
+    {
+      "self_ref": "#/texts/122",
+      "parent": {
+        "$ref": "#/groups/23"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Spam-Nachricht",
+      "text": "Spam-Nachricht",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/123",
+      "parent": {
+        "$ref": "#/groups/23"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ zu werten und daher intern nicht weiterzuleiten (zur Zurechnung des Verhaltens der Arbeitnehmerin siehe oben). Es ist aber auch als Fahrlässigkeit zu werten, dass intern erst nach diesem Vorfall Maßnahmen in Form von Schulungen ergriffen wurden, um sicherzustellen, dass solche Hinweise unmittelbar der Geschäftsführung zu melden sind.",
+      "text": "“ zu werten und daher intern nicht weiterzuleiten (zur Zurechnung des Verhaltens der Arbeitnehmerin siehe oben). Es ist aber auch als Fahrlässigkeit zu werten, dass intern erst nach diesem Vorfall Maßnahmen in Form von Schulungen ergriffen wurden, um sicherzustellen, dass solche Hinweise unmittelbar der Geschäftsführung zu melden sind."
+    },
+    {
+      "self_ref": "#/texts/124",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Unabhängig davon ist der Beschuldigten auch Fahrlässigkeit vorzuwerfen, weil sie – ohne sich dabei rechtlich zu erkundigen (zur Erkundigungspflicht vgl. BVwG vom 27.03.2024, W214 2243436-1) – davon ausgegangen ist, der Hinweis vom Vertreter des B*** am 16.02.2025 bzw. in Kopie als Anzeige an die DSB sei ausreichend gewesen, um die Beschuldigte von der Pflicht einer Meldung nach Art. 33 Abs. 1 DSGVO zu befreien.",
+      "text": "Unabhängig davon ist der Beschuldigten auch Fahrlässigkeit vorzuwerfen, weil sie – ohne sich dabei rechtlich zu erkundigen (zur Erkundigungspflicht vgl. BVwG vom 27.03.2024, W214 2243436-1) – davon ausgegangen ist, der Hinweis vom Vertreter des B*** am 16.02.2025 bzw. in Kopie als Anzeige an die DSB sei ausreichend gewesen, um die Beschuldigte von der Pflicht einer Meldung nach Art. 33 Abs. 1 DSGVO zu befreien."
+    },
+    {
+      "self_ref": "#/texts/125",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Es lagen im Tatzeitraum mehrere (öffentlich verfügbare) Informationen im Zusammenhang mit der Meldeverpflichtung vor wie beispielsweise die Leitlinien 01/2021 des Europäischen Datenschutzausschusses (EDSA) zu Beispielen für die Meldung von Verletzungen des Schutzes personenbezogener Daten oder die Informationen über die Pflichten von Verantwortliche auf der Webseite der DSB unter „",
+      "text": "Es lagen im Tatzeitraum mehrere (öffentlich verfügbare) Informationen im Zusammenhang mit der Meldeverpflichtung vor wie beispielsweise die Leitlinien 01/2021 des Europäischen Datenschutzausschusses (EDSA) zu Beispielen für die Meldung von Verletzungen des Schutzes personenbezogener Daten oder die Informationen über die Pflichten von Verantwortliche auf der Webseite der DSB unter „"
+    },
+    {
+      "self_ref": "#/texts/126",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "https://dsb.gv.at/rechte-pflichten/ihre-pflichten-als-verantwortlicher",
+      "text": "https://dsb.gv.at/rechte-pflichten/ihre-pflichten-als-verantwortlicher",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/127",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ (siehe hierbei insbesondere „",
+      "text": "“ (siehe hierbei insbesondere „"
+    },
+    {
+      "self_ref": "#/texts/128",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Data Breach Meldung",
+      "text": "Data Breach Meldung",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/129",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ mit unverbindlich zur Verfügung gestellte Formulare). Darüber hinaus hat auch der EDSA einen „Datenschutzleitfaden für kleine Unternehmen“ öffentlich in deutscher Sprache unter „",
+      "text": "“ mit unverbindlich zur Verfügung gestellte Formulare). Darüber hinaus hat auch der EDSA einen „Datenschutzleitfaden für kleine Unternehmen“ öffentlich in deutscher Sprache unter „"
+    },
+    {
+      "self_ref": "#/texts/130",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "https://www.edpb.europa.eu/sme-data-protection-guide/home_de",
+      "text": "https://www.edpb.europa.eu/sme-data-protection-guide/home_de",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/131",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ zur Verfügung gestellt. Dabei wird insbesondere die Reaktion im Falle einer Sicherheitsverletzung konkret dargelegt.",
+      "text": "“ zur Verfügung gestellt. Dabei wird insbesondere die Reaktion im Falle einer Sicherheitsverletzung konkret dargelegt."
+    },
+    {
+      "self_ref": "#/texts/132",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Auch durch den klaren Wortlaut des Art. 33 Abs. 1 DSGVO konnte sich die Beschuldigte über die Rechtswidrigkeit ihres Verhaltens nicht im Unklaren sein. Es wird in dieser Bestimmung die von der Beschuldigten angenommene Ausnahme nicht genannt.",
+      "text": "Auch durch den klaren Wortlaut des Art. 33 Abs. 1 DSGVO konnte sich die Beschuldigte über die Rechtswidrigkeit ihres Verhaltens nicht im Unklaren sein. Es wird in dieser Bestimmung die von der Beschuldigten angenommene Ausnahme nicht genannt."
+    },
+    {
+      "self_ref": "#/texts/133",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3.2.3. Der Beschuldigten wäre es möglich und zumutbar gewesen, sich über ihre Pflichten als Verantwortliche zu informieren und rechtskonform zu verhalten. Die subjektive Tatseite ist ebenfalls erfüllt.",
+      "text": "3.2.3. Der Beschuldigten wäre es möglich und zumutbar gewesen, sich über ihre Pflichten als Verantwortliche zu informieren und rechtskonform zu verhalten. Die subjektive Tatseite ist ebenfalls erfüllt."
+    },
+    {
+      "self_ref": "#/texts/134",
+      "parent": {
+        "$ref": "#/groups/25"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4. ",
+      "text": "4. ",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/135",
+      "parent": {
+        "$ref": "#/groups/25"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Zur Strafzumessung ist Folgendes festzuhalten:",
+      "text": "Zur Strafzumessung ist Folgendes festzuhalten:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/136",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.1. Gemäß Art. 83 Abs. 1 DSGVO hat die DSB sicherzustellen, dass die Verhängung von Geldbußen für Verstöße gegen die unter Sanktion gestellten Bestimmungen der DSGVO (Art. 83 Abs. 4, 5 und 6 DSGVO) in jedem Einzelfall wirksam, verhältnismäßig und abschreckend ist. Näherhin bestimmt Art. 83 Abs. 2 DSGVO, dass bei der Entscheidung über die Verhängung einer Geldbuße und über deren Betrag in jedem Einzelfall bestimmte Kriterien gebührend zu berücksichtigen sind.",
+      "text": "4.1.1. Gemäß Art. 83 Abs. 1 DSGVO hat die DSB sicherzustellen, dass die Verhängung von Geldbußen für Verstöße gegen die unter Sanktion gestellten Bestimmungen der DSGVO (Art. 83 Abs. 4, 5 und 6 DSGVO) in jedem Einzelfall wirksam, verhältnismäßig und abschreckend ist. Näherhin bestimmt Art. 83 Abs. 2 DSGVO, dass bei der Entscheidung über die Verhängung einer Geldbuße und über deren Betrag in jedem Einzelfall bestimmte Kriterien gebührend zu berücksichtigen sind."
+    },
+    {
+      "self_ref": "#/texts/137",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.2. Die DSB hat im Rahmen der Strafbemessung die Leitlinien des EDSA betreffend Berechnung von Geldbußen nach der DSGVO (vgl. EDPB Guidelines 04/2022 on the calculation of administrative fines under the GDPR, Version 2.1 vom 24.05.2023 – im Folgenden „Fines-Leitlinien“) zur Anwendung gebracht.",
+      "text": "4.1.2. Die DSB hat im Rahmen der Strafbemessung die Leitlinien des EDSA betreffend Berechnung von Geldbußen nach der DSGVO (vgl. EDPB Guidelines 04/2022 on the calculation of administrative fines under the GDPR, Version 2.1 vom 24.05.2023 – im Folgenden „Fines-Leitlinien“) zur Anwendung gebracht."
+    },
+    {
+      "self_ref": "#/texts/138",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.3. In Anbetracht der Fines-Leitlinien wird die Beschuldigte unter Berücksichtigung des festgestellten Jahresumsatzes und im Hinblick auf die Verhängung einer wirksamen, abschreckenden und verhältnismäßigen Geldbuße in die niedrigste Kategorie „",
+      "text": "4.1.3. In Anbetracht der Fines-Leitlinien wird die Beschuldigte unter Berücksichtigung des festgestellten Jahresumsatzes und im Hinblick auf die Verhängung einer wirksamen, abschreckenden und verhältnismäßigen Geldbuße in die niedrigste Kategorie „"
+    },
+    {
+      "self_ref": "#/texts/139",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Unternehmen mit einem Umsatz von bis zu 2 Mio. EUR",
+      "text": "Unternehmen mit einem Umsatz von bis zu 2 Mio. EUR",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/140",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "“ eingestuft.",
+      "text": "“ eingestuft."
+    },
+    {
+      "self_ref": "#/texts/141",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.4. Im Lichte des als erwiesen angenommenen Sachverhalts und unter Berücksichtigung der oben bereits näher behandelten Art, Schwere und Dauer des Verstoßes (Art. 83 Abs. 1 lit. a DSGVO), wobei die Dauer unter Berücksichtigung, dass eine Meldung unverzüglich und möglichst binnen 72 Stunden zu erfolgen hat, ins Gewicht gefallen ist; der Vorsätzlichkeit oder Fahrlässigkeit des Verstoßes (Art. 83 Abs. 2 lit. b DSGVO), wobei die Fahrlässigkeit als neutral zu bewerten war; der Kategorien personenbezogener Daten, die vom Verstoß betroffen sind (Art. 83 Abs. 2 lit. g DSGVO), wobei die Tatsache, dass nicht besondere Kategorien betroffen waren nur als neutral gewertet werden konnte; wird von der DSB die Schwere der Zuwiderhandlung („seriousness of the infringement“) im Ergebnis mit einem geringen Schweregrad festgelegt und ein Startbetrag konkret in Höhe von EUR 300.000 für die weitere Berechnung zu Grunde gelegt. Dieser Betrag befindet sich aufgrund der hier vorliegenden Umstände am unteren Ende der Spanne für Verstöße mit einem „geringen Schweregrad“.",
+      "text": "4.1.4. Im Lichte des als erwiesen angenommenen Sachverhalts und unter Berücksichtigung der oben bereits näher behandelten Art, Schwere und Dauer des Verstoßes (Art. 83 Abs. 1 lit. a DSGVO), wobei die Dauer unter Berücksichtigung, dass eine Meldung unverzüglich und möglichst binnen 72 Stunden zu erfolgen hat, ins Gewicht gefallen ist; der Vorsätzlichkeit oder Fahrlässigkeit des Verstoßes (Art. 83 Abs. 2 lit. b DSGVO), wobei die Fahrlässigkeit als neutral zu bewerten war; der Kategorien personenbezogener Daten, die vom Verstoß betroffen sind (Art. 83 Abs. 2 lit. g DSGVO), wobei die Tatsache, dass nicht besondere Kategorien betroffen waren nur als neutral gewertet werden konnte; wird von der DSB die Schwere der Zuwiderhandlung („seriousness of the infringement“) im Ergebnis mit einem geringen Schweregrad festgelegt und ein Startbetrag konkret in Höhe von EUR 300.000 für die weitere Berechnung zu Grunde gelegt. Dieser Betrag befindet sich aufgrund der hier vorliegenden Umstände am unteren Ende der Spanne für Verstöße mit einem „geringen Schweregrad“."
+    },
+    {
+      "self_ref": "#/texts/142",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.5. In Folge wurde die Unternehmensgröße bzw. wirtschaftliche Leistungsfähigkeit im Sinne der Leitlinien berücksichtigt und eine Anpassung auf 0,4% des Ausgangsbetrags vorgenommen, um insbesondere die Verhältnismäßigkeit der Geldbuße nach Art. 83 Abs. 1 DSGVO sicherzustellen.",
+      "text": "4.1.5. In Folge wurde die Unternehmensgröße bzw. wirtschaftliche Leistungsfähigkeit im Sinne der Leitlinien berücksichtigt und eine Anpassung auf 0,4% des Ausgangsbetrags vorgenommen, um insbesondere die Verhältnismäßigkeit der Geldbuße nach Art. 83 Abs. 1 DSGVO sicherzustellen."
+    },
+    {
+      "self_ref": "#/texts/143",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.6. Es liegen über die bereits für die Feststellung des Schweregrades berücksichtigenden Umstände keine weiteren erschwerenden Strafbemessungsgründe vor. Der Betrag wurde schließlich aufgrund der untenstehenden Milderungsgründe reduziert:",
+      "text": "4.1.6. Es liegen über die bereits für die Feststellung des Schweregrades berücksichtigenden Umstände keine weiteren erschwerenden Strafbemessungsgründe vor. Der Betrag wurde schließlich aufgrund der untenstehenden Milderungsgründe reduziert:"
+    },
+    {
+      "self_ref": "#/texts/144",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Gegen die Beschuldigte liegen bei der DSB keinerlei einschlägige frühere Verstöße gegen die DSGVO vor (Art. 83 Abs. 2 lit. e DSGVO).",
+      "text": "Gegen die Beschuldigte liegen bei der DSB keinerlei einschlägige frühere Verstöße gegen die DSGVO vor (Art. 83 Abs. 2 lit. e DSGVO).",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/145",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Die Beschuldigte hat im Rahmen des gegenständlichen Ermittlungsverfahrens mitgewirkt und dadurch einen Beitrag zur Wahrheitsfindung geleistet (Art. 83 Abs. 2 lit. f und k DSGVO).",
+      "text": "Die Beschuldigte hat im Rahmen des gegenständlichen Ermittlungsverfahrens mitgewirkt und dadurch einen Beitrag zur Wahrheitsfindung geleistet (Art. 83 Abs. 2 lit. f und k DSGVO).",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/146",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Die Beschuldigte hat sich nach der Aufforderung zur Stellungnahme im amtswegigen Prüfverfahren rechtskonform verhalten und die von der DSB verlangten Informationen zur Verfügung gestellt, wodurch das Prüfverfahren in Bezug auf die Sicherheitsverletzung zur Einstellung gebracht werden konnte (Art. 83 Abs. 2 lit. f und k DSGVO)",
+      "text": "Die Beschuldigte hat sich nach der Aufforderung zur Stellungnahme im amtswegigen Prüfverfahren rechtskonform verhalten und die von der DSB verlangten Informationen zur Verfügung gestellt, wodurch das Prüfverfahren in Bezug auf die Sicherheitsverletzung zur Einstellung gebracht werden konnte (Art. 83 Abs. 2 lit. f und k DSGVO)",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/147",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.7. Bei der Bemessung der Strafe dürfen nach ständiger Rechtsprechung des VwGH auch Überlegungen der Spezialprävention und Generalprävention einbezogen werden (vgl. VwGH 15.05.1990, 89/02/0093, VwGH 22. 04. 1997, 96/04/0253, VwGH 29.01.1991, 89/04/0061). Auch nach Art. 83 Abs. 1 DSGVO muss sichergestellt werden, dass jede Geldbuße durch die DSB für festgestellte Verstöße wirksam und abschreckend ist.",
+      "text": "4.1.7. Bei der Bemessung der Strafe dürfen nach ständiger Rechtsprechung des VwGH auch Überlegungen der Spezialprävention und Generalprävention einbezogen werden (vgl. VwGH 15.05.1990, 89/02/0093, VwGH 22. 04. 1997, 96/04/0253, VwGH 29.01.1991, 89/04/0061). Auch nach Art. 83 Abs. 1 DSGVO muss sichergestellt werden, dass jede Geldbuße durch die DSB für festgestellte Verstöße wirksam und abschreckend ist."
+    },
+    {
+      "self_ref": "#/texts/148",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.8. Somit kann im Sinne dieser Voraussetzungen die Geldbuße im Einzelfall nochmals erhöht oder reduziert werden.",
+      "text": "4.1.8. Somit kann im Sinne dieser Voraussetzungen die Geldbuße im Einzelfall nochmals erhöht oder reduziert werden."
+    },
+    {
+      "self_ref": "#/texts/149",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.9. Die Verhängung einer Geldbuße war aufgrund spezialpräventiver Gründe erforderlich, um die Beschuldigte künftig von ähnlich gelagerten Verwaltungsübertretungen abzuhalten, weil sie nach wie vor die Ansicht vertritt, dass neben der Anzeige durch einen Dritten die Meldung durch einen Verantwortlichen nicht erforderlich sei. Aber auch aus generalpräventiven Überlegungen war eine Geldbuße erforderlich und wurde der letztendlich festgelegte Betrag erhöht, um Verantwortliche über ihre Pflichten im Zusammenhang mit der unverzüglichen Meldung von Sicherheitsverletzungen nach Art. 33 Abs. 1 DSGVO an die DSB als zuständige Aufsichtsbehörde zu sensibilisieren. Die abschreckende Wirkung musste sichergestellt werden.",
+      "text": "4.1.9. Die Verhängung einer Geldbuße war aufgrund spezialpräventiver Gründe erforderlich, um die Beschuldigte künftig von ähnlich gelagerten Verwaltungsübertretungen abzuhalten, weil sie nach wie vor die Ansicht vertritt, dass neben der Anzeige durch einen Dritten die Meldung durch einen Verantwortlichen nicht erforderlich sei. Aber auch aus generalpräventiven Überlegungen war eine Geldbuße erforderlich und wurde der letztendlich festgelegte Betrag erhöht, um Verantwortliche über ihre Pflichten im Zusammenhang mit der unverzüglichen Meldung von Sicherheitsverletzungen nach Art. 33 Abs. 1 DSGVO an die DSB als zuständige Aufsichtsbehörde zu sensibilisieren. Die abschreckende Wirkung musste sichergestellt werden."
+    },
+    {
+      "self_ref": "#/texts/150",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4.1.10. Die im Ergebnis konkret verhängte Strafe in der Höhe von EUR 870,- erscheint daher im Hinblick auf den verwirklichten Tatunwert, gemessen am zur Verfügung stehenden Strafrahmen des Art. 83 Abs. 5 DSGVO (hier bis zu EUR 20.000.000) [Anmerkung Bearbeiter/in: offenkundiger Redaktionsirrtum, gemeint ist hier wohl Art. 83 Abs. 4 DSGVO] tat- und schuldangemessen und befindet sich am untersten Ende des zur Verfügung stehenden Strafrahmens. Ein (noch) niedrigerer Betrag würde den Voraussetzungen der Wirksamkeit und Abschreckung nach Art. 83 Abs. 1 DSGVO nicht (mehr) gerecht werden.",
+      "text": "4.1.10. Die im Ergebnis konkret verhängte Strafe in der Höhe von EUR 870,- erscheint daher im Hinblick auf den verwirklichten Tatunwert, gemessen am zur Verfügung stehenden Strafrahmen des Art. 83 Abs. 5 DSGVO (hier bis zu EUR 20.000.000) [Anmerkung Bearbeiter/in: offenkundiger Redaktionsirrtum, gemeint ist hier wohl Art. 83 Abs. 4 DSGVO] tat- und schuldangemessen und befindet sich am untersten Ende des zur Verfügung stehenden Strafrahmens. Ein (noch) niedrigerer Betrag würde den Voraussetzungen der Wirksamkeit und Abschreckung nach Art. 83 Abs. 1 DSGVO nicht (mehr) gerecht werden."
+    },
+    {
+      "self_ref": "#/texts/151",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "European Case Law Identifier",
+      "text": "European Case Law Identifier",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/152",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "ECLI:AT:DSB:2025:2025.0.699.550",
+      "text": "ECLI:AT:DSB:2025:2025.0.699.550"
+    }
+  ],
+  "pictures": [],
+  "tables": [
+    {
+      "self_ref": "#/tables/0",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "table",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "data": {
+        "table_cells": [
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "Geldstrafe von Euro",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "Gemäß",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "€ 870,-",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "Art. 83 Abs. 4 lit. a DSGVO",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          }
+        ],
+        "num_rows": 2,
+        "num_cols": 2,
+        "orientation": "rot_0",
+        "grid": [
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "Geldstrafe von Euro",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "Gemäß",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ],
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "€ 870,-",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "Art. 83 Abs. 4 lit. a DSGVO",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ]
+        ]
+      },
+      "annotations": []
+    }
+  ],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

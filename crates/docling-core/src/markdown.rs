@@ -742,11 +742,14 @@ pub(crate) fn plain_inline(text: &str) -> String {
 }
 
 fn plain_inline_into(chars: &[char], out: &mut String) {
+    // A backslash-escaped marker (`\*`, the RIS backend's pseudonym stars,
+    // #902) closes no span.
     let find = |open: usize, pat: &[char]| -> Option<usize> {
         chars
             .get(open..)?
             .windows(pat.len())
-            .position(|w| w == pat)
+            .enumerate()
+            .position(|(k, w)| w == pat && (open + k == 0 || chars[open + k - 1] != '\\'))
             .map(|p| open + p)
     };
     // An emphasis span opening at `i` with marker `pat`: its closing index
@@ -762,6 +765,12 @@ fn plain_inline_into(chars: &[char], out: &mut String) {
     };
     let mut i = 0;
     while i < chars.len() {
+        // `\*` is a literal star, which is what the Markdown renders.
+        if chars[i] == '\\' && chars.get(i + 1) == Some(&'*') {
+            out.push('*');
+            i += 2;
+            continue;
+        }
         let mut matched = false;
         for pat in [&['*', '*', '*'][..], &['*', '*'], &['~', '~'], &['*']] {
             if let Some(end) = span(i, pat) {
@@ -3014,6 +3023,17 @@ mod tests {
         assert!(
             buffered.contains("(img)") && buffered.contains("R&D _ report"),
             "{buffered}"
+        );
+    }
+
+    /// #902: an escaped star is a literal one in the plain text, and closes
+    /// no emphasis span around it.
+    #[test]
+    fn plain_text_reads_escaped_stars() {
+        assert_eq!(plain_inline("A\\*\\*\\* GmbH"), "A*** GmbH");
+        assert_eq!(
+            plain_inline("**FN \\*0\\*271\\*h** and *h\\*.at*"),
+            "FN *0*271*h and h*.at"
         );
     }
 

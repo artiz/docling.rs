@@ -28,6 +28,9 @@ pub enum InputFormat {
     XmlUspto,
     XmlJats,
     XmlXbrl,
+    /// Austrian RIS legal XML (`risdok`, #902) — a docling.rs extension;
+    /// docling has no RIS reader. A bare `.xml` reaches it by its root.
+    XmlRis,
     XmlDoclang,
     /// Raw DocTags markup (`.doctags`/`.dt`) — the token stream docling's
     /// VLMs emit, parsed by `docling_core::doctags` (#152).
@@ -172,6 +175,7 @@ impl InputFormat {
             InputFormat::XmlUspto => "xml_uspto",
             InputFormat::XmlJats => "xml_jats",
             InputFormat::XmlXbrl => "xml_xbrl",
+            InputFormat::XmlRis => "xml_ris",
             InputFormat::XmlDoclang => "xml_doclang",
             InputFormat::DocTags => "doctags",
             InputFormat::Dclx => "dclx",
@@ -233,6 +237,7 @@ impl InputFormat {
             "xml_uspto" => InputFormat::XmlUspto,
             "xml_jats" => InputFormat::XmlJats,
             "xml_xbrl" => InputFormat::XmlXbrl,
+            "xml_ris" => InputFormat::XmlRis,
             "xml_doclang" => InputFormat::XmlDoclang,
             "doctags" => InputFormat::DocTags,
             "dclx" => InputFormat::Dclx,

@@ -57,7 +57,7 @@ pub(crate) fn looks_like_feed(head: &str) -> bool {
 
 /// The first element's start tag (through its `>`), past the XML
 /// declaration, comments, processing instructions and a DOCTYPE.
-fn first_element_tag(head: &str) -> Option<&str> {
+pub(crate) fn first_element_tag(head: &str) -> Option<&str> {
     let mut rest = head;
     loop {
         let at = rest.find('<')?;

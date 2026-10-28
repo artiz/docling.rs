@@ -233,6 +233,9 @@ fn sniff_xml(bytes: &[u8]) -> InputFormat {
         InputFormat::Feed
     } else if crate::backend::xbrl::looks_like_xbrl(head) {
         InputFormat::XmlXbrl
+    } else if crate::backend::ris::looks_like_ris(head) {
+        // Austrian RIS legal XML (#902), by its `<risdok>` root.
+        InputFormat::XmlRis
     } else {
         InputFormat::XmlJats
     }
@@ -2864,6 +2867,7 @@ impl DocumentConverter {
                             source,
                             self.xbrl_taxonomy.as_deref(),
                         )?,
+                        InputFormat::XmlRis => crate::backend::RisBackend.convert(source)?,
                         // docling's format detection reads an XML-looking `.txt` as
                         // `application/xml` and, when its DOCTYPE names a JATS DTD
                         // (`JATS-journalpublishing…` / `JATS-archive…`), converts it
@@ -3023,6 +3027,7 @@ impl DocumentConverter {
                         crate::backend::xbrl::convert_xbrl(source, self.xbrl_taxonomy.as_deref())?
                     }
                     InputFormat::XmlDoclang => crate::backend::DoclangBackend.convert(source)?,
+                    InputFormat::XmlRis => crate::backend::RisBackend.convert(source)?,
                     _ if looks_like_jats(&source.bytes) => JatsBackend {
                         images: self.image_policy(),
                     }
@@ -3030,6 +3035,7 @@ impl DocumentConverter {
                     _ => crate::backend::text::convert_xml_text(source)?,
                 },
                 InputFormat::Latex => LatexBackend.convert(source)?,
+                InputFormat::XmlRis => crate::backend::RisBackend.convert(source)?,
                 // A bare `.xml` defaults to XmlJats; sniff the content to route to the
                 // right XML backend (docling distinguishes by DOCTYPE / root element).
                 InputFormat::XmlJats | InputFormat::XmlUspto | InputFormat::XmlXbrl => {
@@ -3039,6 +3045,7 @@ impl DocumentConverter {
                             source,
                             self.xbrl_taxonomy.as_deref(),
                         )?,
+                        InputFormat::XmlRis => crate::backend::RisBackend.convert(source)?,
                         _ => JatsBackend {
                             images: self.image_policy(),
                         }
