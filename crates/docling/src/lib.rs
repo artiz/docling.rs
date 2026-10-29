@@ -106,7 +106,9 @@ pub use docling_pdf::{
 #[cfg(any(feature = "pdf", feature = "pdf-text"))]
 pub use docling_pdf::{
     convert_text_layer_pages as pdf_text_layer_pages,
-    convert_text_layer_pages_with as pdf_text_layer_pages_with, WordGap as PdfWordGap,
+    convert_text_layer_pages_opts as pdf_text_layer_pages_opts,
+    convert_text_layer_pages_with as pdf_text_layer_pages_with, TextOptions as PdfTextOptions,
+    WordGap as PdfWordGap,
 };
 
 /// Re-execute under an absolute `argv[0]` so ONNX Runtime finds its GPU

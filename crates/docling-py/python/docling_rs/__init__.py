@@ -311,6 +311,10 @@ class DocumentConverter:
       ``DOCLING_RS_PDF_WORD_GAP``) | ``"legacy"`` (docling-parse <= 6) | a
       factor such as ``0.2`` of the two flanking glyphs' mean advance, in
       (0, 4].
+    * ``pdf_keep_typography`` — keep a PDF's typographic punctuation as drawn
+      (#921): ``„ “ ‚ ‘``, en/em dashes, ``…``. ``None`` folds it to ASCII
+      like docling-parse's sanitizer unless ``DOCLING_RS_PDF_KEEP_TYPOGRAPHY``
+      is set.
     * ``ocr_textline_orientation`` — RapidOCR's text-line orientation
       handling (#666): detected lines cropped along their rotated rectangle,
       tall crops turned 90°, upside-down lines turned by the 0/180 classifier
@@ -527,6 +531,7 @@ class DocumentConverter:
         ocr_mode: Optional[str] = None,
         ocr_scale: Optional[float] = None,
         pdf_word_gap: Optional[Union[str, float]] = None,
+        pdf_keep_typography: Optional[bool] = None,
         ocr_textline_orientation: Optional[bool] = None,
         ocr_engine: Optional[str] = None,
         skip_empty_cells: bool = False,
@@ -795,6 +800,7 @@ class DocumentConverter:
             ocr_mode=ocr_mode,
             ocr_scale=ocr_scale,
             pdf_word_gap=None if pdf_word_gap is None else str(pdf_word_gap),
+            pdf_keep_typography=pdf_keep_typography,
             ocr_textline_orientation=ocr_textline_orientation,
             ocr_engine=ocr_engine,
             skip_empty_cells=skip_empty_cells,

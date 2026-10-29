@@ -38,6 +38,40 @@ fn low_opening_quote_survives() {
     );
 }
 
+/// #921: `pdf_keep_typography` keeps `„ “ ‚ ‘` and the dashes as drawn — a
+/// legal citation's quotes stay distinguishable from ASCII ones.
+#[test]
+fn typography_is_kept_when_asked() {
+    let content = format!(
+        "{}BT /F1 12 Tf 72 680 Td (Teilen \\204Gewinn\\223 und \\202Verlust\\221 \\226 \\24710\\226\\24712) Tj ET",
+        body_line(700)
+    );
+    let pdf = pdf(&content);
+    let text = |keep| {
+        docling_pdf::convert_text_layer_pages_opts(
+            &pdf,
+            "t.pdf",
+            None,
+            docling_pdf::TextOptions {
+                word_gap: None,
+                keep_typography: keep,
+            },
+        )
+        .expect("text-layer conversion")
+        .export_to_text()
+    };
+    let kept = text(true);
+    assert!(
+        kept.contains("Teilen \u{201e}Gewinn\u{201c} und \u{201a}Verlust\u{2018} \u{2013} \u{a7}10\u{2013}\u{a7}12"),
+        "{kept:?}"
+    );
+    let folded = text(false);
+    assert!(
+        folded.contains("Teilen \"Gewinn\" und ,Verlust' - \u{a7}10-\u{a7}12"),
+        "{folded:?}"
+    );
+}
+
 /// #922: the rest of the 0x80–0x9F row (`€`, `™`, `œ`, …) read as WinAnsi.
 #[test]
 fn winansi_c1_row_is_complete() {

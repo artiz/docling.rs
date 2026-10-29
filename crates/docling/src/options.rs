@@ -212,6 +212,9 @@ pub struct ConvertOptions {
     /// docling-parse ≥ 7's line-local threshold) | `legacy` (docling-parse
     /// ≤ 6) | a factor in (0, 4] of the flanking glyphs' mean advance.
     pub pdf_word_gap: Option<String>,
+    /// Keep a PDF's typographic punctuation (`„ “ ‚ ‘`, dashes, `…`) as drawn
+    /// instead of folding it to ASCII (#921). Default off — docling folds.
+    pub pdf_keep_typography: Option<bool>,
     /// RapidOCR's text-line orientation handling (#666): oriented crops, the
     /// 90° turn of tall lines and the 0/180 classifier. Default off
     /// (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION`).
@@ -641,6 +644,7 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("ocr_mode"),
     row("ocr_scale"),
     row("pdf_word_gap"),
+    row("pdf_keep_typography"),
     row("ocr_textline_orientation"),
     row("images_scale"),
     OptionInfo {
@@ -1405,6 +1409,9 @@ impl ConvertOptions {
         }
         if let Some(v) = &self.pdf_word_gap {
             c = c.pdf_word_gap(v.clone());
+        }
+        if let Some(v) = self.pdf_keep_typography {
+            c = c.pdf_keep_typography(v);
         }
         if let Some(v) = self.ocr_textline_orientation {
             c = c.ocr_textline_orientation(v);

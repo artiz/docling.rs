@@ -33,7 +33,7 @@ older, pypdfium2-era docling's and the pipeline was scored with OCR on.
 
 ## Current state
 
-**7 / 18 strict** against upstream's current groundtruth — total **389
+**7 / 18 strict** against upstream's current groundtruth — total **407
 diff lines** (`scripts/conformance/pdf_groundtruth.sh`: `--skip-ocr
 --compact-tables`, docling-parse renderer). The groundtruth was refreshed
 for #921 from docling's `tests/data/pdf/groundtruth` at upstream `dc4693f`
@@ -50,7 +50,15 @@ quote folded to `'` — scored **6 / 18, 815 lines**. The port of
 docling-parse 7's rule as the default `pdf_word_gap=adaptive`, its quote
 folding (`“ ”` → `"`), pen-direction gaps for right-to-left text, and its
 baseline test on the pens' origins and font sizes with math faces as local
-attachments took that to 7 / 18 and 389. (On the stale pre-refresh groundtruth the old tree
+attachments took that to 7 / 18 and 389. Two deliberate divergences
+since (#921, `docs/MIGRATION.md` §4 item 21) cost 18 lines: a gap enters the
+line's word-gap clustering at most 0.5 advances wide, so one wide gap no
+longer lifts the threshold over the line's real word gaps — docling-parse 7
+glues those pairs (`KhurramAzeemHashmi`), and so does the groundtruth; on
+#921's 92-page agreement it takes glued word pairs from 68 to 7 — and a page
+whose lines mostly draw space glyphs keeps docling-parse 7's 0.35 floor on
+its one-word lines too (`Offenlegungspf lichten`; no groundtruth file
+changes). That is the 407. (On the stale pre-refresh groundtruth the old tree
 read 10 / 18, 328 — a match to docling as it no longer is.) The two Korean
 image-only pages `skipped_1page` / `skipped_2pages` carry no text
 groundtruth and are not scored.
@@ -65,10 +73,10 @@ groundtruth and are not scored.
 | right_to_left_01 | 2 | docling-parse 7 cuts `أيضًا` before its tanween (`أيض ً`); we keep the word |
 | right_to_left_02 | 2 | one word's place at a line start (`ووف`) |
 | right_to_left_03 | 4 | a checkbox list item's marker order |
-| 2203.01017v2 | 9 | line-end hyphens docling fuses (`im-`/`balance`, `appear-`/`ances`; `column- and` is our #920 divergence), one picture placeholder's slot |
+| 2203.01017v2 | 15 | line-end hyphens docling fuses (`im-`/`balance`, `appear-`/`ances`; `column- and` is our #920 divergence), one picture placeholder's slot; author names docling-parse 7 glues and we split (`KhurramAzeemHashmi`, `Harold WKuhn` — the #921 clustering clip), `\|T \|` |
 | 2305.03393v1 | 8 | two `\_ \_` items and the spacing of underscores in figure file names (`PMC5406406 \_ 003 \_ 01.png`) |
 | normal_4pages | 12 | docling folds the page-number glyph into the heading cluster (`## 들어가며 1`) where we emit it as its own item, and the `※` footnotes order |
-| 2206.01062 | 12 | `mAP@ 0.5-0.95` (docling-parse 7 splits after `@`), `tildelow10%` (its glyph-name mapping; we read `~10%`) |
+| 2206.01062 | 24 | `mAP@ 0.5-0.95` (docling-parse 7 splits after `@`, we before it), `tildelow10%` (its glyph-name mapping; we read `~10%`); words docling-parse 7 glues and we split (`RELATEDWORK`, `ANNOTATIONCAMPAIGN`, `LoganMarkewich`, `→Document` — the #921 clustering clip) |
 | multi_page | 32 | docling-parse 7 maps the list bullet glyph to `∞` and docling keeps it as text (`- ∞ IBM MT/ST …`); we read a bullet and drop it as the marker |
 | table_misidentified_as_form | 70 | the form container's nested table / picture (docling#4064): docling nests them inside the form region and keeps the heading, we flatten the region |
 | table_mislabeled_as_picture | 81 | the survey over-detected as tables; checkbox glyphs (`☐`) and blank cells docling keeps |

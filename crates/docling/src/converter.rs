@@ -310,6 +310,9 @@ pub struct DocumentConverter {
     /// The PDF text layer's word-gap rule (#921); parsed at the PDF call
     /// sites. See [`Self::pdf_word_gap`].
     pdf_word_gap: Option<String>,
+    /// Keep a PDF's typographic punctuation as drawn (#921); `None` = the
+    /// environment's default. See [`Self::pdf_keep_typography`].
+    pdf_keep_typography: Option<bool>,
     /// RapidOCR's line orientation handling (#666); `None` = the
     /// environment's default. See [`Self::ocr_textline_orientation`].
     ocr_textline_orientation: Option<bool>,
@@ -617,6 +620,7 @@ impl Default for DocumentConverter {
             ocr_engine: None,
             ocr_scale: None,
             pdf_word_gap: None,
+            pdf_keep_typography: None,
             ocr_textline_orientation: None,
             images_scale: None,
             generate_page_images: false,
@@ -811,6 +815,7 @@ impl DocumentConverter {
         p.set_ocr_mode(self.ocr_mode_choice());
         p.set_ocr_scale(self.ocr_scale_choice());
         p.set_word_gap(self.pdf_word_gap_choice());
+        p.set_keep_typography(self.pdf_keep_typography);
         p.set_images(docling_pdf::ImageOutput {
             scale: self.images_scale,
             page_images: self.generate_page_images,
@@ -2329,6 +2334,27 @@ impl DocumentConverter {
         self
     }
 
+    /// Keep a PDF's typographic punctuation as drawn — `„ “ ‚ ‘`, curly
+    /// quotes, en/em dashes, `…`, `⁄`, `•` — instead of folding it to ASCII
+    /// the way docling-parse's sanitizer does (#921; also
+    /// `DOCLING_RS_PDF_KEEP_TYPOGRAPHY`). Folding is the default, for docling
+    /// parity; legal citations and quoted terms lose the difference between
+    /// `„…“`, `‚…‘` and ASCII quotes there. PDF text layer only.
+    pub fn pdf_keep_typography(mut self, keep: bool) -> Self {
+        self.pdf_keep_typography = Some(keep);
+        self
+    }
+
+    /// The text-layer settings of a text-layer-only conversion (#921).
+    #[cfg(all(feature = "pdf-text", not(feature = "pdf")))]
+    fn pdf_text_options(&self) -> docling_pdf::TextOptions {
+        let env = docling_pdf::TextOptions::from_env();
+        docling_pdf::TextOptions {
+            word_gap: self.pdf_word_gap_choice(),
+            keep_typography: self.pdf_keep_typography.unwrap_or(env.keep_typography),
+        }
+    }
+
     /// RapidOCR's handling of text-line orientation (#666), off by default
     /// (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION` sets the process default):
     /// detected lines are cropped along the detector's rotated rectangle, a
@@ -2715,6 +2741,7 @@ impl DocumentConverter {
             ocr_mode: self.ocr_mode_choice(),
             ocr_scale: self.ocr_scale_choice(),
             word_gap: self.pdf_word_gap_choice(),
+            keep_typography: self.pdf_keep_typography,
             ocr_textline_orientation: self.ocr_textline_orientation,
             images_scale: self.images_scale,
             keep_picture_images: self.keep_picture_images,
@@ -3230,11 +3257,11 @@ impl DocumentConverter {
                 // needs OCR" — say so instead of returning nothing.
                 #[cfg(all(feature = "pdf-text", not(feature = "pdf")))]
                 InputFormat::Pdf => {
-                    let doc = docling_pdf::convert_text_layer_pages_with(
+                    let doc = docling_pdf::convert_text_layer_pages_opts(
                         &source.bytes,
                         &source.name,
                         self.page_range,
-                        self.pdf_word_gap_choice(),
+                        self.pdf_text_options(),
                     )
                     .map_err(|e| ConversionError::with_source("pdf", e))?;
                     if doc.nodes.is_empty() {

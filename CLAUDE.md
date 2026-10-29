@@ -218,7 +218,10 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   `adaptive` default = docling-parse ≥ 7's line-local threshold, what
   docling runs on and the baselines pin, plus Sperrsatz detection |
   `legacy` = docling-parse ≤ 6's running-mean word gap | a factor of the
-  flanking glyphs' mean advance — `pdf_word_gap` on every surface), `DOCLING_CHUNK_TOKENIZER`,
+  flanking glyphs' mean advance — `pdf_word_gap` on every surface),
+  `DOCLING_RS_PDF_KEEP_TYPOGRAPHY` (#921; off — on keeps `„ “ ‚ ‘`, dashes and
+  `…` as drawn instead of docling-parse's ASCII folding, `pdf_keep_typography`),
+  `DOCLING_CHUNK_TOKENIZER`,
   `DOCLING_RS_DEBUG` (re-enables quiet pipeline diagnostics, e.g. the
   int8→fp32 layout-retry notice), `DOCLING_RS_MAX_XML_DEPTH` (512; XML
   element nesting any input/part may reach — roxmltree recurses per level),

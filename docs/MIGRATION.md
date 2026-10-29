@@ -2348,7 +2348,8 @@ These are deliberate or unavoidable divergences, not bugs.
     decides. A number `F` is a fixed threshold for that ratio on lines
     without space glyphs (0.1–0.23 suits body text); a line that draws its
     spaces keeps docling-parse 7's floor of 0.35, so a loosely kerned `f|l`
-    (0.24 in EUR-Lex notices) is no boundary. `legacy` keeps docling-parse ≤ 6's rule, this port's
+    (0.24 in EUR-Lex notices) is no boundary (and on a page that draws its
+    spaces, every line keeps it — below). `legacy` keeps docling-parse ≤ 6's rule, this port's
     default until #921: a gap splits when it exceeds 0.33 × the running
     mean advance of the cell built so far in that contraction pass, and
     cells restart at every font change (`enforce_same_font`), so the
@@ -2386,7 +2387,35 @@ These are deliberate or unavoidable divergences, not bugs.
     #921's 92-page document, leader dots aside, words match docling-parse
     7.24.1's 98.9 % under `adaptive` (98.1 % under `legacy`) and lines
     96.1 % (76.7 %) — the rest character normalization and the
-    letter-spaced words above.
+    letter-spaced words above. **Divergence: one wide gap no longer sets
+    the line's threshold.** docling-parse 7 feeds every gap's width into
+    its k-means, so a single wide one — after a comma, before a tab stop or
+    a column (0.8–5 advances) — is the high cluster on its own, the
+    midpoint caps at 0.35 and the line's real word gaps (0.31–0.33 in
+    tight justified text) fall under it: `jedochwerdenweiterlaufende`,
+    `DieNormalarbeitszeit`, `KhurramAzeemHashmi`. Gaps enter the clustering
+    at most 0.5 wide here (wider is a boundary under any threshold the rule
+    can pick); on #921's 92-page collective agreement that takes the
+    adaptive rule's glued word pairs from 68 to 7 (`legacy` has 52;
+    measured against `pdftotext`'s words), at a cost of 18 diff lines
+    against docling's groundtruth, where docling glues the same pairs (389
+    → 407, all in `2203.01017v2` and `2206.01062`). **Divergence: a page
+    that draws its spaces.** docling-parse 7's 0.35 floor applies to a
+    line holding a space glyph; a one-word line — a table cell, a heading —
+    has none, so a kerned `f|l` (0.24–0.33 advances in EUR-Lex documents)
+    became `Offenlegungspf lichten`, in docling-parse 7.24.1 too. Producers
+    are consistent about spaces, so when at least half of a page's lines of
+    eight glyphs or more carry one, every line on it keeps the floor (no
+    groundtruth file changes). On such a page a fixed `F` reads like
+    `adaptive` (0.35 on every line, so the 63 extra EUR-Lex cuts #921's
+    reporter saw at 0.10 are gone); `F` applies as given on pages that
+    draw no spaces. **Extension: `pdf_keep_typography`.** docling-parse's
+    sanitizer folds typographic punctuation to ASCII — `„ “ ” ‟` → `"`,
+    `‚ ‘ ’ ‛` → `,`/`'`, the dashes → `-`, `…` → `...` — and so does this
+    port by default. `pdf_keep_typography=true`
+    (`DOCLING_RS_PDF_KEEP_TYPOGRAPHY`, `--pdf-keep-typography`) keeps them
+    as drawn, so a German citation's `„Gewinn“` stays distinguishable from
+    a straight quote in code or data. Line order is untouched by it.
 
 ---
 

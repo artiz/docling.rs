@@ -88,6 +88,8 @@
 //!   a space glyph (#921): `adaptive` (default, docling-parse ≥ 7's
 //!   line-local threshold) | `legacy` (docling-parse ≤ 6) | a factor in
 //!   (0, 4] of the two flanking glyphs' mean advance
+//! - `pdf_keep_typography` — keep a PDF's typographic punctuation (`„ “`,
+//!   `‚ ‘`, dashes, `…`) as drawn instead of folding it to ASCII (#921)
 //! - `ocr_textline_orientation` — RapidOCR's text-line orientation
 //!   handling (#666): oriented line crops, tall lines turned 90°, the 0/180
 //!   classifier (`.models/ocr_textline_ori.onnx`); off by default
@@ -3155,6 +3157,7 @@ fn convert_document_inner(
             pipeline.set_ocr_mode(o.ocr_mode().map_err(bad)?);
             pipeline.set_ocr_scale(o.ocr_scale);
             pipeline.set_word_gap(o.pdf_word_gap().map_err(bad)?);
+            pipeline.set_keep_typography(o.pdf_keep_typography);
             pipeline.set_ocr_textline_orientation(o.ocr_textline_orientation);
             pipeline.set_images(o.image_output());
             pipeline.set_heading_hierarchy(docling::HeadingHierarchyOptions::enabled(
