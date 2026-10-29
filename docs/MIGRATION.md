@@ -2443,6 +2443,11 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   Markdown's placeholder mode the block takes the drawing's
   `<!-- image -->`'s place (the picture itself stays in the document and
   in the embedded / referenced modes). docling has no counterpart.
+- **`docling-pdf` `render` feature** (#917) — `render_pages`, `RenderedPage`,
+  `PdfDocument` and the `render` / `raster` modules (the pure-Rust page
+  renderer, no model) without `ort` / `docling-onnx` in the dependency graph:
+  `docling-pdf = { default-features = false, features = ["render"] }`. `ml`
+  (the default) implies it. docling has no counterpart.
 - **`docling-rag`** — documents → chunking → embeddings → vector search,
   with swappable embedders (Ollama/Gemini/local ONNX), stores
   (SQLite+sqlite-vec / PostgreSQL+pgvector), LLM, sources and queues, plus an

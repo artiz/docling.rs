@@ -38,22 +38,29 @@ pdfium = ["ml", "dep:pdfium-render"]
 # tokenizers stack the enrichment models use — no extra dependency, the
 # model is the optional part (missing → one warning, pattern-only).
 ner = ["ml", "dep:serde_json"]
-ml = [
+# Page rendering without the inference stack (#917): the pure-Rust renderer /
+# raster (`render_pages`, `RenderedPage`, `render`, `raster`, `PdfDocument`)
+# needs no model, so a consumer that only draws pages keeps ort and
+# docling-onnx out of its dependency graph. `ml` implies it.
+render = [
     "ocr-prep",
-    "dep:ort",
     "dep:image",
     "dep:fast_image_resize",
     "dep:weezl",
-    "dep:tokenizers",
     "dep:flate2",
-    "dep:tar",
     "dep:regex",
-    "dep:docling-onnx",
     "dep:libloading",
     "dep:tiny-skia",
     "dep:ttf-parser",
     "dep:hayro-jpeg2000",
     "dep:hayro-jbig2",
+]
+ml = [
+    "render",
+    "dep:ort",
+    "dep:tokenizers",
+    "dep:tar",
+    "dep:docling-onnx",
 ]
 # GPU execution providers (#74). Each feature makes `ort` link/download an
 # ONNX Runtime binary that contains that provider; which provider actually

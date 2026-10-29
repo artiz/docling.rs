@@ -34,7 +34,7 @@ pub use docling_onnx as ep;
 // Heading-hierarchy stage (#302): PDF font-name style parsing, outline
 // extraction (pure lopdf), and the level-assignment pass. No feature gate on
 // the logic itself — only the glyph style pass needs pdfium (`ml`).
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub mod dparse_render;
 mod font_style;
 mod heading_hierarchy;
@@ -72,9 +72,9 @@ pub mod scanned;
 // no feature gate: the wasm/pdf-text path needs them like the native one.
 pub mod info;
 pub mod pdf_meta;
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub mod raster;
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub mod render;
 mod std14;
 #[cfg(feature = "ml")]
@@ -136,7 +136,7 @@ pub use heading_hierarchy::HeadingHierarchyOptions;
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options, convert_mets_gbs_with_pipeline};
 #[cfg(feature = "ml")]
 pub use ocr::{OcrEngine, OcrLang, OcrMode};
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub use pdfium_backend::PdfDocument;
 pub use pdfium_backend::{PdfPage, TextCell};
 #[cfg(feature = "ml")]
@@ -144,7 +144,7 @@ pub use tesseract::{
     installed_languages as tesseract_languages, lang_arg as tesseract_lang_arg, TesseractOptions,
 };
 // Plain page rasterization (#243) — pdfium only, no models.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub use pdfium_backend::{render_pages, RenderedPage};
 
 /// Errors from the PDF backend. Detailed and surfaced (never silently skipped).
@@ -460,7 +460,7 @@ pub(crate) fn prefer_fp32() -> bool {
     fp32_forced() || docling_onnx::prefers_fp32()
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// Resolve a default (CWD-relative) asset path — the shared chain in
 /// [`docling_core::assets`]: CWD, then next to the executable and one level
 /// above it (the `scripts/install/install.sh` layout).
