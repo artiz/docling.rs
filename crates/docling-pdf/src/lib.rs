@@ -146,6 +146,8 @@ pub use tesseract::{
 // Plain page rasterization (#243) — pdfium only, no models.
 #[cfg(feature = "render")]
 pub use pdfium_backend::{render_pages, RenderedPage};
+#[cfg(feature = "ml")]
+pub use render::Omission;
 
 /// Errors from the PDF backend. Detailed and surfaced (never silently skipped).
 #[derive(Debug)]

@@ -113,6 +113,9 @@ pub struct Shared {
     fonts: RefCell<FontCache>,
     cmyk: RefCell<CmykCache>,
     images: RefCell<ImageStore>,
+    /// Images drawn as a placeholder (or not drawn) since the last
+    /// [`super::Renderer::take_omissions`] (#916).
+    omissions: RefCell<Vec<super::Omission>>,
     /// docling-parse's `bitmap_target_pixels_per_unit`: the resolution, in
     /// pixels per PDF unit, a JPEG needs to be decoded at for the page it is
     /// drawn on ([`image::codec_reduction_shift`]). docling renders with
@@ -128,6 +131,7 @@ impl Default for Shared {
             fonts: RefCell::default(),
             cmyk: RefCell::default(),
             images: RefCell::default(),
+            omissions: RefCell::default(),
             bitmap_hint: 1.0,
         }
     }
@@ -141,6 +145,19 @@ impl Shared {
             bitmap_hint,
             ..Shared::default()
         }
+    }
+
+    /// Drain what the renders since the last call left out.
+    pub fn take_omissions(&self) -> Vec<super::Omission> {
+        std::mem::take(&mut *self.omissions.borrow_mut())
+    }
+
+    fn omit(&self, id: Option<ObjectId>, rect: [f64; 4], reason: String) {
+        self.omissions.borrow_mut().push(super::Omission {
+            object: id,
+            rect,
+            reason,
+        });
     }
 
     /// The renderer's default `bitmap_target_pixels_per_unit`.
@@ -1457,19 +1474,26 @@ impl<'a> Interp<'a> {
         let img = match key.and_then(|k| self.images.get(&k).cloned()) {
             Some(i) => i,
             None => {
+                let rect = [bx0, by0, bx1, by1];
+                let mut placeholder = None;
                 let decoded = match crate::timing::timed("render.image_decode", || {
                     let loaded = self
                         .shared
                         .load_image(doc, stream, id, resources, reduction)?;
+                    placeholder = loaded.placeholder_reason().map(str::to_string);
                     let mut cmyk = self.shared.cmyk.borrow_mut();
                     image::rasterize(&loaded, fill, Some(target), &mut cmyk)
                 }) {
                     Ok(d) => Rc::new(d),
                     Err(e) => {
                         docling_core::debug_log!("docling-pdf render: image skipped ({e})");
+                        self.shared.omit(id, rect, format!("image not drawn ({e})"));
                         return;
                     }
                 };
+                if let Some(why) = placeholder {
+                    self.shared.omit(id, rect, why);
+                }
                 if let Some(k) = key {
                     if self.images.len() > 256 {
                         self.images.clear();

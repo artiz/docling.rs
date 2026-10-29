@@ -73,7 +73,9 @@ impl Samples {
 
 enum Loaded {
     Samples(Samples),
-    Placeholder,
+    /// The codec could not be run: a neutral block is drawn instead, and the
+    /// reason is kept for the render's omission report (#916).
+    Placeholder(String),
 }
 
 /// An image decoded to samples, with everything the rasterizer needs.
@@ -90,11 +92,20 @@ pub struct LoadedImage {
 }
 
 impl LoadedImage {
+    /// Why the image is a placeholder block instead of its pixels (`None`
+    /// when it decoded) — the render's omission report (#916).
+    pub fn placeholder_reason(&self) -> Option<&str> {
+        match &self.samples {
+            Loaded::Placeholder(why) => Some(why),
+            Loaded::Samples(_) => None,
+        }
+    }
+
     /// The memory the samples take (for a cache budget).
     pub fn bytes(&self) -> usize {
         let s = match &self.samples {
             Loaded::Samples(s) => s.data.len(),
-            Loaded::Placeholder => 0,
+            Loaded::Placeholder(_) => 0,
         };
         s + self.alpha.as_ref().map_or(0, Vec::len)
     }
@@ -206,7 +217,7 @@ pub fn load(
     // reduced decode, wins over the dictionary's `/Width` × `/Height`).
     let (w, h) = match &samples {
         Loaded::Samples(s) => (s.width, s.height),
-        Loaded::Placeholder => (width as usize, height as usize),
+        Loaded::Placeholder(_) => (width as usize, height as usize),
     };
     if is_mask {
         return Ok(LoadedImage {
@@ -220,7 +231,7 @@ pub fn load(
         });
     }
     let (cs, alpha) = match &mut samples {
-        Loaded::Placeholder => (None, None),
+        Loaded::Placeholder(_) => (None, None),
         Loaded::Samples(s) => {
             let cs_obj = get2(doc, d, b"ColorSpace", b"CS");
             let guess = || match s.ncomp {
@@ -325,7 +336,7 @@ pub fn rasterize(
             // An undecodable stencil (#811): the same neutral block an
             // undecodable image gets, so the page shows *something* where
             // the scan's text was instead of nothing at all.
-            Loaded::Placeholder => {
+            Loaded::Placeholder(_) => {
                 for p in pixmap.pixels_mut() {
                     *p = premul([128, 128, 128], 255);
                 }
@@ -567,7 +578,7 @@ fn load_samples(
                 }
                 Err(e) => {
                     docling_core::debug_log!("docling-pdf render: JPEG not decoded ({e:?})");
-                    Ok(Loaded::Placeholder)
+                    Ok(Loaded::Placeholder(format!("JPEG not decoded ({e:?})")))
                 }
             }
         }
@@ -639,7 +650,7 @@ fn load_samples(
                 })),
                 Err(e) => {
                     docling_core::debug_log!("docling-pdf render: JPX not decoded ({e})");
-                    Ok(Loaded::Placeholder)
+                    Ok(Loaded::Placeholder(format!("JPX not decoded ({e})")))
                 }
             }
         }
@@ -676,7 +687,7 @@ fn load_samples(
                 })),
                 Err(e) => {
                     docling_core::debug_log!("docling-pdf render: JBIG2 not decoded ({e})");
-                    Ok(Loaded::Placeholder)
+                    Ok(Loaded::Placeholder(format!("JBIG2 not decoded ({e})")))
                 }
             }
         }
@@ -685,7 +696,7 @@ fn load_samples(
                 "docling-pdf render: no {} decoder, drawing a placeholder",
                 codec.name
             );
-            Ok(Loaded::Placeholder)
+            Ok(Loaded::Placeholder(format!("no {} decoder", codec.name)))
         }
     }
 }
