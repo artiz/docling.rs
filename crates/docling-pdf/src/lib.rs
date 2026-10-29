@@ -707,6 +707,38 @@ pub struct ImageOutput {
 }
 
 #[cfg(feature = "ml")]
+/// The layout regions of a page with a text layer that no programmatic text
+/// touches — docling's "clusters without any visible programmatic text"
+/// (`_find_pdf_aware_layout_ocr_rects`: any text cell intersecting the
+/// cluster counts), so their text, if any, is drawn as outlines (#931).
+/// Text, furniture and table regions only: pictures have their own pass.
+/// Furniture is relabeled `text`, the label region OCR reads.
+fn text_less_regions(regions: &[layout::Region], cells: &[TextCell]) -> Vec<layout::Region> {
+    regions
+        .iter()
+        .filter(|r| {
+            ocr_prep::is_text_label(r.label)
+                || assemble::is_table_like(r.label)
+                || matches!(r.label, "page_header" | "page_footer")
+        })
+        .filter(|r| {
+            !cells.iter().any(|c| {
+                !c.text.trim().is_empty()
+                    && c.r.min(r.r) > c.l.max(r.l)
+                    && c.b.min(r.b) > c.t.max(r.t)
+            })
+        })
+        .map(|r| layout::Region {
+            label: match r.label {
+                "page_header" | "page_footer" => "text",
+                l => l,
+            },
+            ..r.clone()
+        })
+        .collect()
+}
+
+#[cfg(feature = "ml")]
 /// The OCR'd cells with their recognition confidence, for the per-cell report
 /// (#915): a copy of what feeds the page `ocr_score`, kept beside it.
 fn cell_confs(scored: &[(TextCell, f32)]) -> Vec<docling_core::OcrCellConfidence> {
@@ -1977,6 +2009,63 @@ impl Worker {
                     ocr_cells.extend(cell_confs(&scored));
                     det_cells = scored.into_iter().map(|(cell, _)| cell).collect();
                     page.cells.extend(det_cells.iter().cloned());
+                }
+            }
+        } else {
+            // A page with a text layer can still draw part of its text as
+            // vector outlines (`gs -dNoOutputFonts`, flattened print PDFs):
+            // the layout model finds the paragraph, the text layer holds
+            // nothing there, and the region dropped empty — one native `Page
+            // 1` footer was enough to switch the page's OCR off (#931).
+            // docling's default `pdf_aware_layout_regions` OCRs every layout
+            // cluster without any programmatic text in it
+            // (`_find_pdf_aware_layout_ocr_rects`); do the same for the text,
+            // furniture and table regions (pictures go through the bare-
+            // picture pass below).
+            let empty = text_less_regions(&regions, &page.cells);
+            if let (false, Some(_)) = (empty.is_empty(), self.ocr_model()?) {
+                // A page with a text layer and no picture or table had its
+                // bitmap declined (#897); render it now — rare, and only
+                // for the page that needs it.
+                page.resolve_image()?;
+                let (img, scl) = ocr_input(&mut ocr_view, &page.image, page.scale, ocr_scale);
+                let detected = match self.det_model() {
+                    Some(det) => timing::timed("ocr.det", || det.detect(img)).unwrap_or_else(|e| {
+                        docling_core::debug_log!(
+                            "docling-pdf: page {}: text detection failed ({e}); keeping the \
+                             region-scoped OCR only",
+                            n + 1
+                        );
+                        Vec::new()
+                    }),
+                    None => Vec::new(),
+                };
+                let det_lines =
+                    (ocr::det_lines() && !detected.is_empty()).then_some(detected.as_slice());
+                let ocr = self.ocr_model()?.expect("checked above");
+                let scored = timing::timed("ocr.page", || {
+                    ocr.ocr_page_with(img, &empty, scl, det_lines)
+                })
+                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                docling_core::debug_log!(
+                    "docling-pdf: page {}: {} text-less layout region(s) OCR'd, {} line(s)",
+                    n + 1,
+                    empty.len(),
+                    scored.len()
+                );
+                ocr_confs.extend(scored.iter().map(|(_, conf)| conf));
+                ocr_cells.extend(cell_confs(&scored));
+                page.cells.extend(scored.into_iter().map(|(cell, _)| cell));
+                if empty.iter().any(|r| assemble::is_table_like(r.label)) {
+                    let words = timing::timed("ocr.table_words", || {
+                        ocr.ocr_table_words(img, &empty, scl, det_lines)
+                    })
+                    .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                    ocr_confs.extend(words.iter().map(|(_, conf)| conf));
+                    ocr_cells.extend(cell_confs(&words));
+                    let words: Vec<_> = words.into_iter().map(|(cell, _)| cell).collect();
+                    page.cells.extend(words.iter().cloned());
+                    page.word_cells.extend(words);
                 }
             }
         }

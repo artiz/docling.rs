@@ -146,8 +146,9 @@ impl OcrLang {
 ///
 /// - `PdfAwareLayoutRegions` (upstream's **default**): OCR only layout regions
 ///   the embedded text layer can't cover. Exactly the standard path here —
-///   scanned pages OCR their regions, digital pages OCR only text-less bitmap
-///   areas.
+///   scanned pages OCR their regions, digital pages OCR their bare pictures
+///   and every text/furniture/table region no programmatic text touches
+///   (vector-outlined text beside a native text layer, #931).
 /// - `FullPage` / `LayoutRegions`: ignore the PDF text layer and OCR
 ///   everything. Both map onto the [`force_full_page_ocr`] machinery (discard
 ///   the text layer, OCR every layout region): the upstream distinction —

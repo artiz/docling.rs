@@ -62,6 +62,7 @@ mod security_doc;
 mod svg;
 mod tesseract;
 mod textline_orientation;
+mod vector_text_ocr;
 mod vlm;
 mod vtt_export;
 mod warm_pipeline;

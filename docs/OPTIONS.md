@@ -251,7 +251,8 @@ codec or copybook when the conversion runs.
   `rus+eng` Tesseract reads look-alike Latin words as Cyrillic (`My` → `Му`).
 - **Regions and scale** (#254). `ocr_mode` is docling's `OcrMode`: the
   default (= `pdf_aware_layout_regions`) keeps the text layer and OCRs what
-  lacks one; `full_page` and `layout_regions` both discard the text layer,
+  lacks one — every layout region no programmatic text touches, so text
+  drawn as vector outlines beside a native text layer is read too (#931); `full_page` and `layout_regions` both discard the text layer,
   exactly like `force_full_page_ocr` (the whole-page vs per-region *detector*
   input they distinguish upstream has no analogue here: the detector always
   sees the whole page, the recognizer always reads line crops). `ocr_scale`
