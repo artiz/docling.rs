@@ -1,6 +1,6 @@
 #915 | fixed | claude/issue-915-ocr-cell-confidence | 2026-10-28T23:00Z
-#916 | skipped | feature request, queued for the next run (additive features in scope) | 2026-10-28T23:00Z
-#917 | skipped | feature request, queued for the next run (additive features in scope) | 2026-10-28T23:00Z
+#916 | fixed | claude/issue-916-render-omissions | 2026-10-29T06:00Z
+#917 | fixed | claude/issue-917-render-feature | 2026-10-29T06:00Z
 #918 | fixed | claude/issue-918-ris-amp | 2026-10-29T00:40Z
 #919 | fixed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:55Z
 #920 | fixed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:55Z
