@@ -1,0 +1,155 @@
+//! Text-layer typography regressions (#919–#923): synthetic one-page PDFs run
+//! through the pure-Rust `convert_text_layer` (no models, so no `ml` gate).
+
+fn pdf(content: &str) -> Vec<u8> {
+    pdf_bytes(content.as_bytes())
+}
+
+/// A one-page A4 PDF drawing `content` in Helvetica (`/F1`, WinAnsi).
+fn pdf_bytes(content: &[u8]) -> Vec<u8> {
+    let stream = [
+        format!("<</Length {}>>stream\n", content.len()).as_bytes(),
+        content,
+        b"\nendstream",
+    ]
+    .concat();
+    let objs: Vec<Vec<u8>> = vec![
+        b"<</Type/Catalog/Pages 2 0 R>>".to_vec(),
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec(),
+        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R\
+          /Resources<</Font<</F1 5 0 R>>>>>>"
+            .to_vec(),
+        stream,
+        b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>".to_vec(),
+    ];
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, body) in objs.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj", i + 1).as_bytes());
+        out.extend_from_slice(body);
+        out.extend_from_slice(b"endobj\n");
+    }
+    let xref_at = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+    for off in &offsets {
+        out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer<</Size {}/Root 1 0 R>>\nstartxref\n{xref_at}\n%%EOF\n",
+            objs.len() + 1
+        )
+        .as_bytes(),
+    );
+    out
+}
+
+fn text_of(pdf: &[u8]) -> String {
+    docling_pdf::convert_text_layer(pdf, "t.pdf")
+        .expect("text-layer conversion")
+        .export_to_text()
+}
+
+/// Long enough to be a text layer, not a vestigial form.
+const BODY: &str = "Der Betriebsrat hat die Belegschaft ueber die geplanten Massnahmen rechtzeitig zu unterrichten.";
+
+fn body_line(y: i32) -> String {
+    format!("BT /F1 12 Tf 72 {y} Td ({BODY}) Tj ET\n")
+}
+
+/// #922: WinAnsi 0x84 (`„`) is in the 0x80–0x9F row the table lacked; the
+/// closing `“` (0x93) was kept, the opening mark vanished. docling's sanitizer
+/// maps both to `'` (`clean_text`).
+#[test]
+fn low_opening_quote_survives() {
+    let content = format!(
+        "{}BT /F1 12 Tf 72 680 Td (Teilen \\204Gewinn oder Verlust\\223 und \\204sonstiges\\223 Ergebnis) Tj ET",
+        body_line(700)
+    );
+    let text = text_of(&pdf(&content));
+    assert!(
+        text.contains("Teilen 'Gewinn oder Verlust' und 'sonstiges' Ergebnis"),
+        "{text:?}"
+    );
+}
+
+/// #922: the rest of the 0x80–0x9F row (`€`, `™`, `œ`, …) read as WinAnsi.
+#[test]
+fn winansi_c1_row_is_complete() {
+    let content = format!(
+        "{}BT /F1 12 Tf 72 680 Td (Preis \\200 5 \\231 \\234uvre \\212 \\236) Tj ET",
+        body_line(700)
+    );
+    let text = text_of(&pdf(&content));
+    assert!(
+        text.contains("Preis \u{20ac} 5 \u{2122} \u{153}uvre \u{160} \u{17e}"),
+        "{text:?}"
+    );
+}
+
+/// #919: a soft hyphen ending a line is a word split across it -- the halves
+/// fuse, with no space left where the hyphen was.
+#[test]
+fn soft_hyphen_at_line_end_fuses_the_word() {
+    let content = format!(
+        "{}BT /F1 12 Tf 72 686 Td (Die Veroeffent\\255) Tj ET\nBT /F1 12 Tf 72 672 Td (lichung der Verordnung ist wichtig.) Tj ET",
+        body_line(700)
+    );
+    let text = text_of(&pdf(&content));
+    assert!(
+        text.contains("Veroeffentlichung der Verordnung"),
+        "{text:?}"
+    );
+    assert!(!text.contains('\u{ad}'), "{text:?}");
+}
+
+/// A soft hyphen nothing continues is dropped, not left as an invisible char.
+#[test]
+fn unmerged_soft_hyphen_is_dropped() {
+    let content = format!(
+        "{}BT /F1 12 Tf 72 686 Td (Ende Veroeffent\\255) Tj ET",
+        body_line(700)
+    );
+    let text = text_of(&pdf(&content));
+    assert!(
+        text.contains("Ende Veroeffent") && !text.contains('\u{ad}'),
+        "{text:?}"
+    );
+}
+
+/// #920: `Warte-` / `und Behaltefristen` is an elliptical compound -- the
+/// hyphen and the space stay; a wrapped word still fuses.
+#[test]
+fn hard_hyphen_before_a_conjunction_is_kept() {
+    let content = format!(
+        "{}BT /F1 12 Tf 72 686 Td (Es gelten die Warte-) Tj ET\nBT /F1 12 Tf 72 672 Td (und Behaltefristen des Gesetzes.) Tj ET",
+        body_line(700)
+    );
+    let text = text_of(&pdf(&content));
+    assert!(text.contains("Warte- und Behaltefristen"), "{text:?}");
+
+    let content = format!(
+        "{}BT /F1 12 Tf 72 686 Td (Die Veroeffent-) Tj ET\nBT /F1 12 Tf 72 672 Td (lichung der Verordnung ist wichtig.) Tj ET",
+        body_line(700)
+    );
+    let text = text_of(&pdf(&content));
+    assert!(text.contains("Veroeffentlichung der"), "{text:?}");
+}
+
+/// #923: a raised note at the end of a line reads after that line, not ahead
+/// of it.
+#[test]
+fn raised_note_follows_its_host_line() {
+    let content = format!(
+        "{}BT /F1 12 Tf 72 686 Td (Die Beschaeftigten, die zu entsenden sind) Tj ET\n\
+         BT /F1 12 Tf 72 672 Td (und die Belegschaft ist nicht groesser als zehn besteht.) Tj ET\n\
+         BT /F1 7 Tf 368 676 Td (\\(Anm. 1\\)) Tj ET",
+        body_line(700)
+    );
+    let text = text_of(&pdf(&content));
+    let host = text.find("und die Belegschaft").expect("host line");
+    let note = text.find("(Anm. 1)").expect("note");
+    assert!(host < note, "{text:?}");
+    assert!(text.contains("besteht. (Anm. 1)"), "{text:?}");
+}

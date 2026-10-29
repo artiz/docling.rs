@@ -2226,6 +2226,20 @@ These are deliberate or unavoidable divergences, not bugs.
     `timings` is `{}`. A failed document answers a `200` envelope with
     `status: "failure"`, as upstream does for a conversion error.
 
+20. **PDF text-layer typography** (#919, #920, #922, #923). Four fixes to how
+    the pure-Rust text layer reads a line: `WinAnsiEncoding` is complete over
+    Windows-1252's 0x80–0x9F row (`„` `€` `™` `œ` … — the table lacked them, so
+    a German opening quote `„` vanished while its closing `“` stayed); a soft
+    hyphen ending a line fuses the wrapped word (`Veröffent­` + `lichung` →
+    `Veröffentlichung`; it was stripped before the paragraph merge could see
+    it, leaving `Veröffent lichung`); a small raised run at the right end of a
+    line (`(Anm. 1)`) reads after that line, not ahead of it. **Divergence:** a
+    line-final hard hyphen before a coordinating conjunction (`und`, `oder`,
+    `bzw.`, `sowie`, `and`, `or`, `et`, `ou`, `en`, `y`) is an elliptical
+    compound and keeps its dash and space (`Warte- und Behaltefristen`);
+    docling fuses it (`Warteund`). Every other wrapped word still fuses
+    (docling#3888).
+
 ---
 
 ## 5. Not migrated / out of scope
