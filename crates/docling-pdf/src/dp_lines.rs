@@ -1011,12 +1011,24 @@ fn tracked_gaps(run: &[RunCell]) -> Vec<bool> {
     tracked
 }
 
+/// Where a gap enters [`infer_word_gap`]'s k-means at most. A gap this wide
+/// is a word boundary under any threshold the rule can pick (it caps at
+/// 0.35), so its exact width carries no information — but one wide gap
+/// after a comma or before a column (0.8–5 advances) dragged the high
+/// cluster's mean up until the midpoint hit the 0.35 cap, and the line's
+/// real word gaps (0.31–0.33 in tight justified text) fell under it:
+/// `jedochwerdenweiterlaufendeQuartierkosten`, `KhurramAzeemHashmi`.
+/// **Divergence** from docling-parse 7, which glues those (#921: 68 → 7
+/// glues on the EVU agreement, measured against `pdftotext`'s words).
+const GAP_CLUSTER_CLIP: f64 = 0.5;
+
 /// docling-parse ≥ 7's `infer_word_gap`: the line's normalized gaps (not
 /// across an explicit space) split by an eight-step two-cluster k-means;
 /// 0.25 when there are fewer than two or they do not separate, else the
 /// midpoint of the two cluster means, at least 0.18. Letter-spacing gaps
 /// (`tracked`, #921) stay out of the sample: they are settled already, and
-/// their spread would drag the low cluster up into the word gaps.
+/// their spread would drag the low cluster up into the word gaps. Each gap
+/// enters at most [`GAP_CLUSTER_CLIP`] wide.
 fn infer_word_gap(run: &[RunCell], tracked: &[bool]) -> f64 {
     let mut gaps = Vec::new();
     let mut prev: Option<&RunCell> = None;
@@ -1027,7 +1039,7 @@ fn infer_word_gap(run: &[RunCell], tracked: &[bool]) -> f64 {
             continue;
         }
         if let (Some(p), false, false) = (prev, crossed_space, tracked[i]) {
-            gaps.push(normalized_gap(p, c));
+            gaps.push(normalized_gap(p, c).min(GAP_CLUSTER_CLIP));
         }
         prev = Some(c);
         crossed_space = false;
@@ -1145,6 +1157,23 @@ impl Agg {
     }
 }
 
+/// Whether the page's producer draws its word spaces as glyphs: at least
+/// half of the lines long enough to hold several words (eight glyphs or
+/// more) carry a space glyph. Producers are consistent about it — a TeX or
+/// Arbortext page has none, a Word or EUR-Lex page has them on every line —
+/// so this tells a space-less line on a spaced page (a lone word) from the
+/// cursor-move pages #921 is about.
+fn page_draws_spaces(runs: &[Vec<RunCell>]) -> bool {
+    let long = |r: &&Vec<RunCell>| r.iter().filter(|c| !c.space).count() >= 8;
+    let lines = runs.iter().filter(long).count();
+    let spaced = runs
+        .iter()
+        .filter(long)
+        .filter(|r| r.iter().any(|c| c.space))
+        .count();
+    lines > 0 && 2 * spaced >= lines
+}
+
 /// docling-parse ≥ 7's contraction (`cells.h::contract`) over our char
 /// cells, with the word threshold `gap` picks: the line runs, their words,
 /// and the lines as the words joined by single spaces.
@@ -1172,8 +1201,15 @@ fn contract_runs(cells: &[Cell], gap: WordGap, page_h: f32) -> (Vec<TextCell>, V
     }
 
     let (mut words_out, mut lines_out) = (Vec::new(), Vec::new());
+    let page_spaced = page_draws_spaces(&runs);
     for run in &runs {
-        let has_spaces = run.iter().any(|c| c.space);
+        // A line on a page whose producer draws its word spaces as glyphs is
+        // judged like a line that draws them (below), even when it has none
+        // of its own: a lone word in a table cell or a heading carries no
+        // space glyph, and its only open gap is kerning — EUR-Lex's
+        // `Offenlegungspf|lichten` at 0.22–0.25, cut by the line-local
+        // threshold of 0.18 (docling-parse 7 cuts it too; #921).
+        let has_spaces = page_spaced || run.iter().any(|c| c.space);
         let tracked = tracked_gaps(run);
         // A line that draws its word spaces as glyphs marks its boundaries
         // itself; docling-parse 7 splits an unmarked gap there only above
@@ -1533,6 +1569,80 @@ mod tests {
         }
         let (lines, _) = line_and_word_cells_with(&g, 792.0, true, WordGap::Adaptive);
         assert_eq!(lines[0].text, "Allgemeine Bestimmungen");
+    }
+
+    /// Glyphs 2.5 pt wide on a line at `y`, each `(text, gap before)` piece
+    /// set after the previous one; `' '` pieces are space glyphs.
+    fn set_line(pieces: &[(&str, f32)], y: f32) -> Vec<Glyph> {
+        let mut g = Vec::new();
+        let mut x = 100.0f32;
+        for (text, gap) in pieces {
+            x += gap;
+            for ch in text.chars() {
+                g.push(Glyph {
+                    b: y,
+                    t: y + 10.0,
+                    lb: y - 2.0,
+                    lt: y + 10.0,
+                    ..glyph(ch, x, x + 2.5)
+                });
+                x += 2.5;
+            }
+        }
+        g
+    }
+
+    #[test]
+    fn one_wide_gap_does_not_raise_the_line_s_word_gap() {
+        // #921, EVU p. 3: word gaps of 0.32 advances in tight justified text
+        // and one gap of 3.2 before a tab stop. Unclipped, the wide gap is
+        // the high cluster alone, the midpoint caps at 0.35 and the line
+        // reads `jedochwerdenweiterlaufende`.
+        let g = set_line(
+            &[
+                ("jedoch", 0.0),
+                ("werden", 0.8),
+                ("weiterlaufende", 0.8),
+                ("Quartierkosten", 8.0),
+            ],
+            600.0,
+        );
+        let (_, words) = line_and_word_cells_with(&g, 792.0, true, WordGap::Adaptive);
+        let texts: Vec<&str> = words.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            ["jedoch", "werden", "weiterlaufende", "Quartierkosten"]
+        );
+    }
+
+    #[test]
+    fn a_lone_word_on_a_page_that_draws_spaces_keeps_its_kerning() {
+        // #921, EUR-Lex: `Offenlegungspf` + `lichten` 0.8 pt apart (0.32
+        // advances) in a one-word table cell. On a page whose lines carry
+        // space glyphs the gap is kerning, not a word boundary; on a
+        // space-less page (TeX, Arbortext) the same line splits.
+        let lone = || set_line(&[("Offenlegungspf", 0.0), ("lichten", 0.8)], 500.0);
+        let spaced = |y| {
+            set_line(
+                &[
+                    ("Die", 0.0),
+                    (" ", 0.0),
+                    ("Taxonomie", 0.0),
+                    (" ", 0.0),
+                    ("gilt", 0.0),
+                ],
+                y,
+            )
+        };
+        let mut page = lone();
+        page.extend(spaced(600.0));
+        page.extend(spaced(620.0));
+        let texts = |g: &[Glyph]| {
+            let (lines, _) = line_and_word_cells_with(g, 792.0, true, WordGap::Adaptive);
+            lines.into_iter().map(|c| c.text).collect::<Vec<_>>()
+        };
+        assert!(texts(&page).contains(&"Offenlegungspflichten".to_string()));
+        assert_eq!(texts(&lone()), ["Offenlegungspf lichten"]);
     }
 
     #[test]

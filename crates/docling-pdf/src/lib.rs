@@ -139,6 +139,7 @@ pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options, convert_mets_gbs
 pub use ocr::{OcrEngine, OcrLang, OcrMode};
 #[cfg(feature = "render")]
 pub use pdfium_backend::PdfDocument;
+pub use pdfium_backend::TextOptions;
 pub use pdfium_backend::{PdfPage, TextCell};
 #[cfg(feature = "ml")]
 pub use tesseract::{
@@ -338,12 +339,31 @@ pub fn convert_text_layer_pages(
 
 /// [`convert_text_layer_pages`] with the word-gap rule of the text layer's
 /// line and word contraction (#921, [`WordGap`]); `None` = the process
-/// default (`DOCLING_RS_PDF_WORD_GAP`, else docling-parse ≤6's rule).
+/// default (`DOCLING_RS_PDF_WORD_GAP`, else [`WordGap::Adaptive`]).
 pub fn convert_text_layer_pages_with(
     bytes: &[u8],
     name: &str,
     pages: Option<(usize, usize)>,
     word_gap: Option<WordGap>,
+) -> Result<DoclingDocument, PdfError> {
+    convert_text_layer_pages_opts(
+        bytes,
+        name,
+        pages,
+        TextOptions {
+            word_gap,
+            ..TextOptions::from_env()
+        },
+    )
+}
+
+/// [`convert_text_layer_pages`] with every text-layer setting (#921): the
+/// word-gap rule and whether typographic punctuation is kept as drawn.
+pub fn convert_text_layer_pages_opts(
+    bytes: &[u8],
+    name: &str,
+    pages: Option<(usize, usize)>,
+    text: TextOptions,
 ) -> Result<DoclingDocument, PdfError> {
     if let Some((first, last)) = pages {
         if first == 0 || last < first {
@@ -358,7 +378,8 @@ pub fn convert_text_layer_pages_with(
     let Some(mut parser) = textparse::PageTextParser::open(bytes) else {
         return Err(PdfError::Document(UNREADABLE.into()));
     };
-    parser.set_word_gap(word_gap);
+    parser.set_word_gap(text.word_gap);
+    parser.set_keep_typography(Some(text.keep_typography));
     // Pages are parsed, assembled and dropped one at a time: holding every
     // page's cells until the end made the peak scale with the whole file —
     // and a page window still paid for every page outside it.
@@ -2436,6 +2457,9 @@ pub struct Pipeline {
     /// The text layer's word-gap rule (#921); `None` = the environment's
     /// (`DOCLING_RS_PDF_WORD_GAP`), else [`WordGap::Adaptive`].
     word_gap: Option<WordGap>,
+    /// Keep typographic punctuation as drawn (#921); `None` = the
+    /// environment's (`DOCLING_RS_PDF_KEEP_TYPOGRAPHY`), else folding.
+    keep_typography: Option<bool>,
     /// RapidOCR's line orientation handling (#666). See
     /// [`Pipeline::ocr_textline_orientation`].
     textline_orientation: bool,
@@ -2483,6 +2507,7 @@ impl Pipeline {
             ocr_scale: ocr::scale_from_env(),
             picture_ocr_scale: ocr::picture_scale_from_env(),
             word_gap: None,
+            keep_typography: None,
             textline_orientation: ocr::textline_orientation_from_env(),
             images: ImageOutput::default(),
             heading_hierarchy: HeadingHierarchyOptions::default(),
@@ -3011,6 +3036,30 @@ impl Pipeline {
         self
     }
 
+    /// Keep typographic punctuation as drawn — `„ “ ‚ ‘`, dashes, `…` —
+    /// instead of folding it to ASCII as docling-parse's sanitizer does
+    /// (`pdf_keep_typography`, #921). `None` keeps
+    /// `DOCLING_RS_PDF_KEEP_TYPOGRAPHY`, else folding.
+    pub fn set_keep_typography(&mut self, keep: Option<bool>) {
+        self.keep_typography = keep;
+    }
+
+    /// See [`set_keep_typography`](Self::set_keep_typography).
+    pub fn keep_typography(mut self, keep: Option<bool>) -> Self {
+        self.keep_typography = keep;
+        self
+    }
+
+    /// The text-layer settings the page walk applies.
+    fn text_options(&self) -> pdfium_backend::TextOptions {
+        pdfium_backend::TextOptions {
+            word_gap: self.word_gap,
+            keep_typography: self
+                .keep_typography
+                .unwrap_or_else(assemble::keep_typography_from_env),
+        }
+    }
+
     /// See [`set_word_gap`](Self::set_word_gap).
     pub fn word_gap(mut self, gap: Option<WordGap>) -> Self {
         self.word_gap = gap;
@@ -3192,7 +3241,7 @@ impl Pipeline {
             true,
             range,
             deadline,
-            self.word_gap,
+            self.text_options(),
             |n, page| {
                 let (mut nodes, links, conf) = text_only_page(&page, images.scale);
                 assemble::stamp_page_no(&mut nodes, n + 1);
@@ -3238,7 +3287,7 @@ impl Pipeline {
         let extract_text = self.extract_text_layer();
         let progress = self.progress.clone();
         let mut done = 0usize;
-        let word_gap = self.word_gap;
+        let text = self.text_options();
         let worker = self.primary()?;
         let timed_out = Self::render_ahead(
             bytes,
@@ -3248,7 +3297,7 @@ impl Pipeline {
             extract_text,
             range,
             deadline,
-            word_gap,
+            text,
             |n, mut page| {
                 let (mut nodes, links, conf, page_image, ocr_cells) =
                     worker.process(n, &mut page)?;
@@ -3297,7 +3346,7 @@ impl Pipeline {
         extract_text: bool,
         range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
-        word_gap: Option<WordGap>,
+        text: pdfium_backend::TextOptions,
         mut consume: F,
     ) -> Result<bool, PdfError>
     where
@@ -3313,7 +3362,7 @@ impl Pipeline {
                     extract_text,
                     range,
                     bitmap,
-                    word_gap,
+                    text,
                     |n, _total, page| {
                         if expired(deadline) {
                             return Err(timeout_sentinel());
@@ -3366,7 +3415,7 @@ impl Pipeline {
         selected: usize,
         deadline: Option<std::time::Instant>,
     ) -> Result<(DoclingDocument, usize, bool), PdfError> {
-        let word_gap = self.word_gap;
+        let text = self.text_options();
         self.ensure_pool_for(selected)?;
         let progress = self.progress.clone();
         let pages_done = std::sync::atomic::AtomicUsize::new(0);
@@ -3437,7 +3486,7 @@ impl Pipeline {
                 extract_text,
                 range,
                 bitmap,
-                word_gap,
+                text,
                 |i, _total, page| {
                     if expired(deadline) {
                         return Err(timeout_sentinel());
@@ -3578,7 +3627,7 @@ impl Pipeline {
             true,
             range,
             deadline,
-            self.word_gap,
+            self.text_options(),
             |n, page| {
                 let (nodes, links, _conf) = text_only_page(&page, images.scale);
                 done += 1;
@@ -3615,7 +3664,7 @@ impl Pipeline {
         let bitmap = self.bitmap_render();
         let extract_text = self.extract_text_layer();
         let progress = self.progress.clone();
-        let word_gap = self.word_gap;
+        let text = self.text_options();
         let worker = self.primary()?;
         let mut done = 0usize;
         let timed_out = Self::render_ahead(
@@ -3626,7 +3675,7 @@ impl Pipeline {
             extract_text,
             range,
             deadline,
-            word_gap,
+            text,
             |n, mut page| {
                 // Confidence is dropped on the streaming path: the report is
                 // only complete once every page has run, which defeats
@@ -3665,7 +3714,7 @@ impl Pipeline {
     where
         F: FnMut(Vec<Node>, Vec<(String, String)>) -> Result<(), PdfError>,
     {
-        let word_gap = self.word_gap;
+        let text = self.text_options();
         self.ensure_pool_for(selected)?;
         let n_workers = self.pool.len();
         let render_image = !self.no_ocr;
@@ -3716,7 +3765,7 @@ impl Pipeline {
                         extract_text,
                         range,
                         bitmap,
-                        word_gap,
+                        text,
                         |i, _total, page| {
                             if expired(deadline) {
                                 return Err(timeout_sentinel());
@@ -3883,6 +3932,7 @@ impl Pipeline {
             image,
             links: Vec::new(),
             rotation: 0,
+            keep_typography: false,
             pending_image: None,
         };
         self.process_pages(vec![page], name)

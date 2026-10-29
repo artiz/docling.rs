@@ -299,7 +299,8 @@ parallel calls.
 
 The constructor takes the same PDF/image options as the one-shot calls —
 `ocrEngine`, `ocrLang`, `ocrMode`, `ocrScale`, `pdfWordGap` (where the PDF
-text layer splits words drawn without a space glyph, #921), `ocrTextlineOrientation`
+text layer splits words drawn without a space glyph, #921), `pdfKeepTypography`
+(keep `„ “ ‚ ‘`, dashes and `…` as drawn, #921), `ocrTextlineOrientation`
 (RapidOCR's text-line orientation handling, #666), `noOcr` (docling's `--no-ocr`:
 never OCR, keep layout and tables; `skipOcr` is its pre-2.0 name),
 `textLayerOnly` (the text layer only, no models — what `noOcr` meant before
@@ -466,7 +467,7 @@ warm `Pipeline` (PDF/images only).
 then `convertFile` / `convert` / `convertFileAsync` / `convertAsync` /
 `convertFileStreaming` / `streamFileMarkdown`. It reads `strict`, the
 enrichment switches and every PDF/image option (`ocrEngine`, `ocrLang`,
-`ocrMode`, `ocrScale`, `pdfWordGap`, `ocrTextlineOrientation`, `noOcr`, `textLayerOnly`, `password`,
+`ocrMode`, `ocrScale`, `pdfWordGap`, `pdfKeepTypography`, `ocrTextlineOrientation`, `noOcr`, `textLayerOnly`, `password`,
 `forceFullPageOcr`, `noTextPanels`, `headingHierarchy`, `pages`, `imagesScale`,
 `pageImages`) from
 `converterOptions` (#471).

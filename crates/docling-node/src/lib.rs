@@ -126,6 +126,11 @@ pub struct ConverterOptions {
     /// (docling-parse ≤ 6) | a factor such as `"0.2"` of the two flanking
     /// glyphs' mean advance, in (0, 4].
     pub pdf_word_gap: Option<String>,
+    /// Keep a PDF's typographic punctuation as drawn (#921) — `„ “ ‚ ‘`,
+    /// en/em dashes, `…` — instead of folding it to ASCII the way
+    /// docling-parse's sanitizer does (the default; also
+    /// `DOCLING_RS_PDF_KEEP_TYPOGRAPHY`).
+    pub pdf_keep_typography: Option<bool>,
     /// RapidOCR's text-line orientation handling (#666): oriented line
     /// crops, tall lines turned 90°, upside-down lines turned by the 0/180
     /// classifier (`.models/ocr_textline_ori.onnx`). Unset = off unless
@@ -477,6 +482,9 @@ pub struct ConvertOptions {
     pub ocr_scale: Option<f64>,
     /// The PDF text layer's word-gap rule (#921). See [`ConverterOptions`].
     pub pdf_word_gap: Option<String>,
+    /// Keep a PDF's typographic punctuation as drawn (#921). See
+    /// [`ConverterOptions`].
+    pub pdf_keep_typography: Option<bool>,
     /// RapidOCR's text-line orientation handling (#666). See
     /// [`ConverterOptions`].
     pub ocr_textline_orientation: Option<bool>,
@@ -1640,6 +1648,9 @@ struct WarmPipelineConfig {
     /// The PDF text layer's word-gap rule (#921); `None` = the
     /// environment's default.
     word_gap: Option<docling::PdfWordGap>,
+    /// Keep the PDF text layer's typographic punctuation (#921); `None` =
+    /// the environment's default.
+    keep_typography: Option<bool>,
     /// RapidOCR's text-line orientation handling (#666); `None` = the
     /// environment's default.
     ocr_textline_orientation: Option<bool>,
@@ -1676,6 +1687,7 @@ fn warm_pipeline_config(o: &ConverterOptions) -> Result<WarmPipelineConfig> {
         ocr_mode: s.ocr_mode().map_err(option_err)?,
         ocr_scale: s.ocr_scale,
         word_gap: s.pdf_word_gap().map_err(option_err)?,
+        keep_typography: s.pdf_keep_typography,
         ocr_textline_orientation: s.ocr_textline_orientation,
         images: s.image_output(),
         enrich: s.enrichments(),
@@ -1688,6 +1700,7 @@ impl Pipeline {
     /// enrichment switches (`doPictureClassification`, `doCodeEnrichment`,
     /// `doFormulaEnrichment`, #423) and every PDF/image option the one-shot
     /// calls honour — `ocrEngine`, `ocrLang`, `ocrMode`, `ocrScale`, `pdfWordGap`,
+    /// `pdfKeepTypography`,
     /// `noOcr`, `textLayerOnly`, `password`, `forceFullPageOcr`,
     /// `noTextPanels`, `headingHierarchy`,
     /// `pages` — are read here and apply to every conversion on this
@@ -1745,6 +1758,7 @@ impl Pipeline {
             .ocr_mode(warm.ocr_mode)
             .ocr_scale(warm.ocr_scale)
             .word_gap(warm.word_gap)
+            .keep_typography(warm.keep_typography)
             .images_scale(warm.images.scale)
             .generate_page_images(warm.images.page_images)
             .pages(warm.page_range)
@@ -3090,6 +3104,7 @@ mod tests {
                 ocr_mode: None,
                 ocr_scale: None,
                 word_gap: None,
+                keep_typography: None,
                 ocr_textline_orientation: None,
                 images: docling::ImageOutput::default(),
                 enrich: docling::EnrichmentOptions::default(),

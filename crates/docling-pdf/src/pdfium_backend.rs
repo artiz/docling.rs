@@ -89,6 +89,10 @@ pub struct PdfPage {
     /// text-layer pages (their cells live in display space already) and on
     /// paths without a pdfium renderer.
     pub rotation: u16,
+    /// Keep typographic punctuation as drawn — curly and low quotes, dashes,
+    /// `…`, `⁄`, `•` — instead of folding it to ASCII the way docling-parse's
+    /// sanitizer does (`pdf_keep_typography`, #921). Read by assembly.
+    pub keep_typography: bool,
 }
 
 impl PdfPage {
@@ -115,6 +119,7 @@ impl PdfPage {
             pending_image: None,
             links: Vec::new(),
             rotation: 0,
+            keep_typography: false,
         }
     }
 
@@ -352,7 +357,7 @@ where
         extract_text,
         range,
         BitmapRender::Eager,
-        None,
+        TextOptions::from_env(),
         f,
     )
 }
@@ -379,6 +384,27 @@ pub enum BitmapRender {
     OnDemand,
 }
 
+/// The text layer's settings a page walk applies (#921): the word-gap rule
+/// of the line and word cells, and whether assembly keeps typographic
+/// punctuation as drawn ([`PdfPage::keep_typography`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextOptions {
+    /// `None` = the process default (`DOCLING_RS_PDF_WORD_GAP`).
+    pub word_gap: Option<crate::dp_lines::WordGap>,
+    pub keep_typography: bool,
+}
+
+impl TextOptions {
+    /// The process defaults: `DOCLING_RS_PDF_WORD_GAP` and
+    /// `DOCLING_RS_PDF_KEEP_TYPOGRAPHY`.
+    pub fn from_env() -> Self {
+        Self {
+            word_gap: None,
+            keep_typography: crate::assemble::keep_typography_from_env(),
+        }
+    }
+}
+
 #[cfg(feature = "render")]
 /// [`for_each_page`] with the 2x bitmaps rendered as `bitmap` says, and the
 /// text layer's words split by `word_gap` (#921; `None` = the process
@@ -391,7 +417,7 @@ pub fn walk_pages<E, F>(
     extract_text: bool,
     range: Option<(usize, usize)>,
     bitmap: BitmapRender,
-    word_gap: Option<crate::dp_lines::WordGap>,
+    text: TextOptions,
     mut f: F,
 ) -> Result<(), E>
 where
@@ -422,7 +448,7 @@ where
     // nor pdfium's text page is decoded at all — on vector-dense pages (CAD
     // drawings as 100k+ path segments) that decode is most of the page cost.
     let mut rust = if extract_text {
-        rust_parser_cells(bytes, password, word_gap)
+        rust_parser_cells(bytes, password, text.word_gap)
     } else {
         None
     };
@@ -488,7 +514,7 @@ where
                 (None, None) => Vec::new(),
             };
             let rc = rust.as_mut().map(|p| p.cells_timed(i));
-            let extracted = extract_page(
+            let mut extracted = extract_page(
                 PageSources {
                     page: page.as_ref(),
                     dparse: dparse.as_ref(),
@@ -502,6 +528,7 @@ where
                 rc,
                 render_image,
             )?;
+            extracted.keep_typography = text.keep_typography;
             f(i, total, extracted)?;
         }
         // The helper ends once this sender and every page's handle are gone.
@@ -1305,6 +1332,7 @@ fn extract_page(
         image,
         links,
         rotation: 0,
+        keep_typography: false,
     };
     if rotation != 0 && scanned && render_image {
         page.unrotate(rotation);

@@ -1298,6 +1298,10 @@ pub struct PageTextParser {
     /// How words split where no space glyph does (#921); from
     /// `DOCLING_RS_PDF_WORD_GAP` unless [`Self::set_word_gap`] says.
     word_gap: crate::dp_lines::WordGap,
+    /// Whether [`Self::text_page`]'s page keeps typographic punctuation as
+    /// drawn (#921); `DOCLING_RS_PDF_KEEP_TYPOGRAPHY` unless
+    /// [`Self::set_keep_typography`] says.
+    keep_typography: bool,
 }
 
 impl PageTextParser {
@@ -1318,6 +1322,7 @@ impl PageTextParser {
             caches: DocCaches::default(),
             pages: pages.into_iter().map(|(_, pid)| pid).collect(),
             word_gap: crate::dp_lines::WordGap::from_env(),
+            keep_typography: crate::assemble::keep_typography_from_env(),
         })
     }
 
@@ -1327,6 +1332,15 @@ impl PageTextParser {
     pub fn set_word_gap(&mut self, gap: Option<crate::dp_lines::WordGap>) {
         if let Some(g) = gap {
             self.word_gap = g;
+        }
+    }
+
+    /// Whether the pages [`Self::text_page`] builds keep typographic
+    /// punctuation as drawn (#921); `None` keeps the environment's
+    /// (`DOCLING_RS_PDF_KEEP_TYPOGRAPHY`, else folding).
+    pub fn set_keep_typography(&mut self, keep: Option<bool>) {
+        if let Some(k) = keep {
+            self.keep_typography = k;
         }
     }
 
@@ -1429,6 +1443,7 @@ impl PageTextParser {
             image: image::RgbImage::new(1, 1),
             links: Vec::new(),
             rotation: 0,
+            keep_typography: self.keep_typography,
             #[cfg(feature = "render")]
             pending_image: None,
         }

@@ -73,6 +73,7 @@ impl Pipeline {
             image: image.clone(),
             links: Vec::new(),
             rotation: 0,
+            keep_typography: false,
             #[cfg(feature = "ml")]
             pending_image: None,
         };

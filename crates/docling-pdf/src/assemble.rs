@@ -1712,16 +1712,66 @@ fn clean_text(text: &str) -> String {
 /// nothing to say so, and the two halves were joined with a space.
 fn clean_text_keep_wrap(text: &str) -> String {
     let wrap = text.trim_end().ends_with('\u{ad}');
-    // Typographic-quote normalization follows docling-parse's sanitizer table
-    // (`pdf_sanitators/constants.h`): single curly quotes become the ASCII
-    // apostrophe `'`, double ones the ASCII `"` (docling-parse#349, 7.x —
-    // before it folded both to `'`, which docling's groundtruth carried until
-    // its docling-parse 7 refresh), and `‚` a comma.
-    let replaced = text
+    let unwrapped = text
         .replace("\u{2} ", "")
         .replace("\u{ad} ", "")
-        .replace(['\u{2}', '\u{ad}'], "") // any stray wrap hyphens not at a join
-        .replace(['\u{2018}', '\u{2019}', '\u{201b}'], "'") // ‘ ’ ‛ → '
+        // any stray wrap hyphens not at a join
+        .replace(['\u{2}', '\u{ad}'], "");
+    // `pdf_keep_typography` (#921): legal citations and quoted terms tell
+    // `„…“` and `‚…‘` from ASCII quotes, and `–` ranges from hyphens; the
+    // folding erases that, so the opt-out keeps the glyphs as drawn.
+    let replaced = if KEEP_TYPOGRAPHY.with(std::cell::Cell::get) {
+        unwrapped
+    } else {
+        fold_typography(&unwrapped)
+    };
+    // The docling-parse sanitizer already placed the correct spacing (e.g.
+    // justified double spaces); preserve internal runs of spaces, only
+    // normalizing line breaks/tabs and trimming the ends.
+    let out = replaced.replace(['\n', '\r', '\t'], " ").trim().to_string();
+    let mut out = fix_arabic_lam_alef(&out);
+    if wrap && !out.is_empty() {
+        out.push('\u{ad}');
+    }
+    out
+}
+
+thread_local! {
+    /// Whether the page being assembled keeps its typographic punctuation
+    /// ([`PdfPage::keep_typography`]); set for the length of one
+    /// [`assemble_page`] by [`TypographyScope`], so the text cleaners deep in
+    /// it need no extra parameter.
+    static KEEP_TYPOGRAPHY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Sets [`KEEP_TYPOGRAPHY`] for one page's assembly and restores it after.
+struct TypographyScope(bool);
+
+impl TypographyScope {
+    fn set(keep: bool) -> Self {
+        Self(KEEP_TYPOGRAPHY.with(|k| k.replace(keep)))
+    }
+}
+
+impl Drop for TypographyScope {
+    fn drop(&mut self) {
+        KEEP_TYPOGRAPHY.with(|k| k.set(self.0));
+    }
+}
+
+/// `DOCLING_RS_PDF_KEEP_TYPOGRAPHY` (#921): whether this process keeps
+/// typographic punctuation as drawn unless a conversion says otherwise.
+pub fn keep_typography_from_env() -> bool {
+    docling_core::env::flag("DOCLING_RS_PDF_KEEP_TYPOGRAPHY")
+}
+
+/// docling-parse's sanitizer table (`pdf_sanitators/constants.h`) applied to
+/// assembled text: single curly quotes become the ASCII apostrophe `'`,
+/// double ones the ASCII `"` (docling-parse#349, 7.x — before it folded both
+/// to `'`, which docling's groundtruth carried until its docling-parse 7
+/// refresh), `‚` a comma, the dash family a hyphen.
+fn fold_typography(text: &str) -> String {
+    text.replace(['\u{2018}', '\u{2019}', '\u{201b}'], "'") // ‘ ’ ‛ → '
         .replace(['\u{201c}', '\u{201d}', '\u{201e}', '\u{201f}'], "\"") // “ ” „ ‟ → "
         .replace('\u{201a}', ",") // ‚ → ,
         .replace(
@@ -1732,16 +1782,7 @@ fn clean_text_keep_wrap(text: &str) -> String {
         ) // hyphen/dash family → -
         .replace('\u{2044}', "/") // ⁄ fraction slash → /
         .replace('\u{2022}', "\u{b7}") // • → · (docling never emits •; inline CCS-concept separators)
-        .replace('\u{2026}', "..."); // … → ...
-                                     // The docling-parse sanitizer already placed the correct spacing (e.g.
-                                     // justified double spaces); preserve internal runs of spaces, only
-                                     // normalizing line breaks/tabs and trimming the ends.
-    let out = replaced.replace(['\n', '\r', '\t'], " ").trim().to_string();
-    let mut out = fix_arabic_lam_alef(&out);
-    if wrap && !out.is_empty() {
-        out.push('\u{ad}');
-    }
-    out
+        .replace('\u{2026}', "...") // … → ...
 }
 
 /// pdfium decomposes the Arabic lam-alef ligature (لا / لإ / لأ / لآ) into its
@@ -3305,6 +3346,7 @@ pub fn assemble_page(
     // Without pixels (the text-layer-only wasm build) no picture is cropped.
     #[cfg(not(feature = "ocr-prep"))]
     let _ = picture_scale;
+    let _typography = TypographyScope::set(page.keep_typography);
     let mut nodes: Vec<Node> = Vec::new();
     // Every page opens with an invisible page marker carrying its size in
     // points — what the JSON export needs to build docling's `pages` map and
@@ -4911,6 +4953,7 @@ mod tests {
                 annot(290.0, 360.0, "https://c"),
             ],
             rotation: 0,
+            keep_typography: false,
             #[cfg(feature = "ml")]
             pending_image: None,
         };

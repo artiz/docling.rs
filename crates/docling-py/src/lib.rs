@@ -269,6 +269,9 @@ struct PyDocumentConverter {
     /// The PDF text layer's word-gap rule (#921); `None` = the
     /// environment's default.
     word_gap: Option<docling::PdfWordGap>,
+    /// Keep the PDF text layer's typographic punctuation (#921); `None` =
+    /// the environment's default.
+    keep_typography: Option<bool>,
     /// RapidOCR's text-line orientation handling (#666); `None` = the
     /// environment's default.
     ocr_textline_orientation: Option<bool>,
@@ -368,6 +371,10 @@ impl PyDocumentConverter {
     ///   `DOCLING_RS_PDF_WORD_GAP`) | `"legacy"` (docling-parse ≤ 6) | a
     ///   factor such as `"0.2"` of the two flanking glyphs' mean advance, in
     ///   (0, 4]. Anything else raises `ValueError`.
+    /// * `pdf_keep_typography` — keep a PDF's typographic punctuation as
+    ///   drawn (#921): `„ “ ‚ ‘`, en/em dashes, `…`. `None` folds it to ASCII
+    ///   like docling-parse's sanitizer unless `DOCLING_RS_PDF_KEEP_TYPOGRAPHY`
+    ///   is set.
     /// * `ocr_textline_orientation` — RapidOCR's text-line orientation
     ///   handling (#666): oriented line crops, tall lines turned 90°,
     ///   upside-down lines turned by the 0/180 classifier
@@ -502,6 +509,7 @@ impl PyDocumentConverter {
         ocr_mode = None,
         ocr_scale = None,
         pdf_word_gap = None,
+        pdf_keep_typography = None,
         ocr_textline_orientation = None,
         ocr_engine = None,
         allowed_formats = None,
@@ -582,6 +590,7 @@ impl PyDocumentConverter {
         ocr_mode: Option<String>,
         ocr_scale: Option<f32>,
         pdf_word_gap: Option<String>,
+        pdf_keep_typography: Option<bool>,
         ocr_textline_orientation: Option<bool>,
         ocr_engine: Option<String>,
         allowed_formats: Option<Vec<String>>,
@@ -661,6 +670,7 @@ impl PyDocumentConverter {
             ocr_mode,
             ocr_scale,
             pdf_word_gap,
+            pdf_keep_typography,
             ocr_textline_orientation,
             images_scale,
             page_images: Some(generate_page_images),
@@ -747,6 +757,7 @@ impl PyDocumentConverter {
             ocr_mode: opts.ocr_mode().map_err(value_err)?,
             ocr_scale,
             word_gap: opts.pdf_word_gap().map_err(value_err)?,
+            keep_typography: opts.pdf_keep_typography,
             ocr_textline_orientation,
             images: opts.image_output(),
             page_range,
@@ -787,6 +798,7 @@ impl PyDocumentConverter {
         let ocr_mode = self.ocr_mode;
         let ocr_scale = self.ocr_scale;
         let word_gap = self.word_gap;
+        let keep_typography = self.keep_typography;
         let ocr_textline_orientation = self.ocr_textline_orientation;
         let images = self.images;
         let page_range = self.page_range;
@@ -812,6 +824,7 @@ impl PyDocumentConverter {
                     .ocr_mode(ocr_mode)
                     .ocr_scale(ocr_scale)
                     .word_gap(word_gap)
+                    .keep_typography(keep_typography)
                     .images_scale(images.scale)
                     .generate_page_images(images.page_images)
                     .pages(page_range)
@@ -1137,7 +1150,8 @@ impl PyDocumentConverter {
                     }
                 };
                 if let docling::Completion::TimedOut { pages_selected, .. } = &c.completion {
-                    reporter.fail_pages_cut_off(window.map_or(1, |(first, _)| first), *pages_selected);
+                    reporter
+                        .fail_pages_cut_off(window.map_or(1, |(first, _)| first), *pages_selected);
                 }
                 let errors: Vec<docling::ErrorItem> = c
                     .completion

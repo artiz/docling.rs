@@ -121,6 +121,7 @@ fn mets_pages(bytes: &[u8]) -> Result<Vec<PdfPage>, PdfError> {
             image_layout: None,
             links: Vec::new(),
             rotation: 0,
+            keep_typography: false,
             #[cfg(feature = "ml")]
             pending_image: None,
         });

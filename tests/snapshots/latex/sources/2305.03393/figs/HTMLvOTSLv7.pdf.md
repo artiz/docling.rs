@@ -40,7 +40,7 @@ D
 
 HTML
 
-OTSLmodel shows clean bounding box alignment
+OTSL model shows clean bounding box alignment
 
 A
 
@@ -144,7 +144,7 @@ C C C C C C C C C C C C C C NL
 
 C C C C C C C C C C C C C C NL
 
-HTMLmodel shows bounding box drifting
+HTML model shows bounding box drifting
 
 C
 

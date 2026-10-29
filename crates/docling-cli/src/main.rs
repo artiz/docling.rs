@@ -19,7 +19,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--track-changes accept|reject|all] [--extract-diagrams mermaid|none] [--no-outline-level-headings] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--progress|--no-progress] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--pdf-word-gap adaptive|legacy|F] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] [--archive-merge|--no-archive-merge] <input-file> | - | URL | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--track-changes accept|reject|all] [--extract-diagrams mermaid|none] [--no-outline-level-headings] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--progress|--no-progress] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--pdf-word-gap adaptive|legacy|F] [--pdf-keep-typography] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] [--archive-merge|--no-archive-merge] <input-file> | - | URL | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -264,6 +264,11 @@
 //!                      lines with them);
 //!                      both keep letter-spaced (Sperrsatz) words whole;
 //!                      legacy = docling-parse <= 6's running-mean rule
+//!   --pdf-keep-typography
+//!                      keep a PDF's typographic punctuation as drawn — low and
+//!                      curly quotes, en/em dashes, ellipsis — instead of
+//!                      folding it to ASCII the way docling-parse's sanitizer
+//!                      does (#921; DOCLING_RS_PDF_KEEP_TYPOGRAPHY)
 //!   --ocr-textline-orientation
 //!                      RapidOCR's line orientation handling (#666): crop each
 //!                      detected line along its rotated rectangle, turn tall
@@ -647,6 +652,9 @@ PDF / IMAGE PIPELINE
                           glyph: adaptive (default, docling-parse >= 7,
                           line-local) | legacy (docling-parse <= 6) | a factor
                           F: split gaps > F x the flanking glyphs' mean advance
+  --pdf-keep-typography   keep the PDF text layer's typographic punctuation as
+                          drawn („ “ ‚ ‘, dashes, …) instead of folding it to
+                          ASCII as docling does
   --ocr-textline-orientation
                           RapidOCR's line orientation: oriented crops, 90° turn of
                           tall lines, 0/180 classifier (off by default)
@@ -997,6 +1005,8 @@ fn main() -> ExitCode {
                 }
             },
             "--ocr-textline-orientation" => opts.ocr_textline_orientation = Some(true),
+            // Keep the PDF text layer's typographic punctuation as drawn (#921).
+            "--pdf-keep-typography" => opts.pdf_keep_typography = Some(true),
             "--picture-description" => opts.do_picture_description = Some(true),
             "--picture-description-endpoint" => opts.picture_description_endpoint = args.next(),
             "--picture-description-model" => opts.picture_description_model = args.next(),
@@ -1517,7 +1527,12 @@ fn main() -> ExitCode {
     // Validated above; read back as typed values where the paths below
     // need them.
     let pages = opts.page_range().ok().flatten();
-    let word_gap = opts.pdf_word_gap().ok().flatten();
+    let text_opts = docling::PdfTextOptions {
+        word_gap: opts.pdf_word_gap().ok().flatten(),
+        keep_typography: opts
+            .pdf_keep_typography
+            .unwrap_or(docling::PdfTextOptions::from_env().keep_typography),
+    };
     let strict = opts.strict.unwrap_or(false);
     let text_layer_mode = opts.text_layer_only.unwrap_or_default();
     // The missing-models fallback below is `true`'s alone: under `auto` a
@@ -1849,7 +1864,7 @@ fn main() -> ExitCode {
                     strict,
                     text_layer_fallback.as_ref(),
                     pages,
-                    word_gap,
+                    text_opts,
                 ) {
                     doc.page_break_placeholder = page_break_placeholder.clone();
                     return output_document(doc, &to, image_mode, &path, &chunk_opts, export);
@@ -1894,7 +1909,7 @@ fn main() -> ExitCode {
                             strict,
                             text_layer_fallback.as_ref(),
                             pages,
-                            word_gap,
+                            text_opts,
                         ) {
                             doc.page_break_placeholder = page_break_placeholder.clone();
                             return output_document(
@@ -1942,7 +1957,7 @@ fn main() -> ExitCode {
                 strict,
                 text_layer_fallback.as_ref(),
                 pages,
-                word_gap,
+                text_opts,
             ) {
                 doc.page_break_placeholder = page_break_placeholder.clone();
                 return output_document(doc, &to, image_mode, &path, &chunk_opts, export);
@@ -1969,7 +1984,7 @@ fn pdf_text_layer_fallback(
     strict: bool,
     source: Option<&(Vec<u8>, String)>,
     pages: Option<(usize, usize)>,
-    word_gap: Option<docling::PdfWordGap>,
+    text: docling::PdfTextOptions,
 ) -> Option<docling::DoclingDocument> {
     let assets_missing =
         err.contains("pdfium library is not installed") || err.contains("model not found at");
@@ -1977,7 +1992,7 @@ fn pdf_text_layer_fallback(
         return None;
     }
     let (bytes, name) = source?;
-    match docling::pdf_text_layer_pages_with(bytes, name, pages, word_gap) {
+    match docling::pdf_text_layer_pages_opts(bytes, name, pages, text) {
         Ok(mut doc) if !doc.nodes.is_empty() => {
             eprintln!(
                 "warning: models unavailable — --text-layer-only extracted the embedded text \
@@ -2776,6 +2791,7 @@ fn batch_pipeline<'a>(
             .tesseract_lang(o.tesseract_lang().map_err(err)?)
             .ocr_scale(o.ocr_scale)
             .word_gap(o.pdf_word_gap().map_err(err)?)
+            .keep_typography(o.pdf_keep_typography)
             .images_scale(o.images_scale)
             .generate_page_images(o.page_images.unwrap_or(false))
             .enrichments(o.enrichments())

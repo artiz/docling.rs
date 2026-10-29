@@ -136,3 +136,27 @@ fn official_documents_read_their_letter_spaced_lines_whole() {
         );
     }
 }
+
+/// #921, a EUR-Lex notice whose producer draws its word spaces as glyphs:
+/// `Offenlegungspf|lichten` is kerned 0.24–0.33 advances apart, and where it
+/// stands alone in a table cell its line has no space glyph to set
+/// docling-parse 7's 0.35 floor — it read `Offenlegungspf lichten` (as
+/// docling-parse 7.24.1 reads it) under every mode, a factor of 0.1 cut more
+/// such pairs. The page draws its spaces, so a lone word keeps its kerning.
+#[test]
+fn a_page_that_draws_spaces_keeps_kerned_pairs_in_lone_words() {
+    let pdf = fixture("eurlex-c-2025-1373-p8.pdf");
+    for gap in [
+        WordGap::Adaptive,
+        WordGap::Factor(0.2),
+        WordGap::Factor(0.1),
+    ] {
+        let text = text_of(&pdf, gap);
+        assert!(!text.contains("pf licht"), "{gap:?}: {text}");
+        assert_eq!(
+            text.matches("Offenlegungspflicht").count(),
+            4,
+            "{gap:?}: {text}"
+        );
+    }
+}
