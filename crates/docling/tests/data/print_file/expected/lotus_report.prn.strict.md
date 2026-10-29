@@ -1,0 +1,12 @@
+ACME Widgets - Quarterly Sales Prepared for the board, printed from the spreadsheet
+
+```
+Region        Q1        Q2        Q3
+North     12,400    13,100    15,020
+South      9,870    10,200     9,950
+West      15,010    16,450    17,300
+```
+
+Notes
+
+Figures are in US dollars and exclude returns. The West region includes the new Reno store from Q2.

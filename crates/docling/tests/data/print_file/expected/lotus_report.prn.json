@@ -1,0 +1,97 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "lotus_report",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 13758232588476126967,
+    "filename": "lotus_report"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "ACME Widgets - Quarterly Sales Prepared for the board, printed from the spreadsheet",
+      "text": "ACME Widgets - Quarterly Sales Prepared for the board, printed from the spreadsheet"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "Region        Q1        Q2        Q3\nNorth     12,400    13,100    15,020\nSouth      9,870    10,200     9,950\nWest      15,010    16,450    17,300",
+      "text": "Region        Q1        Q2        Q3\nNorth     12,400    13,100    15,020\nSouth      9,870    10,200     9,950\nWest      15,010    16,450    17,300",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Notes",
+      "text": "Notes"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Figures are in US dollars and exclude returns. The West region includes the new Reno store from Q2.",
+      "text": "Figures are in US dollars and exclude returns. The West region includes the new Reno store from Q2."
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

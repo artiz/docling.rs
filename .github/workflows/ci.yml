@@ -333,6 +333,11 @@ jobs:
       - name: Check docling (pdf-text) on wasm32
         run: cargo check -p docling --no-default-features --features pdf-text --target wasm32-unknown-unknown --locked
 
+      - name: docling-pdf `render` stays ort-free (#917)
+        run: |
+          cargo check -p docling-pdf --no-default-features --features render --locked
+          ! cargo tree -p docling-pdf --no-default-features --features render --locked -i ort 2>/dev/null
+
       - name: Build docling-wasm (release)
         run: cargo build -p docling-wasm --target wasm32-unknown-unknown --release --locked
 

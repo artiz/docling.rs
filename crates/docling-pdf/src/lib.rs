@@ -34,7 +34,7 @@ pub use docling_onnx as ep;
 // Heading-hierarchy stage (#302): PDF font-name style parsing, outline
 // extraction (pure lopdf), and the level-assignment pass. No feature gate on
 // the logic itself — only the glyph style pass needs pdfium (`ml`).
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub mod dparse_render;
 mod font_style;
 mod heading_hierarchy;
@@ -72,9 +72,9 @@ pub mod scanned;
 // no feature gate: the wasm/pdf-text path needs them like the native one.
 pub mod info;
 pub mod pdf_meta;
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub mod raster;
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub mod render;
 mod std14;
 #[cfg(feature = "ml")]
@@ -136,7 +136,7 @@ pub use heading_hierarchy::HeadingHierarchyOptions;
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options, convert_mets_gbs_with_pipeline};
 #[cfg(feature = "ml")]
 pub use ocr::{OcrEngine, OcrLang, OcrMode};
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub use pdfium_backend::PdfDocument;
 pub use pdfium_backend::{PdfPage, TextCell};
 #[cfg(feature = "ml")]
@@ -144,7 +144,7 @@ pub use tesseract::{
     installed_languages as tesseract_languages, lang_arg as tesseract_lang_arg, TesseractOptions,
 };
 // Plain page rasterization (#243) — pdfium only, no models.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 pub use pdfium_backend::{render_pages, RenderedPage};
 #[cfg(feature = "ml")]
 pub use render::Omission;
@@ -462,7 +462,7 @@ pub(crate) fn prefer_fp32() -> bool {
     fp32_forced() || docling_onnx::prefers_fp32()
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// Resolve a default (CWD-relative) asset path — the shared chain in
 /// [`docling_core::assets`]: CWD, then next to the executable and one level
 /// above it (the `scripts/install/install.sh` layout).
@@ -672,6 +672,35 @@ pub struct ImageOutput {
 }
 
 #[cfg(feature = "ml")]
+/// The OCR'd cells with their recognition confidence, for the per-cell report
+/// (#915): a copy of what feeds the page `ocr_score`, kept beside it.
+fn cell_confs(scored: &[(TextCell, f32)]) -> Vec<docling_core::OcrCellConfidence> {
+    scored
+        .iter()
+        .map(|(c, conf)| docling_core::OcrCellConfidence {
+            text: c.text.clone(),
+            l: c.l,
+            t: c.t,
+            r: c.r,
+            b: c.b,
+            confidence: *conf,
+        })
+        .collect()
+}
+
+#[cfg(feature = "ml")]
+/// The document's report: page scores plus the per-cell OCR confidences (#915).
+fn confidence_report(
+    confs: std::collections::BTreeMap<usize, docling_core::confidence::PageConfidence>,
+    cells: std::collections::BTreeMap<usize, Vec<docling_core::OcrCellConfidence>>,
+) -> docling_core::ConfidenceReport {
+    cells.into_iter().fold(
+        docling_core::ConfidenceReport::from_pages(confs),
+        |report, (n, cells)| report.with_ocr_cells(n, cells),
+    )
+}
+
+#[cfg(feature = "ml")]
 /// One page's assembled output: typed nodes plus the page's hyperlinks (kept
 /// separate so pages processed out of order can be stitched back in page
 /// order) and its confidence scores (#183).
@@ -681,6 +710,8 @@ type PageOut = (
     docling_core::confidence::PageConfidence,
     // The page image, when page images are requested (#520).
     Option<docling_core::PictureImage>,
+    // The page's OCR cells with their recognition confidence (#915).
+    Vec<docling_core::OcrCellConfidence>,
 );
 
 /// One page from its text layer alone — the fastest path: no layout, OCR
@@ -739,6 +770,7 @@ fn page_image_under(
 struct Prepared {
     regions: Vec<layout::Region>,
     ocr_confs: Vec<f32>,
+    ocr_cells: Vec<docling_core::OcrCellConfidence>,
     parse: Option<f64>,
 }
 
@@ -1173,7 +1205,7 @@ impl Worker {
             // inferred. Pages with no embedded text layer yield nothing;
             // convert those without `no_ocr`.
             let (nodes, links, conf) = text_only_page(page, self.images.scale);
-            return Ok((nodes, links, conf, self.page_image(n, page)));
+            return Ok((nodes, links, conf, self.page_image(n, page), Vec::new()));
         }
         self.normalize_orientation(n, page)?;
         let det_pages = self.det_candidates(std::slice::from_ref(&(n, &*page)))?;
@@ -1703,6 +1735,7 @@ impl Worker {
         let parse = quality::parse_score(&page.cells);
         // Recognition confidences of every OCR'd cell on this page → ocr_score.
         let mut ocr_confs: Vec<f32> = Vec::new();
+        let mut ocr_cells: Vec<docling_core::OcrCellConfidence> = Vec::new();
         // The bitmap the OCR reads (#254): with `ocr_scale` set, a resample of
         // the page render at the requested px/pt, built lazily on the first
         // OCR use so non-OCR pages never pay for it. Copied out of `self` up
@@ -1862,6 +1895,7 @@ impl Worker {
                 })
                 .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                 ocr_confs.extend(cells.iter().map(|(_, conf)| conf));
+                ocr_cells.extend(cell_confs(&cells));
                 page.cells = cells.into_iter().map(|(cell, _)| cell).collect();
                 // Table interiors carry no words yet: region-scoped OCR skips
                 // table labels, and a scanned page has no pdfium text layer — so
@@ -1877,6 +1911,7 @@ impl Worker {
                     })
                     .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                     ocr_confs.extend(words.iter().map(|(_, conf)| conf));
+                    ocr_cells.extend(cell_confs(&words));
                     let words: Vec<_> = words.into_iter().map(|(cell, _)| cell).collect();
                     page.cells.extend(words.iter().cloned());
                     page.word_cells = words;
@@ -1904,6 +1939,7 @@ impl Worker {
                         timing::timed("ocr.det_lines", || ocr.ocr_page(img, &uncovered, scl))
                             .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                     ocr_confs.extend(scored.iter().map(|(_, conf)| conf));
+                    ocr_cells.extend(cell_confs(&scored));
                     det_cells = scored.into_iter().map(|(cell, _)| cell).collect();
                     page.cells.extend(det_cells.iter().cloned());
                 }
@@ -1962,6 +1998,7 @@ impl Worker {
                 // output; on a digital page they may be discarded below.
                 if ocred {
                     ocr_confs.extend(scored.iter().map(|(_, conf)| conf));
+                    ocr_cells.extend(cell_confs(&scored));
                 }
                 pic_cells = scored.into_iter().map(|(cell, _)| cell).collect();
                 page.cells.extend(pic_cells.iter().cloned());
@@ -2054,6 +2091,7 @@ impl Worker {
                 })
                 .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                 ocr_confs.extend(words.iter().map(|(_, conf)| conf));
+                ocr_cells.extend(cell_confs(&words));
                 let words: Vec<_> = words.into_iter().map(|(cell, _)| cell).collect();
                 page.cells.extend(words.iter().cloned());
                 page.word_cells.extend(words);
@@ -2066,6 +2104,7 @@ impl Worker {
         Ok(Prepared {
             regions,
             ocr_confs,
+            ocr_cells,
             parse,
         })
     }
@@ -2082,6 +2121,7 @@ impl Worker {
         let Prepared {
             regions,
             ocr_confs,
+            ocr_cells,
             parse,
         } = prepared;
         // The crops and the page image below read the bitmap (#897).
@@ -2222,7 +2262,7 @@ impl Worker {
         let (nodes, links) = timing::timed("assemble_page", || {
             assemble::assemble_page(page, regions, &table_rows, &enrich_out, self.images.scale)
         });
-        Ok((nodes, links, conf, self.page_image(n, page)))
+        Ok((nodes, links, conf, self.page_image(n, page), ocr_cells))
     }
 }
 
@@ -3157,6 +3197,7 @@ impl Pipeline {
     ) -> Result<(DoclingDocument, usize, bool), PdfError> {
         let mut doc = DoclingDocument::new(name);
         let mut confs = std::collections::BTreeMap::new();
+        let mut ocr_cells_by_page = std::collections::BTreeMap::new();
         let render_image = !self.no_ocr;
         let bitmap = self.bitmap_render();
         let extract_text = self.extract_text_layer();
@@ -3172,7 +3213,8 @@ impl Pipeline {
             range,
             deadline,
             |n, mut page| {
-                let (mut nodes, links, conf, page_image) = worker.process(n, &mut page)?;
+                let (mut nodes, links, conf, page_image, ocr_cells) =
+                    worker.process(n, &mut page)?;
                 assemble::stamp_page_no(&mut nodes, n + 1);
                 if let Some(img) = page_image {
                     doc.page_images.insert(n + 1, img);
@@ -3180,6 +3222,7 @@ impl Pipeline {
                 doc.nodes.extend(nodes);
                 doc.links.extend(links);
                 confs.insert(n + 1, conf);
+                ocr_cells_by_page.insert(n + 1, ocr_cells);
                 done += 1;
                 if let Some(cb) = &progress {
                     cb(PageProgress {
@@ -3193,7 +3236,7 @@ impl Pipeline {
         )?;
         assemble::merge_continuations(&mut doc.nodes);
         self.apply_heading_hierarchy(&mut doc.nodes, Some(bytes));
-        doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
+        doc.confidence = Some(confidence_report(confs, ocr_cells_by_page));
         Ok((doc, done, timed_out))
     }
 
@@ -3391,7 +3434,8 @@ impl Pipeline {
         let done = results.len();
         let mut doc = DoclingDocument::new(name);
         let mut confs = std::collections::BTreeMap::new();
-        for (idx, (mut nodes, links, conf, page_image)) in results {
+        let mut ocr_cells_by_page = std::collections::BTreeMap::new();
+        for (idx, (mut nodes, links, conf, page_image, ocr_cells)) in results {
             assemble::stamp_page_no(&mut nodes, idx + 1);
             if let Some(img) = page_image {
                 doc.page_images.insert(idx + 1, img);
@@ -3399,10 +3443,11 @@ impl Pipeline {
             doc.nodes.extend(nodes);
             doc.links.extend(links);
             confs.insert(idx + 1, conf);
+            ocr_cells_by_page.insert(idx + 1, ocr_cells);
         }
         assemble::merge_continuations(&mut doc.nodes);
         self.apply_heading_hierarchy(&mut doc.nodes, Some(bytes));
-        doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
+        doc.confidence = Some(confidence_report(confs, ocr_cells_by_page));
         let timed_out = timed_out.load(std::sync::atomic::Ordering::Relaxed);
         Ok((doc, done, timed_out))
     }
@@ -3542,7 +3587,7 @@ impl Pipeline {
                 // Confidence is dropped on the streaming path: the report is
                 // only complete once every page has run, which defeats
                 // page-by-page emission — buffered `convert` carries it.
-                let (nodes, links, _conf, _page_image) = worker.process(n, &mut page)?;
+                let (nodes, links, _conf, _page_image, _cells) = worker.process(n, &mut page)?;
                 done += 1;
                 if let Some(cb) = &progress {
                     cb(PageProgress {
@@ -3667,7 +3712,9 @@ impl Pipeline {
                         }
                         // A stream carries Markdown, not the page map: page
                         // images (#520) have nowhere to go and are dropped.
-                        while let Some((nodes, links, _conf, _page_image)) = buffer.remove(&next) {
+                        while let Some((nodes, links, _conf, _page_image, _cells)) =
+                            buffer.remove(&next)
+                        {
                             if let Err(e) = emit(asm.push(nodes), links) {
                                 first_err = Some(e);
                                 break;
@@ -3806,11 +3853,12 @@ impl Pipeline {
     ) -> Result<DoclingDocument, PdfError> {
         let mut doc = DoclingDocument::new(name);
         let mut confs = std::collections::BTreeMap::new();
+        let mut ocr_cells_by_page = std::collections::BTreeMap::new();
         let progress = self.progress.clone();
         let total = pages.len();
         let worker = self.primary()?;
         for (n, page) in pages.iter_mut().enumerate() {
-            let (mut nodes, links, conf, page_image) = worker.process(n, page)?;
+            let (mut nodes, links, conf, page_image, ocr_cells) = worker.process(n, page)?;
             assemble::stamp_page_no(&mut nodes, n + 1);
             if let Some(img) = page_image {
                 doc.page_images.insert(n + 1, img);
@@ -3818,6 +3866,7 @@ impl Pipeline {
             doc.nodes.extend(nodes);
             doc.links.extend(links);
             confs.insert(n + 1, conf);
+            ocr_cells_by_page.insert(n + 1, ocr_cells);
             if let Some(cb) = &progress {
                 cb(PageProgress {
                     page_no: n + 1,
@@ -3831,7 +3880,7 @@ impl Pipeline {
         // stage degrades to the numbering signal — exactly docling without
         // an outline or parsed pages.
         self.apply_heading_hierarchy(&mut doc.nodes, None);
-        doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
+        doc.confidence = Some(confidence_report(confs, ocr_cells_by_page));
         Ok(doc)
     }
 }

@@ -103,12 +103,41 @@ pub enum InputFormat {
     /// record streams, content-sniffed on the BOF record and split into data
     /// regions like an ODS sheet.
     Lotus,
-    /// StarOffice 5 binaries (`.sdw`/`.sda`/`.sdd`/`.vor`) — a docling.rs
+    /// StarOffice 5 binaries (`.sdw`/`.sgl`/`.sda`/`.sdd`/`.vor`) — a docling.rs
     /// extension (#215); CFB containers parsed natively (text-level
     /// extraction). The document kind comes from the stream inside, so a
     /// `.vor` template of any application dispatches by content. StarCalc
     /// (`.sdc`) is a follow-up.
     StarOffice5,
+    /// T602 / Text602 (`.602`) — the Czechoslovak DOS word processor, a
+    /// docling.rs extension (#216): its 8-bit text with `@` settings, style
+    /// control bytes and the Kamenický / Latin-2 / KOI8-ČS code pages, read
+    /// natively after LibreOffice's T602 filter.
+    T602,
+    /// Print files (`.prn`) — a DOS or Windows "print to file": a report's
+    /// fixed-width text, or a PCL / ESC/P printer stream, a docling.rs extension
+    /// (#216); escape sequences and overstrikes taken out, columns kept.
+    Prn,
+    /// Palm e-texts (`.pdb`) — PalmDOC / AportisDoc, TealDoc and zTXT, a
+    /// docling.rs extension (#216): the Palm database's text records
+    /// decompressed (PalmDOC LZ77, zlib) into paragraphs. A `.pdb` that is no
+    /// Palm database reads as text.
+    PalmDoc,
+    /// Hancom Hangul word processor documents (`.hwp`, `.hwpx`), a docling.rs
+    /// extension (#216): HWP 5 compound files and HWPX (OWPML) packages read
+    /// into paragraphs, headings, lists and tables.
+    Hwp,
+    /// Computer Graphics Metafiles (`.cgm`, ISO/IEC 8632), a docling.rs
+    /// extension (#216): the text a drawing places (labels, callouts) in the
+    /// binary and clear-text encodings.
+    Cgm,
+    /// Classic Macintosh word processors — MacWrite (`.mw`), Word for the
+    /// Macintosh 1–5 (`.mcw`) and ClarisWorks / AppleWorks 1–6 (`.cwk`), a
+    /// docling.rs extension (#216): their text, told apart by content.
+    MacWp,
+    /// Lotus Word Pro (`.lwp`, Word Pro 97 on), a docling.rs extension (#216):
+    /// the object store's stories read into paragraphs and headings.
+    Lwp,
     /// DjVu scanned documents (`.djvu`/`.djv`) — a docling.rs extension (#434);
     /// docling has no DjVu reader. Decoded in pure Rust (`djvu-rs`): the
     /// hidden per-page text layer by default, rasterize + OCR for scan-only
@@ -204,6 +233,13 @@ impl InputFormat {
             InputFormat::Lotus => "lotus",
             InputFormat::QuattroPro => "quattro",
             InputFormat::StarOffice5 => "staroffice5",
+            InputFormat::T602 => "t602",
+            InputFormat::Prn => "prn",
+            InputFormat::PalmDoc => "palmdoc",
+            InputFormat::Hwp => "hwp",
+            InputFormat::Cgm => "cgm",
+            InputFormat::MacWp => "mac_wp",
+            InputFormat::Lwp => "lwp",
             InputFormat::Djvu => "djvu",
             InputFormat::Text => "text",
             InputFormat::Jsonl => "jsonl",
@@ -266,6 +302,13 @@ impl InputFormat {
             "lotus" => InputFormat::Lotus,
             "quattro" => InputFormat::QuattroPro,
             "staroffice5" => InputFormat::StarOffice5,
+            "t602" => InputFormat::T602,
+            "prn" => InputFormat::Prn,
+            "palmdoc" => InputFormat::PalmDoc,
+            "hwp" => InputFormat::Hwp,
+            "cgm" => InputFormat::Cgm,
+            "mac_wp" => InputFormat::MacWp,
+            "lwp" => InputFormat::Lwp,
             "djvu" => InputFormat::Djvu,
             "text" => InputFormat::Text,
             "jsonl" => InputFormat::Jsonl,
@@ -702,6 +745,12 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         // container — Excel 97's own layout under another extension, so the
         // XLS reader takes it.
         ("xlr", Xls),
+        // Kingsoft (WPS Office) Spreadsheets (#216): `.et` and its templates
+        // `.ett` / `.eth` are BIFF8 in an OLE container as well — WPS writes
+        // Excel 97's `Workbook` stream under its own extension.
+        ("et", Xls),
+        ("ett", Xls),
+        ("eth", Xls),
         // StarOffice 5 binaries (#215): .vor templates dispatch by the CFB
         // stream inside (writer/draw/impress share the container). .sdc
         // routes here too so StarCalc gets its targeted "save as .ods" error
@@ -711,6 +760,33 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         ("sdd", StarOffice5),
         ("sdc", StarOffice5),
         ("vor", StarOffice5),
+        // The StarWriter 5 global (master) document (#216): libstaroffice
+        // reads it as the `StarWriterDocument` stream it is, its linked
+        // sections' text included as stored.
+        ("sgl", StarOffice5),
+        // T602 (#216): the Czechoslovak DOS word processor's own extension; a
+        // file also opens by its `@CT` header (the content sniff).
+        ("602", T602),
+        // Print-to-file output (#216): report text or a PCL / ESC/P stream.
+        ("prn", Prn),
+        // Palm e-texts (#216): `.pdb` is a Palm database (the backend checks the
+        // type/creator and reads a text `.pdb` — Protein Data Bank — as text); `.pbd`
+        // is the spelling #216 lists.
+        ("pdb", PalmDoc),
+        ("pbd", PalmDoc),
+        // Hancom Hangul (#216): HWP 5 (an OLE compound file) and HWPX (a ZIP);
+        // the backend tells them apart by content.
+        ("hwp", Hwp),
+        ("hwpx", Hwp),
+        // Computer Graphics Metafile (#216): the drawing's text.
+        ("cgm", Cgm),
+        // Classic Mac word processors (#216): MacWrite, Word for Mac, ClarisWorks;
+        // the backend tells them apart by content.
+        ("mw", MacWp),
+        ("mcw", MacWp),
+        ("cwk", MacWp),
+        // Lotus Word Pro (#216).
+        ("lwp", Lwp),
         // DjVu (#434): docling.rs extension, pure-Rust decode via `djvu-rs`.
         ("djvu", Djvu),
         ("djv", Djvu),

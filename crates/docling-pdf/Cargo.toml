@@ -38,22 +38,29 @@ pdfium = ["ml", "dep:pdfium-render"]
 # tokenizers stack the enrichment models use — no extra dependency, the
 # model is the optional part (missing → one warning, pattern-only).
 ner = ["ml", "dep:serde_json"]
-ml = [
+# Page rendering without the inference stack (#917): the pure-Rust renderer /
+# raster (`render_pages`, `RenderedPage`, `render`, `raster`, `PdfDocument`)
+# needs no model, so a consumer that only draws pages keeps ort and
+# docling-onnx out of its dependency graph. `ml` implies it.
+render = [
     "ocr-prep",
-    "dep:ort",
     "dep:image",
     "dep:fast_image_resize",
     "dep:weezl",
-    "dep:tokenizers",
     "dep:flate2",
-    "dep:tar",
     "dep:regex",
-    "dep:docling-onnx",
     "dep:libloading",
     "dep:tiny-skia",
     "dep:ttf-parser",
     "dep:hayro-jpeg2000",
     "dep:hayro-jbig2",
+]
+ml = [
+    "render",
+    "dep:ort",
+    "dep:tokenizers",
+    "dep:tar",
+    "dep:docling-onnx",
 ]
 # GPU execution providers (#74). Each feature makes `ort` link/download an
 # ONNX Runtime binary that contains that provider; which provider actually
@@ -79,10 +86,10 @@ serde_json = { version = "1", optional = true }
 # what current LTS distros ship (Ubuntu 24.04 = 1.17). Newer libheif-rs
 # requires libheif >= 1.18 and can be selected once baselines move.
 libheif-rs = { version = "~1.0", default-features = false, optional = true }
-docling-core = { path = "../docling-core", version = "2.53.3" }
+docling-core = { path = "../docling-core", version = "2.54.0" }
 # Shared ONNX execution-provider selection (DOCLING_RS_EP, #74/#288);
 # re-exported as `docling_pdf::ep`.
-docling-onnx = { path = "../docling-onnx", version = "2.53.3", optional = true }
+docling-onnx = { path = "../docling-onnx", version = "2.54.0", optional = true }
 pdfium-render = { version = "0.8", optional = true }
 # Runtime loading of the opt-in docling-parse renderer plugin (#478,
 # `dparse_render.rs`) — the same mechanism pdfium-render uses for libpdfium.

@@ -156,3 +156,69 @@ fn picture_classifier_tells_pictures_apart() {
         );
     }
 }
+
+/// #915: the per-cell recognition confidence the OCR road computes reaches
+/// the document's confidence report (beside, not inside, the docling JSON).
+/// A one-word Helvetica page read by full-page OCR yields one cell whose
+/// confidence is the page's `ocr_score`; a text-layer conversion has none.
+#[test]
+fn ocr_cells_carry_their_confidence() {
+    if !std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../.models/ocr_det.onnx"
+    ))
+    .exists()
+        || !std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../.models/layout_heron.onnx"
+        ))
+        .exists()
+    {
+        eprintln!("skip: OCR/layout models not present");
+        return;
+    }
+    let pdf = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\
+2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\
+3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 300] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n\
+4 0 obj\n<< /Length 46 >>\nstream\nBT /F1 18 Tf 1 0 0 1 30 240 Tm (VISIBLE) Tj ET\nendstream\nendobj\n\
+5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n\
+trailer\n<< /Size 6 /Root 1 0 R >>\n%%EOF\n";
+
+    let convert = |no_ocr: bool| {
+        docling_pdf::convert_with_options(
+            pdf,
+            None,
+            "fixture.pdf",
+            true,
+            no_ocr,
+            !no_ocr, // force_full_page_ocr
+            false,
+            docling_pdf::EnrichmentOptions::default(),
+            None,
+            None,
+        )
+        .expect("conversion")
+    };
+
+    let doc = convert(false);
+    let report = doc.confidence.as_ref().expect("confidence report");
+    let cells = report.ocr_cells(1);
+    assert!(!cells.is_empty(), "OCR cells expected");
+    assert!(
+        cells.iter().any(|c| c.text.contains("VISIBLE")),
+        "{cells:?}"
+    );
+    assert!(cells.iter().all(|c| (0.0..=1.0).contains(&c.confidence)));
+    // The page aggregate is still the mean of the same figures.
+    let mean = cells.iter().map(|c| f64::from(c.confidence)).sum::<f64>() / cells.len() as f64;
+    let ocr_score = report.pages[&1].ocr_score.expect("ocr_score");
+    assert!((mean - ocr_score).abs() < 1e-6, "{mean} vs {ocr_score}");
+    // Not in the document JSON, which stays docling's schema.
+    assert!(!doc
+        .export_to_json_value()
+        .to_string()
+        .contains("confidence"));
+
+    let digital = convert(true);
+    assert!(digital.confidence.as_ref().unwrap().ocr_cells(1).is_empty());
+}

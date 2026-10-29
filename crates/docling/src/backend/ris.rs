@@ -214,7 +214,8 @@ impl Fmt {
 }
 
 /// Collect `el`'s inline content as `(text, formatting)` runs: formatting
-/// elements set their style, `tab` / `br` read as a space, `aw` (an empty
+/// elements set their style, `tab` / `br` read as a space, `amp` (the empty
+/// element risdok writes the ampersand as, #918) as `&`, `aw` (an empty
 /// paragraph mark) as nothing, any other element as its content.
 fn collect(el: XmlNode, fmt: Fmt, out: &mut Vec<(String, Fmt)>) {
     for n in el.children() {
@@ -223,6 +224,7 @@ fn collect(el: XmlNode, fmt: Fmt, out: &mut Vec<(String, Fmt)>) {
         } else if n.is_element() {
             match n.tag_name().name() {
                 "tab" | "br" => out.push((" ".to_string(), fmt)),
+                "amp" => out.push(("&".to_string(), fmt)),
                 "aw" => {}
                 tag => collect(n, fmt.with(tag), out),
             }
@@ -512,6 +514,7 @@ impl Builder {
             } else if n.is_element() {
                 match n.tag_name().name() {
                     "tab" | "br" => raw.push((" ".to_string(), Fmt::default())),
+                    "amp" => raw.push(("&".to_string(), Fmt::default())),
                     "aw" => {}
                     tag => collect(n, Fmt::default().with(tag), &mut raw),
                 }
@@ -685,7 +688,18 @@ impl Builder {
 fn inline_tag(name: &str) -> bool {
     matches!(
         name,
-        "b" | "i" | "u" | "sup" | "sub" | "span" | "feld" | "tab" | "br" | "aw" | "s" | "strike"
+        "b" | "i"
+            | "u"
+            | "sup"
+            | "sub"
+            | "span"
+            | "feld"
+            | "tab"
+            | "br"
+            | "amp"
+            | "aw"
+            | "s"
+            | "strike"
     )
 }
 
@@ -876,6 +890,7 @@ fn own_text(
                 }
                 match name {
                     "tab" | "br" => b.push_text(" "),
+                    "amp" => b.push_text("&"),
                     "aw" => {}
                     _ => {
                         let child_path = format!("{path}/{name}[{n}]");
@@ -941,6 +956,26 @@ mod tests {
              <metadaten /><nutzdaten><abschnitt nr=\"1\" typ=\"ns\">{body}</abschnitt>\
              </nutzdaten></risdok>"
         )
+    }
+
+    /// #918: risdok writes the ampersand as the empty element `<amp />`; it
+    /// reads as `&` in the item text and in the source block.
+    #[test]
+    fn amp_element_reads_as_ampersand() {
+        let doc = convert(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+             <risdok xmlns=\"http://www.bka.gv.at\"><metadaten/><nutzdaten>\
+             <abschnitt nr=\"1\" typ=\"ns\"><absatz typ=\"erltext\">Schenker <amp /> Co. AG</absatz>\
+             </abschnitt></nutzdaten></risdok>",
+        );
+        assert_eq!(doc.export_to_text(), "Schenker & Co. AG");
+        let t = doc.tree.as_ref().unwrap();
+        let block = t
+            .blocks
+            .iter()
+            .find(|b| b.path.ends_with("absatz[1]"))
+            .unwrap();
+        assert_eq!(block.text, "Schenker & Co. AG");
     }
 
     /// #909: the issue's reduction — a heading and a paragraph in a section

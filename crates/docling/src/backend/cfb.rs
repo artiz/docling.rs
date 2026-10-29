@@ -369,7 +369,6 @@ impl<'a> CompoundFile<'a> {
     }
 
     /// Names of all stream entries.
-    #[cfg(test)]
     pub(crate) fn stream_names(&self) -> impl Iterator<Item = &str> {
         self.entries
             .iter()

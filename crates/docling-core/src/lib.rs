@@ -38,7 +38,7 @@ mod revisions;
 pub mod tree;
 mod vtt;
 
-pub use confidence::{ConfidenceReport, PageConfidence, QualityGrade};
+pub use confidence::{ConfidenceReport, OcrCellConfidence, PageConfidence, QualityGrade};
 pub use doclang::inline_runs_from_markdown;
 pub use document::{
     for_each_picture_in, for_each_picture_in_mut, inline_paragraph_node, CaptionParent,

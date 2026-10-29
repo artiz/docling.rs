@@ -2954,6 +2954,23 @@ impl DocumentConverter {
                 // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
                 // backend for the whole DOS-era family.
                 InputFormat::Lotus => LotusBackend.convert(source)?,
+                // Lotus Word Pro (#216): Word Pro 97 and later.
+                InputFormat::Lwp => crate::backend::LwpBackend.convert(source)?,
+                // Classic Mac word processors (#216): MacWrite, Word for Mac, ClarisWorks.
+                InputFormat::MacWp => crate::backend::MacWpBackend.convert(source)?,
+                // Computer Graphics Metafile (#216): binary and clear-text.
+                InputFormat::Cgm => crate::backend::CgmBackend.convert(source)?,
+                // Hancom Hangul (#216): HWP 5 and HWPX.
+                InputFormat::Hwp => crate::backend::HwpBackend {
+                    track_changes: self.track_changes,
+                }
+                .convert(source)?,
+                // Palm e-texts (#216): PalmDOC, TealDoc, zTXT.
+                InputFormat::PalmDoc => crate::backend::PalmDocBackend.convert(source)?,
+                // Print files (#216): text out of a report or a printer stream.
+                InputFormat::Prn => crate::backend::PrnBackend.convert(source)?,
+                // T602 (#216): docling.rs extension, after LibreOffice's filter.
+                InputFormat::T602 => crate::backend::T602Backend.convert(source)?,
                 // Quattro Pro (#216): docling.rs extension, native parse after
                 // libwps (DOS/Windows record streams, QPW OLE zones).
                 InputFormat::QuattroPro => QuattroBackend.convert(source)?,

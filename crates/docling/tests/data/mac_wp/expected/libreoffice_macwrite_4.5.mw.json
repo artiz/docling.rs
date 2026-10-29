@@ -1,0 +1,588 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "libreoffice_macwrite_4.5",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 2322346139389305802,
+    "filename": "libreoffice_macwrite_4.5"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
+      },
+      {
+        "$ref": "#/texts/8"
+      },
+      {
+        "$ref": "#/texts/9"
+      },
+      {
+        "$ref": "#/texts/10"
+      },
+      {
+        "$ref": "#/texts/11"
+      },
+      {
+        "$ref": "#/texts/12"
+      },
+      {
+        "$ref": "#/texts/13"
+      },
+      {
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/texts/15"
+      },
+      {
+        "$ref": "#/texts/16"
+      },
+      {
+        "$ref": "#/texts/17"
+      },
+      {
+        "$ref": "#/texts/18"
+      },
+      {
+        "$ref": "#/texts/19"
+      },
+      {
+        "$ref": "#/texts/20"
+      },
+      {
+        "$ref": "#/texts/21"
+      },
+      {
+        "$ref": "#/texts/22"
+      },
+      {
+        "$ref": "#/texts/23"
+      },
+      {
+        "$ref": "#/texts/24"
+      },
+      {
+        "$ref": "#/texts/25"
+      },
+      {
+        "$ref": "#/texts/26"
+      },
+      {
+        "$ref": "#/texts/27"
+      },
+      {
+        "$ref": "#/texts/28"
+      },
+      {
+        "$ref": "#/texts/29"
+      },
+      {
+        "$ref": "#/texts/30"
+      },
+      {
+        "$ref": "#/texts/31"
+      },
+      {
+        "$ref": "#/texts/32"
+      },
+      {
+        "$ref": "#/texts/33"
+      },
+      {
+        "$ref": "#/texts/34"
+      },
+      {
+        "$ref": "#/texts/35"
+      },
+      {
+        "$ref": "#/texts/36"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Classe de première S / Devoir n° 22 / Mercredi 15 avril 1987",
+      "text": "Classe de première S / Devoir n° 22 / Mercredi 15 avril 1987"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**Exercice 1** ( points )",
+      "text": "**Exercice 1** ( points )"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Démontrer que pour tout entier naturel n , **NON NUL** ,",
+      "text": "Démontrer que pour tout entier naturel n , **NON NUL** ,"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1 - 2 + 3 - 4 + ....... + ( 2 n - 3 ) - ( 2 n - 2 ) + ( 2 n - 1 ) - 2 n = - n",
+      "text": "1 - 2 + 3 - 4 + ....... + ( 2 n - 3 ) - ( 2 n - 2 ) + ( 2 n - 1 ) - 2 n = - n"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "On pourra : soit faire un raisonnement par récurrence",
+      "text": "On pourra : soit faire un raisonnement par récurrence"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "soit regrouper deux par deux les termes du premier membre de l'égalité.",
+      "text": "soit regrouper deux par deux les termes du premier membre de l'égalité."
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**Exercice 2** ( points )",
+      "text": "**Exercice 2** ( points )"
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**A S**oit la suite numérique ( un ) définie par : uo = 5 et pour tout entier naturel n,",
+      "text": "**A S**oit la suite numérique ( un ) définie par : uo = 5 et pour tout entier naturel n,"
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "un+1 = 0,5 . un + 1",
+      "text": "un+1 = 0,5 . un + 1"
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**1.** Démontrer que pour tout entier naturel n , un ≠ 2",
+      "text": "**1.** Démontrer que pour tout entier naturel n , un ≠ 2"
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**2.** Déterminer le réel a de façon que la suite (vn) ( définie par : pour tout entier naturel n ,",
+      "text": "**2.** Déterminer le réel a de façon que la suite (vn) ( définie par : pour tout entier naturel n ,"
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "vn = un - a ) soit une suite géométrique .",
+      "text": "vn = un - a ) soit une suite géométrique ."
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3. En déduire vn puis un en fonction de l'entier naturel n.",
+      "text": "3. En déduire vn puis un en fonction de l'entier naturel n."
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**B** Soit l'application f définie de IR dans IR par : f(x) = 1/6 . ( x - 2 )2",
+      "text": "**B** Soit l'application f définie de IR dans IR par : f(x) = 1/6 . ( x - 2 )2"
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**1.** Etudier uniquement le sens de variation de f et tracer sa courbe représentative (C) dans un plan rapporté à un repère orthonormé ( unité : 2 cm )",
+      "text": "**1.** Etudier uniquement le sens de variation de f et tracer sa courbe représentative (C) dans un plan rapporté à un repère orthonormé ( unité : 2 cm )"
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "On tracera la tangente à (C) au point d'abscisse xo = 5 .",
+      "text": "On tracera la tangente à (C) au point d'abscisse xo = 5 ."
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**2.** Ecrire une équation cartésienne de la tangente (Tn) à la courbe (C) au point An d'abscisse xn",
+      "text": "**2.** Ecrire une équation cartésienne de la tangente (Tn) à la courbe (C) au point An d'abscisse xn"
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "( xn ≠ 2 ) . Calculer en fonction de xn , l'abscisse xn+1 du point où (Tn)",
+      "text": "( xn ≠ 2 ) . Calculer en fonction de xn , l'abscisse xn+1 du point où (Tn)"
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "coupe l'axe des abscisses.",
+      "text": "coupe l'axe des abscisses."
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**3.** Déterminer le plus petit entier naturel n tel que : xn - xn+1 ≤ 0,001 ; quelle est la valeur correspondante de xn ?",
+      "text": "**3.** Déterminer le plus petit entier naturel n tel que : xn - xn+1 ≤ 0,001 ; quelle est la valeur correspondante de xn ?"
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**Exercice 3** ( points ) Soit l'application f définie de IR dans IR par :",
+      "text": "**Exercice 3** ( points ) Soit l'application f définie de IR dans IR par :"
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**f ( x ) = sin2 x . cos 2x** ; on note (C) sa courbe représentative .",
+      "text": "**f ( x ) = sin2 x . cos 2x** ; on note (C) sa courbe représentative ."
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**1.** a° Montrer que f est périodique et de période ∏ . b° Etudier la parité de f .",
+      "text": "**1.** a° Montrer que f est périodique et de période ∏ . b° Etudier la parité de f ."
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "c° En déduire, en expliquant, un intervalle minimum d'étude pour f.",
+      "text": "c° En déduire, en expliquant, un intervalle minimum d'étude pour f."
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**2.** Etudier le signe de sin 2x . ( 2 cos 2x - 1 ) pour x appartenant à l'intervalle",
+      "text": "**2.** Etudier le signe de sin 2x . ( 2 cos 2x - 1 ) pour x appartenant à l'intervalle"
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "I = [ 0 , ∏/2 ]",
+      "text": "I = [ 0 , ∏/2 ]"
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**3.** Etudier f dans l'intervalle I ( on pourra utiliser le résultat du 2. )",
+      "text": "**3.** Etudier f dans l'intervalle I ( on pourra utiliser le résultat du 2. )"
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**4.** Déterminer les points d'intersection de la courbe représentative de la restriction de f à l'intervalle I avec l'axe x'x et préciser les tangentes à (C) en ces points.",
+      "text": "**4.** Déterminer les points d'intersection de la courbe représentative de la restriction de f à l'intervalle I avec l'axe x'x et préciser les tangentes à (C) en ces points."
+    },
+    {
+      "self_ref": "#/texts/28",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Tracer la courbe (C) **COMPLETE** ( unités : 12 cm pour ∏ sur x'x et 8 cm pour 1 sur y'y).",
+      "text": "Tracer la courbe (C) **COMPLETE** ( unités : 12 cm pour ∏ sur x'x et 8 cm pour 1 sur y'y)."
+    },
+    {
+      "self_ref": "#/texts/29",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**5.** Résoudre l'équation : f(x) = - 3/8 avec x inconnue de IR .",
+      "text": "**5.** Résoudre l'équation : f(x) = - 3/8 avec x inconnue de IR ."
+    },
+    {
+      "self_ref": "#/texts/30",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**Exercice 4**",
+      "text": "**Exercice 4**"
+    },
+    {
+      "self_ref": "#/texts/31",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "En 1984, chaque livre d'une collection C coûte 100 F. On suppose que ce prix augmentera régulièrement de 8% chaque année . Pour tout entier naturel n, on note Pn le prix d'un livre en l'an 1984 + n ( par exemple Po = 100 )",
+      "text": "En 1984, chaque livre d'une collection C coûte 100 F. On suppose que ce prix augmentera régulièrement de 8% chaque année . Pour tout entier naturel n, on note Pn le prix d'un livre en l'an 1984 + n ( par exemple Po = 100 )"
+    },
+    {
+      "self_ref": "#/texts/32",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**1.** Calculer P1 et P2 puis démontrer que la suite (Pn) est une suite géométrique.",
+      "text": "**1.** Calculer P1 et P2 puis démontrer que la suite (Pn) est une suite géométrique."
+    },
+    {
+      "self_ref": "#/texts/33",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Quel est son sens de variation?",
+      "text": "Quel est son sens de variation?"
+    },
+    {
+      "self_ref": "#/texts/34",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Exprimer, pour tout entier naturel n, Pn en fonction de n",
+      "text": "Exprimer, pour tout entier naturel n, Pn en fonction de n"
+    },
+    {
+      "self_ref": "#/texts/35",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**2.** En 1984 un individu **I** dispose de 1000 F . Soit Qn le nombre de livres de la collection C que I peut s'offrir en 1984 + n en utilisant ses 1000 F.",
+      "text": "**2.** En 1984 un individu **I** dispose de 1000 F . Soit Qn le nombre de livres de la collection C que I peut s'offrir en 1984 + n en utilisant ses 1000 F."
+    },
+    {
+      "self_ref": "#/texts/36",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Calculer Q1 , Q2 puis Qn",
+      "text": "Calculer Q1 , Q2 puis Qn"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

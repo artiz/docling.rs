@@ -279,11 +279,11 @@ converted once more as that format with a warning.
 
 | Category | Extensions | Notes |
 |---|---|---|
-| Text & markup | `.md` `.markdown` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` · HTML `.html` `.htm` `.xhtml` · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` · plain text & code `.py` `.rs` `.js` `.ts` `.java` `.go` `.sh` `.yaml` `.toml` `.ini` `.sql` `.log` … (and any extension whose bytes are text) · JSON Lines `.jsonl` `.ndjson` · bare `.xml` · feeds `.rss` `.atom` `.rdf` · Jupyter `.ipynb` | text encodings detected like docling's `decode_text`, or set with `encoding`; HTML JSON is docling's item tree; MHTML is parsed as MIME and routed through the HTML backend; LaTeX is docling's backend on a pylatexenc port — multi-file arXiv projects, math, `\newcommand`, `tabular`, figures; plain text (#671, MarkItDown's plain-text converter): a code extension is one code block in its language, anything else paragraphs; a `.json` that is not a `DoclingDocument`, a `.jsonl`, and an `.xml` matching no dialect (JATS/USPTO/XBRL/DocLang) are kept as one `json` / `xml` code block, never an empty document; Jupyter notebooks (#673, MarkItDown's `IpynbConverter`): markdown cells through the Markdown backend, code cells as code items in the kernel's language, raw cells as code blocks, `metadata.title` as the first heading when the notebook does not open with one, a UTF-8 BOM dropped, display formulas (`$$…$$`) as formula items, and the outputs under `ipynb_outputs` (`none` default; `text` keeps stream / `text/plain` results as code blocks and image outputs as pictures) |
-| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.vor` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
+| Text & markup | `.md` `.markdown` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` · HTML `.html` `.htm` `.xhtml` · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` · plain text & code `.py` `.rs` `.js` `.ts` `.java` `.go` `.sh` `.yaml` `.toml` `.ini` `.sql` `.log` … (and any extension whose bytes are text) · print files `.prn` · JSON Lines `.jsonl` `.ndjson` · bare `.xml` · feeds `.rss` `.atom` `.rdf` · Jupyter `.ipynb` | text encodings detected like docling's `decode_text`, or set with `encoding`; HTML JSON is docling's item tree; MHTML is parsed as MIME and routed through the HTML backend; LaTeX is docling's backend on a pylatexenc port — multi-file arXiv projects, math, `\newcommand`, `tabular`, figures; plain text (#671, MarkItDown's plain-text converter): a code extension is one code block in its language, anything else paragraphs; a `.json` that is not a `DoclingDocument`, a `.jsonl`, and an `.xml` matching no dialect (JATS/USPTO/XBRL/DocLang) are kept as one `json` / `xml` code block, never an empty document; Jupyter notebooks (#673, MarkItDown's `IpynbConverter`): markdown cells through the Markdown backend, code cells as code items in the kernel's language, raw cells as code blocks, `metadata.title` as the first heading when the notebook does not open with one, a UTF-8 BOM dropped, display formulas (`$$…$$`) as formula items, and the outputs under `ipynb_outputs` (`none` default; `text` keeps stream / `text/plain` results as code blocks and image outputs as pictures) |
+| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.sgl` `.vor` · T602 `.602` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · Palm e-texts `.pdb` · Hancom Hangul `.hwp` `.hwpx` · classic Mac: MacWrite `.mw`, Word for Mac `.mcw`, ClarisWorks `.cwk` · Lotus Word Pro `.lwp` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
 | Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` `.fodp` · OpenOffice 1.x `.sxi` `.sti` · StarImpress/StarDraw `.sdd` `.sda` | PPTX JSON is docling's item tree — slides, lists, tables, pictures, charts, notes, comments |
-| Diagrams | Visio `.vsdx` `.vsdm` · SVG `.svg` | Visio: pages as sections, shape text in reading order, connectors as a relations table; SVG rasterized into the image pipeline, or its `<text>` as paragraphs without ML |
-| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25`; merged cells keep their spans; chart sheets expose their chart |
+| Diagrams | Visio `.vsdx` `.vsdm` · SVG `.svg` · CGM `.cgm` | Visio: pages as sections, shape text in reading order, connectors as a relations table; SVG rasterized into the image pipeline, or its `<text>` as paragraphs without ML; CGM (ISO 8632, binary and clear text) its text elements as paragraphs |
+| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` · Kingsoft `.et` `.ett` `.eth` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25`; merged cells keep their spans; chart sheets expose their chart |
 | Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` | both container generations (`Index/*.iwa` and iWork '09 XML); Pages and Keynote mirror docling's readers, Keynote charts as classified pictures with their data table; Numbers as sheet/table text |
 | XML dialects | JATS / USPTO / XBRL / RIS (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` | XBRL converts without arelle: `dei` title, text blocks, numeric facts as docling's key-value graph, the taxonomy read offline from `xbrl_taxonomy`; RIS (#902, a docling.rs extension) is Austria's federal legal XML (`risdok`) — sections, headings, paragraphs with their formatting, lists, tables, running headers/footers as furniture |
 | PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (`--features heif`) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` | pure-Rust text layer, page renderer and scan raster, ONNX layout + TableFormer + OCR (`docling-pdf`; no native PDF library in the default build, `pdfium` is an opt-in feature — [`docs/PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md)); JPEG 2000 and JBIG2 decode in Rust (#598, #811 — `/JBIG2Globals` included; an image no decoder can read draws a mid-gray placeholder, a stencil too); DjVu reads its hidden text layer without models and falls back to OCR with them |
@@ -1188,6 +1188,100 @@ converted once more as that format with a warning.
 - Unverified against a real file — no public `.xlr` sample exists (format-corpus, Tika, LibreOffice and govdocs1 have none)
 - a non-BIFF `.xlr` (Works 5 or older) fails with the XLS reader's error
 
+#### Kingsoft Spreadsheets (.et, .ett, .eth)
+
+**Backend:** `xls.rs` via extension routing (#216)\
+**Status:** **docling.rs extension**
+
+- WPS Office's spreadsheet format is an Excel 97 BIFF8 `Workbook` stream in an OLE container under its own extension (`.et`; `.ett` / `.eth` its templates), so the XLS reader takes it unchanged
+- Unverified against a real file — no public `.et` sample was found (LibreOffice's test corpus has none); a WPS file in another container fails with the XLS reader's error
+
+#### T602 (.602)
+
+**Backend:** `t602.rs` (#216, after LibreOffice's T602 import filter)\
+**Status:** **docling.rs extension** — docling reaches T602 only through LibreOffice
+
+- the Czechoslovak DOS word processor's 8-bit text: `@` setting lines (`@CT n` picks the code page — 0 Kamenický, the default; 1 Latin-2 / CP852; 2 KOI8-ČS — the rest are layout and skipped), `.` dot-command and comment lines left out, `0x1A` ends the text
+- style control bytes as runs: `0x02` bold, `0x04` italic, `0x0F` wide (read as bold), `0x13` underline, `0x14` / `0x16` super- / subscript
+- **Divergence from LibreOffice's default:** T602 has no paragraph mark (its text is hard-wrapped to the page), so a blank line ends a paragraph and the lines between read through — LibreOffice's "reformat paragraphs" option; its default keeps each line with a line break. A soft hyphen at a wrap (`0xAD 0x8D`) joins the word. A block drawn with box characters (a frame, a table) stays preformatted; a line opening with a `-` / `*` / `•` bullet starts a list item
+- **Divergence:** LibreOffice's code-page tables approximate (Kamenický `ĺ` as `ô`, its line-drawing range as letters); the code pages here are the standard ones (`dos_codepage.rs`)
+- Corpus: LibreOffice's two T602 test files (`crates/docling/tests/data/t602/`)
+
+#### Palm e-texts (.pdb)
+
+**Backend:** `palmdoc.rs` (#216)\
+**Status:** **docling.rs extension** — docling has no reader (LibreOffice reads them through libe-book)
+
+- a Palm database (78-byte header, record table) whose type and creator say what it holds: PalmDOC / AportisDoc (`TEXt`/`REAd`) and TealDoc (`TEXt`/`TlDc`) with PalmDOC's LZ77 compression or none, zTXT / Weasel Reader (`zTXT`/`GPlm`) with one zlib stream over its records
+- blank-line-separated paragraphs (their lines read through), or a paragraph per line in a text with no blank lines; TealDoc's `<HEADER TEXT=…>` is a heading, `<LINK TEXT=…>` its text, its other tags carry none
+- UTF-8 when the text is, else Windows-1252; the database name is the document title (`metadata.title`)
+- eReader (Peanut Press), Plucker and Mobipocket books are other formats in the same container and are refused by name; a `.pdb` that is no Palm database (a Protein Data Bank file) reads as plain text. `.pbd`, #216's spelling, routes here too
+- Corpus: LibreOffice's PalmDOC, TealDoc and zTXT test files (`crates/docling/tests/data/palmdoc/`)
+
+#### Hancom Hangul (.hwp, .hwpx)
+
+**Backend:** `hwp.rs` (#216, after Hancom's published "HWP 5.0 Document File Structure" and OWPML / KS X 6101; hwplib and hwpxlib for the record layouts)\
+**Status:** **docling.rs extension** — docling has no reader (LibreOffice imports HWP 5 partly, HWPX not at all)
+
+- **HWP 5** (Hangul 2002 on): an OLE compound file — `FileHeader` (signature, flags), `DocInfo` (the character and paragraph shapes, the embedded binaries), one `BodyText/SectionN` stream per section, raw-deflated when the document is compressed; a stream is tagged records (tag, nesting level, size), a paragraph its `PARA_HEADER`, UTF-16 `PARA_TEXT` and character-shape runs, an extended control character in the text standing for the next `CTRL_HEADER`
+- **HWPX** (Hangul 2010 on): a ZIP with the `application/hwp+zip` mimetype — `Contents/header.xml` (`hh:charPr`, `hh:paraPr`), `Contents/sectionN.xml` (`hp:p` / `hp:run` / `hp:t`), `Contents/content.hpf` (the `BinData/` images)
+- a paragraph whose shape carries an outline head (the `개요 1…7` styles) is a heading of that depth, a number / bullet head an ordered / bullet list item; bold, italic, underline, strike-through and super-/subscript from the character shapes (underline and the scripts reach DocLang)
+- tables with their spans and caption (a cell's paragraphs and nested tables joined into its text); text boxes and pictures after the paragraph they are anchored in (a floating object does not split the text around it); an equation keeps its Hangul equation script as text (it is not LaTeX: `{a} over {b}`); ruby text (덧말) after its base in parentheses; composed characters (글자 겹치기) and text art keep their text
+- page headers / footers and foot- / endnotes are furniture items (`page_header` / `page_footer` / `footnote`), as the Word 97 reader keeps its stories — out of the Markdown, in the JSON and DocLang
+- tracked changes (`track_changes`, #851): HWPX's inline deletion / insertion marks read `accept` (the default) or `reject`; HWP 5's text is read as stored (`reject` refused), `all` refused in both
+- one embedded image decoded once however many pictures show it; past the per-part byte budget (`DOCLING_RS_MAX_PART_BYTES`) a picture keeps its place without its payload — hwplib's `big_file.hwp` places one 3.9 MB photo 16 384 times
+- a password-protected document raises the typed encryption error; a distribution document (배포용 문서, its body encrypted into `ViewText` for viewing only) and the HWP 3.x format of Hangul 96/97 are refused by name; form controls (buttons, combo boxes), chart objects and OLE contents carry no text here
+- content-sniffed (the `FileHeader` + `DocInfo` streams; the HWPX mimetype), so a nameless upload converts
+- Corpus: seven hwplib and six hwpxlib samples, Apache-2.0 (`crates/docling/tests/data/hwp/`)
+
+#### Classic Macintosh word processors (.mw, .mcw, .cwk)
+
+**Backend:** `macwp.rs` (#216, after libmwaw's MacWrite, Word for Mac and ClarisWorks readers)\
+**Status:** **docling.rs extension** — docling has no reader (LibreOffice reads them through libmwaw)
+
+- told apart by content whatever the extension (Mac files often had none): Word for Mac by its magic (`FE32` 1.0, `FE34` 3.0, `FE37` `001C` / `0023` 4.0 / 5.0), ClarisWorks / AppleWorks 1–6 by `BOBO` at offset 4 — both also sniffed for nameless input — and MacWrite by its version word (3 = 1.0–2.2, 6 = 4.5–5.0) under its extension; text is Mac Roman
+- **MacWrite**: the window records (main text, header, footer) and their 16-byte paragraph entries (5-byte entries and typed blocks in version 3); a text block raw or nibble-compressed (`" etnroaisdlhcfp"`, `0xF` escaping a literal byte), its style runs as bold / italic / underline / sub-/superscript; header and footer paragraphs are furniture
+- **Word for Mac**: the text run (from 0x80 in 1.0, 0x100 in 3.0, the header's begin in 4.0 / 5.0) or, for a fast-saved 4.0 / 5.0 file, its piece table; 4.0 / 5.0 split the main text, the footnotes (furniture `footnote`) and the headers / footers (furniture `page_header`) by the header's lengths; 1.0 and 3.0 give no split, so their header, footer and footnote paragraphs follow the body text; a form feed is a page break
+- **ClarisWorks**: every `DSET` zone of file type 1 is a text — its character count and text chunks after the paragraph, font, token and size blocks; zone 1 is the main text, a header / footer / footnote zone furniture, a text box's or a table cell's text a paragraph after the main text (the table grid itself is not rebuilt); a spreadsheet, database or painting with no text zone is refused by name
+- **Not read:** Word's and ClarisWorks' character and paragraph styles (bold, headings), pictures, MacWrite Pro / MacWrite II (another format, refused by name)
+- Corpus: six libmwaw test files from LibreOffice (`crates/docling/tests/data/mac_wp/`)
+
+#### Lotus Word Pro (.lwp)
+
+**Backend:** `lwp.rs` (#216, after LibreOffice's `lotuswordpro` filter)\
+**Status:** **docling.rs extension** — docling has no reader
+
+- Word Pro 97 – Millennium 9.8's object store: the file header behind an old-style object header, the object index (root over leaf pages, delta-compressed ids, the time table indexed ids point into), each object's variable header and its data, run-length decompressed when flagged
+- the text is in stories: a story names the layout it flows into — the page (the body), a header or footer, a table cell, a frame, a footnote — and the head of its paragraph list; a paragraph's fribs give its text (code-page text switching to UTF-16 at a NUL — "packed unicode"; a code-page modifier picks Windows-125x / CJK encodings), tabs, line breaks, hard spaces and page breaks; a revision marked deleted is left out (the accepted view)
+- the body story first, then the other content stories (table cells, frames) as paragraphs in object order — **the table grid and the frame anchors are not rebuilt**; headers, footers and footnotes are furniture (`page_header` / `page_footer` / `footnote`); the "continued on / from" templates, drop caps and the numbering definitions' stories are skipped
+- a paragraph whose style is named `Heading N` (`Überschrift N`, `Titre N`) is a heading; numbering, bullets and character formatting live in style objects and the font table and are not read (a numbered paragraph keeps its text, not its number)
+- Word Pro 96 files (file revision < 11) and the Bento-packaged, PKWARE-imploded form are refused by name — as LibreOffice's filter supports only Word Pro 97 on; content-sniffed (`WordPro` + `LWP7`)
+- Corpus: three LibreOffice test files (`crates/docling/tests/data/lwp/`); every file of LibreOffice's `lotuswordpro` test corpus, its fuzzing and crash cases included, converts or errors cleanly
+
+#### Computer Graphics Metafile (.cgm)
+
+**Backend:** `cgm.rs` (#216, after ISO/IEC 8632-3 and -4)\
+**Status:** **docling.rs extension** — docling has no reader (LibreOffice imports CGM into Draw)
+
+- the vector-drawing format of technical illustration (S1000D / ATA iSpec 2200 graphics, aircraft and automotive manuals, 1990s clip art): what a converter can take from a drawing is its text, so every `TEXT` / `RESTRICTED TEXT` element is a paragraph in drawing order, a text continued by `APPEND TEXT` (its `not final` flag) joined into one; the metafile's name is the document title, and a metafile of several pictures heads each picture's text with its name
+- **Divergence from LibreOffice:** the geometry is not rendered (no picture item, no image) — the drawing's labels are the document
+- binary encoding (8632-3): element headers (class, id, short or partitioned long length), the VDC size from `VDC TYPE` and the `VDC INTEGER` / `REAL PRECISION` in force, long-form strings; clear-text encoding (8632-4): `BEGMF` / `BEGPIC` / `TEXT` / `RESTRTEXT` / `APNDTEXT` statements, `'` / `"` strings with doubled quotes, `%` comments; the character encoding (8632-2) is refused by name
+- strings as UTF-8 when they are, else Latin-1 (the default G1 set); character-set switching (ISO 2022 escapes) is not followed
+- content-sniffed (a `BEGIN METAFILE` element whose name fills it, or a leading `BEGMF`); a `.cgm` with any `BEGIN METAFILE` header reads
+- Corpus: three LibreOffice test files (`crates/docling/tests/data/cgm/`)
+
+#### Print files (.prn)
+
+**Backend:** `print_file.rs` (#216; not `prn.rs` — `PRN` is a reserved device name on Windows, which cannot check such a path out)\
+**Status:** **docling.rs extension** — docling has no reader
+
+- a DOS or Windows "print to file": a report's fixed-width text (Lotus 1-2-3, dBase, the Generic / Text Only printer) or a printer stream for a PCL (LaserJet) or ESC/P (Epson) printer
+- printer codes out: PCL's parameterized escape sequences (their `W` data blocks — raster, font downloads — skipped by length) and the PJL job header; ESC/P commands by their parameter counts, bit images by length
+- overstrikes undone: a backspace overprints (`_⌫X` reads `X`), a bare carriage return's second pass (bold, underline) is dropped; a form feed is a page break
+- UTF-8 when the bytes are, else code page 437; blank-line-separated blocks become paragraphs, a block in columns (most lines hold an inner run of three or more spaces — a report's table) stays preformatted so the columns line up
+- PostScript is a program, not text: refused, with `ps2pdf` named
+- Corpus: two fixtures of our own (`crates/docling/tests/data/print_file/`)
+
 #### AbiWord (.abw, .zabw, .awt)
 
 **Backend:** `abw.rs` (roxmltree; gzip via flate2 for .zabw, #216)\
@@ -1240,7 +1334,7 @@ converted once more as that format with a warning.
 - Corpus: LibreOffice's five libwps smoke files (Works 2.00A DOS, 3.0, 4.5, 5.0, 6.0) pin detection and the header/index/zone walk
 - content decoding is pinned by synthetic WPS4/WPS8 streams in the unit tests — no public corpus with real Works prose exists (govdocs1 has none)
 
-#### StarOffice 5 binaries (.sdw, .sda/.sdd, .vor)
+#### StarOffice 5 binaries (.sdw, .sgl, .sda/.sdd, .vor)
 
 **Backend:** `staroffice5.rs` (CFB via the shared `cfb.rs`, record/chunk walk per libstaroffice's reverse engineering, #215)\
 **Status:** **docling.rs extension — docling reaches these only via LibreOffice (libstaroffice)**
@@ -1253,6 +1347,7 @@ converted once more as that format with a warning.
   - pages (`DrPg`) as sections with outliner (`xV4B`) texts, outline depth as list nesting
   - master pages, the object-less handout and `~LT~Notizen` notes pages dropped (the binary format's notes pages are not read; ODP speaker notes are notes-layer items since #862)
 - `.vor` templates dispatch by the contained stream
+- a StarWriter 5 global (master) document (`.sgl`, #216) is the same `StarWriterDocument` stream, read the same way: the text it stores, its linked sub-documents not followed
 - Strings decode as cp1252
 - StarCalc (.sdc) has a different cell-record model and errors with a targeted save-as-.ods message — a follow-up
 
@@ -2355,6 +2450,11 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   only on stderr under `DOCLING_RS_DEBUG`; a page the
   `DOCLING_RS_MAX_RENDER_PIXELS` cap refuses now fails with the cap's own
   message instead of "no page renderer". docling has no counterpart.
+- **`docling-pdf` `render` feature** (#917) — `render_pages`, `RenderedPage`,
+  `PdfDocument` and the `render` / `raster` modules (the pure-Rust page
+  renderer, no model) without `ort` / `docling-onnx` in the dependency graph:
+  `docling-pdf = { default-features = false, features = ["render"] }`. `ml`
+  (the default) implies it. docling has no counterpart.
 - **`docling-rag`** — documents → chunking → embeddings → vector search,
   with swappable embedders (Ollama/Gemini/local ONNX), stores
   (SQLite+sqlite-vec / PostgreSQL+pgvector), LLM, sources and queues, plus an

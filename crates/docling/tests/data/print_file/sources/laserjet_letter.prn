@@ -1,0 +1,10 @@
+%-12345X@PJL JOB NAME="letter"
+@PJL ENTER LANGUAGE=PCL
+E&l0O(s0p12h10v0s0b3T(s3BDear Mr. MÅller,(s0B
+
+thank you for your order of 12 May. The parts ship on
+Monday; the invoice follows by mail.
+
+*r1A*b4WABCD*rBKind regards,
+Jane _D_o_e
+E%-12345X@PJL EOJ
