@@ -2180,7 +2180,23 @@ These are deliberate or unavoidable divergences, not bugs.
     `DOCLING_RS_OCR_SCALE`). `pdf_aware_layout_regions` — upstream's new
     default, OCR gated by layout regions and the PDF text layer — is the
     architecture this port always had, so the default behavior is already
-    aligned; `full_page` and `layout_regions` both map onto the
+    aligned — with one gap closed by #931: a page with a text layer OCR'd
+    only its bare pictures, so a paragraph drawn as vector outlines
+    (`gs -dNoOutputFonts`, flattened print PDFs) beside one native `Page 1`
+    footer dropped empty. Now every text, furniture or table region no
+    programmatic text touches is OCR'd, as docling's
+    `_find_pdf_aware_layout_ocr_rects` does for "clusters without any
+    visible programmatic text" (the page renders on demand for it). Its
+    other two triggers — clusters over a bitmap, and clusters whose text
+    layer leaves a non-rule shape unexplained (an outlined glyph next to
+    real text, docling#4209) — are not ported: the first is the bare-picture
+    pass, the second needs the page's vector shapes. On the PDF corpus it
+    fires on 4 files; text appears on the attention-map figures of
+    1706.03762 (`Input-Input Layer5`, outlined titles), and on docling's two
+    Korean `skipped_*` pages, whose CID fonts the text layer cannot map, the
+    en/ch recognizers read a few stray glyphs (`[ 4-5] 8`) — as docling's
+    default RapidOCR would. `no_ocr` / `skip_ocr` keep the text layer
+    alone; `full_page` and `layout_regions` both map onto the
     `force_full_page_ocr` machinery (the whole-page vs per-region *detector*
     distinction has no analogue in the det-free PP-OCR recognizer here).
     `ocr_scale` resamples the OCR input from the pipeline's 2.0 px/pt page
