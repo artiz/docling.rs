@@ -208,6 +208,10 @@ pub struct ConvertOptions {
     pub ocr_mode: Option<String>,
     /// OCR input scale in px per PDF point (#254); unset = the 2.0 render.
     pub ocr_scale: Option<f32>,
+    /// The PDF text layer's word-gap rule (#921): `legacy` (default,
+    /// docling-parse ≤ 6) | `adaptive` (docling-parse ≥ 7's line-local
+    /// threshold) | a factor in (0, 4] of the flanking glyphs' mean advance.
+    pub pdf_word_gap: Option<String>,
     /// RapidOCR's text-line orientation handling (#666): oriented crops, the
     /// 90° turn of tall lines and the 0/180 classifier. Default off
     /// (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION`).
@@ -636,6 +640,7 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("ocr_lang"),
     row("ocr_mode"),
     row("ocr_scale"),
+    row("pdf_word_gap"),
     row("ocr_textline_orientation"),
     row("images_scale"),
     OptionInfo {
@@ -1000,7 +1005,7 @@ impl ConvertOptions {
     /// the one set of rules all surfaces apply, before any work starts:
     /// `pages` spelling, a positive `document_timeout`, a positive
     /// `ocr_scale` and `picture_ocr_scale`, `images_scale` in 0.1–4.0, a
-    /// known `pipeline`, a positive
+    /// `pdf_word_gap` docling-pdf reads, a known `pipeline`, a positive
     /// `vlm_max_tokens`, and (with the `pdf` feature, which has the engine
     /// tables) a known `ocr_engine` / `ocr_mode`, an `ocr_lang` the
     /// selected engine reads and `picture_ocr_classes` the classifier
@@ -1080,6 +1085,8 @@ impl ConvertOptions {
             self.ocr_mode()?;
             self.ocr_lang()?;
         }
+        #[cfg(any(feature = "pdf", feature = "pdf-text"))]
+        self.pdf_word_gap()?;
         self.picture_ocr_classes()?;
         self.redaction()?;
         Ok(())
@@ -1396,6 +1403,9 @@ impl ConvertOptions {
         if let Some(s) = self.ocr_scale {
             c = c.ocr_scale(s);
         }
+        if let Some(v) = &self.pdf_word_gap {
+            c = c.pdf_word_gap(v.clone());
+        }
         if let Some(v) = self.ocr_textline_orientation {
             c = c.ocr_textline_orientation(v);
         }
@@ -1573,6 +1583,15 @@ impl ConvertOptions {
                     )
                 })
             })
+            .transpose()
+    }
+
+    /// `pdf_word_gap` parsed (#921); `None` when unset.
+    #[cfg(any(feature = "pdf", feature = "pdf-text"))]
+    pub fn pdf_word_gap(&self) -> Result<Option<crate::PdfWordGap>, OptionsError> {
+        self.pdf_word_gap
+            .as_deref()
+            .map(|v| crate::PdfWordGap::parse(v).map_err(|e| OptionsError::new("pdf_word_gap", e)))
             .transpose()
     }
 
@@ -1857,6 +1876,54 @@ mod tests {
         assert_eq!(merged.ocr_scale, Some(2.0));
         assert_eq!(merged.pages.as_deref(), Some("1-3"));
         assert_eq!(merged.video_frames, Some(0));
+    }
+
+    /// #921: the text layer's word-gap rule — a mode or a factor in (0, 4].
+    #[cfg(any(feature = "pdf", feature = "pdf-text"))]
+    #[test]
+    fn pdf_word_gap_validation() {
+        let bad = |o: ConvertOptions| o.validate().unwrap_err();
+        let e = bad(ConvertOptions {
+            pdf_word_gap: Some("wide".into()),
+            ..Default::default()
+        });
+        assert_eq!(e.field, "pdf_word_gap");
+        assert_eq!(
+            e.cli_message(),
+            "--pdf-word-gap must be legacy, adaptive, or a factor in (0, 4], got \"wide\""
+        );
+        for ok in ["legacy", "Adaptive", "0.25", "4"] {
+            let o = ConvertOptions {
+                pdf_word_gap: Some(ok.into()),
+                ..Default::default()
+            };
+            assert!(o.validate().is_ok(), "{ok}");
+        }
+        for out in ["0", "-1", "4.5", "nan"] {
+            let o = ConvertOptions {
+                pdf_word_gap: Some(out.into()),
+                ..Default::default()
+            };
+            assert!(o.validate().is_err(), "{out}");
+        }
+        // A JSON number reads as its text (MCP forms, the C ABI).
+        let mut o = ConvertOptions::default();
+        assert!(o.set_text("pdf_word_gap", "0.2").unwrap());
+        assert_eq!(
+            o.pdf_word_gap().unwrap(),
+            Some(crate::PdfWordGap::Factor(0.2))
+        );
+        let o = ConvertOptions::from_loose_json(
+            serde_json::json!({"pdf_word_gap": 0.3})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            o.pdf_word_gap().unwrap(),
+            Some(crate::PdfWordGap::Factor(0.3))
+        );
     }
 
     #[test]

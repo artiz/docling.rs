@@ -263,12 +263,15 @@ impl PdfDocument {
 fn rust_parser_cells(
     bytes: &[u8],
     password: Option<&str>,
+    word_gap: Option<crate::dp_lines::WordGap>,
 ) -> Option<crate::textparse::PageTextParser> {
     // Only the document load happens here; pages are parsed as the walk
     // reaches them (`cells_timed`), so nothing is decoded for pages outside
     // a `--pages` window and the parse overlaps the workers' inference.
     crate::timing::timed("textparse.open", || {
-        crate::textparse::PageTextParser::open_with_password(bytes, password)
+        let mut parser = crate::textparse::PageTextParser::open_with_password(bytes, password)?;
+        parser.set_word_gap(word_gap);
+        Some(parser)
     })
 }
 
@@ -349,6 +352,7 @@ where
         extract_text,
         range,
         BitmapRender::Eager,
+        None,
         f,
     )
 }
@@ -376,7 +380,10 @@ pub enum BitmapRender {
 }
 
 #[cfg(feature = "render")]
-/// [`for_each_page`] with the 2x bitmaps rendered as `bitmap` says.
+/// [`for_each_page`] with the 2x bitmaps rendered as `bitmap` says, and the
+/// text layer's words split by `word_gap` (#921; `None` = the process
+/// default).
+#[allow(clippy::too_many_arguments)]
 pub fn walk_pages<E, F>(
     bytes: &[u8],
     password: Option<&str>,
@@ -384,6 +391,7 @@ pub fn walk_pages<E, F>(
     extract_text: bool,
     range: Option<(usize, usize)>,
     bitmap: BitmapRender,
+    word_gap: Option<crate::dp_lines::WordGap>,
     mut f: F,
 ) -> Result<(), E>
 where
@@ -414,7 +422,7 @@ where
     // nor pdfium's text page is decoded at all — on vector-dense pages (CAD
     // drawings as 100k+ path segments) that decode is most of the page cost.
     let mut rust = if extract_text {
-        rust_parser_cells(bytes, password)
+        rust_parser_cells(bytes, password, word_gap)
     } else {
         None
     };

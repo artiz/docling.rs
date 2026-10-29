@@ -72,6 +72,7 @@ own output options next to the shared ones.
 | `ocr_lang` | `en` \| `ch` \| BCP-47; tessdata stems under Tesseract | `en` (`DOCLING_RS_OCR_LANG`) | `--ocr-lang` | `ocr_lang` | `ocrLang` | OCR recognition language, validated against the engine it will drive. |
 | `ocr_mode` | `default` \| `full_page` \| `layout_regions` \| `pdf_aware_layout_regions` | `default` | `--ocr-mode` | `ocr_mode` | `ocrMode` | Which regions feed the OCR (docling's `OcrMode`, #254). |
 | `ocr_scale` | px/pt > 0 | unset = the 2.0 render | `--ocr-scale` | `ocr_scale` | `ocrScale` | OCR input scale (docling's `OcrOptions.scale`, #254). |
+| `pdf_word_gap` | `legacy` \| `adaptive` \| factor in (0, 4] | `legacy` (`DOCLING_RS_PDF_WORD_GAP`) | `--pdf-word-gap` | `pdf_word_gap` | `pdfWordGap` | Where a PDF's text layer splits words the file draws with a cursor move and no space glyph (#921). `legacy` is docling-parse ≤ 6's rule, which the conformance baselines pin: a gap splits when it exceeds 0.33 × the running mean advance of the cell built so far, and cells restart at every font change, so the threshold drifts along a line (a borderline gap after a font switch glues: `unddem`). A factor `F` splits where `gap > F ×` the mean advance of the two glyphs flanking the gap, across font runs within a line — one value holds for the whole line (0.2–0.25 suits most body text; letter-spaced headings want it higher). `adaptive` is docling-parse ≥ 7's line-local two-cluster threshold (0.18–0.35, 0.25 when a line's gaps do not separate; explicit space glyphs stay authoritative). Applies to the exported text and the word cells, on the ML pipeline and the text-layer path alike. |
 | `ocr_textline_orientation` | bool | false (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION`) | `--ocr-textline-orientation` | `ocr_textline_orientation` | `ocrTextlineOrientation` | RapidOCR's text-line orientation handling (#666): oriented line crops, tall lines turned 90°, upside-down lines turned by the 0/180 classifier. PP-OCR pages and pictures alike. Python also maps docling's `RapidOcrOptions.use_cls`. |
 | `images_scale` | 0.1–4.0 px/pt | unset = the 2.0 render | `--images-scale` | `images_scale` | `imagesScale` | Picture-crop / page-image scale (docling's `images_scale`, #520). |
 | `page_images` | bool | false | `--page-images` | `generate_page_images` | `pageImages` | Keep each page's render as the JSON page image (docling's `generate_page_images`, #520). Python: `generate_page_images` (also accepted as a JSON alias). |
@@ -115,6 +116,7 @@ Checked before any work starts, with the same message on every surface
 - `document_timeout`, `ocr_scale` — finite and positive.
 - `images_scale` — in 0.1–4.0.
 - `ocr_engine` — `ppocr` | `tesseract`; `ocr_mode` — one of the four modes.
+- `pdf_word_gap` — `legacy` | `adaptive` | a number in (0, 4].
 - `ocr_lang` — a language the selected engine reads (`en`/`ch`/BCP-47 under
   PP-OCR; tessdata stems or BCP-47 tags under Tesseract).
 - `pipeline` — `standard` | `vlm`; `vlm_max_tokens` — positive; under `vlm`,

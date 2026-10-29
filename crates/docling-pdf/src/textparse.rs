@@ -1277,6 +1277,9 @@ pub struct PageTextParser {
     caches: DocCaches,
     /// Page object ids in document order (page 1 first).
     pages: Vec<lopdf::ObjectId>,
+    /// How words split where no space glyph does (#921); from
+    /// `DOCLING_RS_PDF_WORD_GAP` unless [`Self::set_word_gap`] says.
+    word_gap: crate::dp_lines::WordGap,
 }
 
 impl PageTextParser {
@@ -1296,7 +1299,17 @@ impl PageTextParser {
             doc,
             caches: DocCaches::default(),
             pages: pages.into_iter().map(|(_, pid)| pid).collect(),
+            word_gap: crate::dp_lines::WordGap::from_env(),
         })
+    }
+
+    /// The word-gap rule the line and word cells are built with (#921);
+    /// `None` keeps the environment's (`DOCLING_RS_PDF_WORD_GAP`, else the
+    /// legacy rule).
+    pub fn set_word_gap(&mut self, gap: Option<crate::dp_lines::WordGap>) {
+        if let Some(g) = gap {
+            self.word_gap = g;
+        }
     }
 
     /// The glyph boxes and font styles of the 0-based page `index` — the
@@ -1351,7 +1364,8 @@ impl PageTextParser {
         };
         let (_w, h) = page_size(&self.doc, pid);
         let (glyphs, inks) = page_glyphs_and_inks(&self.doc, pid, &mut self.caches);
-        let (prose, words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
+        let (prose, words) =
+            crate::dp_lines::line_and_word_cells_with(&glyphs, h, true, self.word_gap);
         PageParserCells {
             prose,
             words,
@@ -1378,7 +1392,8 @@ impl PageTextParser {
             }
             None => (0.0, 0.0, Default::default()),
         };
-        let (mut prose, mut words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
+        let (mut prose, mut words) =
+            crate::dp_lines::line_and_word_cells_with(&glyphs, h, true, self.word_gap);
         drop_overpainted_cells(&mut prose);
         drop_overpainted_cells(&mut words);
         crate::pdfium_backend::PdfPage {

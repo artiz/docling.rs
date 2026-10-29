@@ -2338,6 +2338,35 @@ These are deliberate or unavoidable divergences, not bugs.
     docling fuses it (`Warteund`). Every other wrapped word still fuses
     (docling#3888).
 
+21. **Word gaps without space glyphs** (#921, `pdf_word_gap`). When a PDF
+    marks a word boundary with a cursor move and no space glyph, the text
+    layer decides it from the gap's width. The default (`legacy`) is the
+    rule of docling-parse ≤ 6, which this port's `dp_lines.rs` reproduces
+    and the conformance baselines pin: a gap splits when it exceeds 0.33 ×
+    the running mean advance of the cell built so far in that contraction
+    pass, and cells restart at every font change (`enforce_same_font`).
+    The threshold therefore drifts along a line: a short run of wide glyphs
+    right after a font switch gets a higher bar than the same gap mid-line
+    (#921's `und dem`, in a second font inside body text: gap 1.9550 pt,
+    threshold 0.33 × 5.925 = 1.9553 pt → `unddem`). docling-parse 7
+    (docling-parse#351, 2026-09) replaced that contractor: lines come from
+    geometry, each gap is divided by the mean advance of the two glyphs
+    flanking it, and a line-local 1-D two-cluster threshold (0.18–0.35,
+    0.25 when the gaps do not separate) decides. **Divergence:** the default
+    stays docling-parse ≤ 6's rule. Upstream's rule is not a strict
+    improvement: on #921's 92-page document its exported lines fix `und
+    dem`, `Wurde die`, `Wenn bei` but glue `DieNormalarbeitszeit`,
+    `wirdwie`, `EVUund`, and switching would move every PDF baseline.
+    `pdf_word_gap` (`--pdf-word-gap`, `DOCLING_RS_PDF_WORD_GAP`, every
+    surface) opts in per conversion: `adaptive` is docling-parse 7's
+    threshold — on that document its words match docling-parse 7.24.1's
+    98.3 % (legacy: 86.2 %) and its lines 95.5 % (legacy: 75.3 %), the rest
+    character normalization (`–` → `-`, quotes) and dot leaders; a number
+    `F` splits where `gap > F ×` the flanking glyphs' mean advance, one
+    value for the whole line, across font runs (0.2: 92.4 % / 92.1 %).
+    Either mode drives the exported text and the word cells TableFormer
+    matches, on the ML pipeline and the text-layer path alike.
+
 ---
 
 ## 5. Not migrated / out of scope

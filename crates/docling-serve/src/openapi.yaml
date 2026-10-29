@@ -129,6 +129,7 @@ paths:
         - { $ref: "#/components/parameters/ocr_lang" }
         - { $ref: "#/components/parameters/ocr_mode" }
         - { $ref: "#/components/parameters/ocr_scale" }
+        - { $ref: "#/components/parameters/pdf_word_gap" }
         - { $ref: "#/components/parameters/ocr_textline_orientation" }
         - { $ref: "#/components/parameters/ocr_engine" }
         - { $ref: "#/components/parameters/images_scale" }
@@ -226,6 +227,7 @@ paths:
                 ocr_lang: { $ref: "#/components/schemas/OcrLang" }
                 ocr_mode: { $ref: "#/components/schemas/OcrMode" }
                 ocr_scale: { $ref: "#/components/schemas/OcrScale" }
+                pdf_word_gap: { $ref: "#/components/schemas/PdfWordGap" }
                 ocr_textline_orientation: { type: boolean }
                 ocr_engine: { $ref: "#/components/schemas/OcrEngine" }
                 images_scale: { $ref: "#/components/schemas/ImagesScale" }
@@ -735,6 +737,18 @@ components:
         `full_page`/`layout_regions` discard the embedded text layer like
         `force_full_page_ocr`; `pdf_aware_layout_regions` (= `default`) is the
         standard text-layer-aware behavior.
+    PdfWordGap:
+      type: string
+      default: legacy
+      examples: ["legacy", "adaptive", "0.25"]
+      description: >-
+        Where a PDF's text layer splits words the file draws with a cursor
+        move and no space glyph (#921). `legacy` (default;
+        `DOCLING_RS_PDF_WORD_GAP`) is docling-parse <= 6's running-mean rule
+        the conformance baselines pin; `adaptive` is docling-parse >= 7's
+        line-local threshold; a number F in (0, 4] splits gaps wider than F
+        times the mean advance of the two flanking glyphs. Anything else is
+        a 400.
     OcrScale:
       type: number
       exclusiveMinimum: 0
@@ -1193,6 +1207,7 @@ components:
         ocr_lang: { $ref: "#/components/schemas/OcrLang" }
         ocr_mode: { $ref: "#/components/schemas/OcrMode" }
         ocr_scale: { $ref: "#/components/schemas/OcrScale" }
+        pdf_word_gap: { $ref: "#/components/schemas/PdfWordGap" }
         ocr_textline_orientation:
           type: boolean
           default: false
@@ -1698,6 +1713,8 @@ components:
       { name: ocr_mode, in: query, schema: { $ref: "#/components/schemas/OcrMode" } }
     ocr_scale:
       { name: ocr_scale, in: query, schema: { $ref: "#/components/schemas/OcrScale" } }
+    pdf_word_gap:
+      { name: pdf_word_gap, in: query, schema: { $ref: "#/components/schemas/PdfWordGap" } }
     ocr_textline_orientation:
       { name: ocr_textline_orientation, in: query, schema: { type: boolean } }
     ocr_engine:

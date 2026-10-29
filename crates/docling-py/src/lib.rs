@@ -266,6 +266,9 @@ struct PyDocumentConverter {
     tesseract_lang: Option<String>,
     ocr_mode: Option<docling::OcrMode>,
     ocr_scale: Option<f32>,
+    /// The PDF text layer's word-gap rule (#921); `None` = the
+    /// environment's default.
+    word_gap: Option<docling::PdfWordGap>,
     /// RapidOCR's text-line orientation handling (#666); `None` = the
     /// environment's default.
     ocr_textline_orientation: Option<bool>,
@@ -359,6 +362,12 @@ impl PyDocumentConverter {
     /// * `ocr_scale` — OCR render scale in px per PDF point (docling's
     ///   `OcrOptions.scale`, #254); `None` reads the pipeline's own 2.0 px/pt
     ///   render (docling's default is 3 = 216 dpi).
+    /// * `pdf_word_gap` — where a PDF's text layer splits words the file
+    ///   draws with a cursor move and no space glyph (#921): `"legacy"`
+    ///   (default, docling-parse ≤ 6; also `DOCLING_RS_PDF_WORD_GAP`) |
+    ///   `"adaptive"` (docling-parse ≥ 7's line-local threshold) | a factor
+    ///   such as `"0.25"` of the two flanking glyphs' mean advance, in
+    ///   (0, 4]. Anything else raises `ValueError`.
     /// * `ocr_textline_orientation` — RapidOCR's text-line orientation
     ///   handling (#666): oriented line crops, tall lines turned 90°,
     ///   upside-down lines turned by the 0/180 classifier
@@ -492,6 +501,7 @@ impl PyDocumentConverter {
         ocr_lang = None,
         ocr_mode = None,
         ocr_scale = None,
+        pdf_word_gap = None,
         ocr_textline_orientation = None,
         ocr_engine = None,
         allowed_formats = None,
@@ -571,6 +581,7 @@ impl PyDocumentConverter {
         ocr_lang: Option<String>,
         ocr_mode: Option<String>,
         ocr_scale: Option<f32>,
+        pdf_word_gap: Option<String>,
         ocr_textline_orientation: Option<bool>,
         ocr_engine: Option<String>,
         allowed_formats: Option<Vec<String>>,
@@ -649,6 +660,7 @@ impl PyDocumentConverter {
             ocr_lang,
             ocr_mode,
             ocr_scale,
+            pdf_word_gap,
             ocr_textline_orientation,
             images_scale,
             page_images: Some(generate_page_images),
@@ -734,6 +746,7 @@ impl PyDocumentConverter {
             tesseract_lang: opts.tesseract_lang().map_err(value_err)?,
             ocr_mode: opts.ocr_mode().map_err(value_err)?,
             ocr_scale,
+            word_gap: opts.pdf_word_gap().map_err(value_err)?,
             ocr_textline_orientation,
             images: opts.image_output(),
             page_range,
@@ -773,6 +786,7 @@ impl PyDocumentConverter {
         let tesseract_lang = self.tesseract_lang.clone();
         let ocr_mode = self.ocr_mode;
         let ocr_scale = self.ocr_scale;
+        let word_gap = self.word_gap;
         let ocr_textline_orientation = self.ocr_textline_orientation;
         let images = self.images;
         let page_range = self.page_range;
@@ -797,6 +811,7 @@ impl PyDocumentConverter {
                     .tesseract_lang(tesseract_lang)
                     .ocr_mode(ocr_mode)
                     .ocr_scale(ocr_scale)
+                    .word_gap(word_gap)
                     .images_scale(images.scale)
                     .generate_page_images(images.page_images)
                     .pages(page_range)

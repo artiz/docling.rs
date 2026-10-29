@@ -84,6 +84,10 @@
 //! - `ocr_scale` — OCR render scale in px per PDF point (docling's
 //!   `OcrOptions.scale`, #254); unset reads the pipeline's own 2.0 px/pt
 //!   render, docling's default is 3 (216 dpi)
+//! - `pdf_word_gap` — where a PDF's text layer splits words drawn without
+//!   a space glyph (#921): `legacy` (default, docling-parse ≤ 6) |
+//!   `adaptive` (docling-parse ≥ 7's line-local threshold) | a factor in
+//!   (0, 4] of the two flanking glyphs' mean advance
 //! - `ocr_textline_orientation` — RapidOCR's text-line orientation
 //!   handling (#666): oriented line crops, tall lines turned 90°, the 0/180
 //!   classifier (`.models/ocr_textline_ori.onnx`); off by default
@@ -3150,6 +3154,7 @@ fn convert_document_inner(
             pipeline.set_force_full_page_ocr(o.force_full_page_ocr.unwrap_or(false));
             pipeline.set_ocr_mode(o.ocr_mode().map_err(bad)?);
             pipeline.set_ocr_scale(o.ocr_scale);
+            pipeline.set_word_gap(o.pdf_word_gap().map_err(bad)?);
             pipeline.set_ocr_textline_orientation(o.ocr_textline_orientation);
             pipeline.set_images(o.image_output());
             pipeline.set_heading_hierarchy(docling::HeadingHierarchyOptions::enabled(
