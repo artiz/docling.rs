@@ -2316,9 +2316,11 @@ impl DocumentConverter {
     /// the running mean advance of the cell built so far, and cells restart
     /// at every font change — so the threshold drifts along a line. A number
     /// `f` in (0, 4] splits where `gap > f ×` the mean advance of the two
-    /// glyphs flanking the gap, across font runs within a line (0.2–0.25
+    /// glyphs flanking the gap, across font runs within a line (0.15–0.23
     /// suits most body text). `adaptive` is docling-parse ≥ 7's line-local
-    /// two-cluster threshold (clamped to 0.18–0.35). Both apply to the
+    /// two-cluster threshold (clamped to 0.18–0.35). Both keep letter-spaced
+    /// (Sperrsatz) words whole — equal cursor moves between letters are
+    /// tracking, where docling-parse 7 cuts mid-word — and apply to the
     /// exported line text and the word cells. An unknown value warns at
     /// conversion time and uses the default. PDF text layer only.
     pub fn pdf_word_gap(mut self, gap: impl Into<String>) -> Self {

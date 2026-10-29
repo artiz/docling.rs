@@ -2359,13 +2359,35 @@ These are deliberate or unavoidable divergences, not bugs.
     `wirdwie`, `EVUund`, and switching would move every PDF baseline.
     `pdf_word_gap` (`--pdf-word-gap`, `DOCLING_RS_PDF_WORD_GAP`, every
     surface) opts in per conversion: `adaptive` is docling-parse 7's
-    threshold — on that document its words match docling-parse 7.24.1's
-    98.3 % (legacy: 86.2 %) and its lines 95.5 % (legacy: 75.3 %), the rest
-    character normalization (`–` → `-`, quotes) and dot leaders; a number
-    `F` splits where `gap > F ×` the flanking glyphs' mean advance, one
-    value for the whole line, across font runs (0.2: 92.4 % / 92.1 %).
+    threshold, and a number `F` splits where `gap > F ×` the flanking
+    glyphs' mean advance, one value for the whole line, across font runs.
     Either mode drives the exported text and the word cells TableFormer
-    matches, on the ML pipeline and the text-layer path alike.
+    matches, on the ML pipeline and the text-layer path alike. **Second
+    divergence, in both opt-in modes: letter spacing.** A letter-spaced
+    (Sperrsatz) word is one constant cursor move between its letters, but
+    divided by the advances of `i`, `l`, `t` beside `M` or `D` its gaps
+    spread over 0.25–0.75 and straddle every threshold, so docling-parse
+    7.24.1 cuts it mid-word — `Di ens tk lasse I`, `Heimarbei tstari f`,
+    `De r Bu n d e s k a n z l e r`, `N O T I Z E N` (our `adaptive` reproduces
+    those lines exactly; #921's five fixtures: 105 of 156 letter gaps cut,
+    and no single `F` fits them together with `und dem`). Here a chain of
+    three or more open letter gaps equal in points (within max(0.25 pt, 8
+    %)) whose flanks hold nothing tighter is tracking and stays inside the
+    word; the run's other gaps of the same width join it (`für`, `II`, a
+    closing `:`), and four or more dots in a row are one leader. The flank
+    test is what keeps justified prose apart — its equal word gaps chain up
+    across one-letter words (`Peter W J Staar`, `Abs 1 Z 3 UrlG`) but sit
+    between abutting letters — and one character repeated (`C C C C`, an
+    OTSL figure's token row) is no word. On the five fixtures every letter-
+    spaced word reads whole and all 45 cursor-move word gaps still split,
+    under `adaptive` and under each `F` tried in 0.15–0.23 (0.15, 0.18,
+    0.2, 0.22, 0.23 — which also split `und dem`); on the 81 PDFs of the
+    test corpus, `adaptive` and `0.25` output change nowhere. Against
+    docling-parse 7.24.1 on #921's 92-page document, leader dots aside (it
+    cuts them into thousands of `.`/`..` tokens):
+    words match 98.1 % under `legacy`, 98.9 % under `adaptive`; lines 76.7 %
+    and 96.1 % (`0.2`: 98.7 % / 95.1 %) — the rest character normalization
+    (`–` → `-`, quotes) and the letter-spaced words above.
 
 ---
 

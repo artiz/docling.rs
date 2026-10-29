@@ -260,7 +260,8 @@
 //!                      running-mean rule the baselines pin; adaptive =
 //!                      docling-parse >= 7's line-local threshold; a factor F
 //!                      in (0, 4] splits gaps wider than F x the mean advance
-//!                      of the two flanking glyphs (0.2-0.25 for body text)
+//!                      of the two flanking glyphs (0.15-0.23 for body text);
+//!                      both keep letter-spaced (Sperrsatz) words whole
 //!   --ocr-textline-orientation
 //!                      RapidOCR's line orientation handling (#666): crop each
 //!                      detected line along its rotated rectangle, turn tall

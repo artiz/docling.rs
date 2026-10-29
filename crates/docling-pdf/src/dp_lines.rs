@@ -802,20 +802,201 @@ fn normalized_gap(lhs: &RunCell, rhs: &RunCell) -> f64 {
     forward_gap(lhs, rhs).max(0.0) / (0.5 * (lhs.scale() + rhs.scale())).max(1e-6)
 }
 
-/// docling-parse ≥ 7's `infer_word_gap`: the line's normalized gaps (not
-/// across an explicit space) split by an eight-step two-cluster k-means;
-/// 0.25 when there are fewer than two or they do not separate, else the
-/// midpoint of the two cluster means, at least 0.18.
-fn infer_word_gap(run: &[RunCell]) -> f64 {
-    let mut gaps = Vec::new();
-    let mut prev: Option<&RunCell> = None;
+/// What a glyph is to the letter-spacing detector.
+#[derive(Clone, Copy, PartialEq)]
+enum TrackClass {
+    /// Letters and digits — what letter-spaced (Sperrsatz) words are set in.
+    Letter,
+    /// Leader dots.
+    Dot,
+    Other,
+}
+
+fn track_class(text: &str) -> TrackClass {
+    if matches!(text, "." | "·" | "…") {
+        TrackClass::Dot
+    } else if !text.is_empty() && text.chars().all(char::is_alphanumeric) {
+        TrackClass::Letter
+    } else {
+        TrackClass::Other
+    }
+}
+
+/// Points two letter-spacing gaps may differ by and still be one tracking:
+/// producers set a letter-spaced word with one constant cursor move (#921's
+/// fixtures: within 0.17 pt), which rounding and kerning blur slightly.
+fn tracking_tolerance(gap: f64) -> f64 {
+    (0.08 * gap).max(0.25)
+}
+
+/// Letter spacing (Sperrsatz, tracked capitals, leader dots) in a line run
+/// (#921): `true` at index `i` when the gap from the previous visible glyph
+/// to `run[i]` is tracking inside one word rather than a word boundary.
+///
+/// docling-parse ≥ 7 judges each gap by its width over the flanking glyphs'
+/// mean advance, and a letter-spaced word defeats that: its gaps are one
+/// constant cursor move in points, but divided by the advances of `i`, `l`
+/// or `t` beside `M` or `D` they spread over 0.25–0.75, straddling any
+/// threshold, so the word is cut mid-word (`Di ens tk lasse`, `Heimarbei
+/// tstari f`). Constancy in points is the signal instead: a chain of three
+/// or more consecutive gaps between letters that are open (≥ 0.1 of an
+/// advance), at most one advance wide (not table columns) and equal within
+/// [`tracking_tolerance`] is tracking — when nothing on either side of it is
+/// tighter. That last test is what tells it from justified prose, whose
+/// word gaps are equal along a line too and chain up across one-letter
+/// words (`Peter W J Staar`, `Abs 1 Z 3 UrlG`): there the chain is flanked
+/// by abutting letters, while a letter-spaced word starts and ends at the
+/// line's ends, a space glyph or a wider gap; and one character repeated
+/// (`C C C C`, a figure's token row) is no word. Once a run has such a chain,
+/// shorter stretches at the same tracking with the same open flanks join
+/// it: the short words of the heading (`für`, `und`, `II`) and closing
+/// punctuation (`:`). Four or more dots in a row, each within an advance of
+/// the last, are one leader whatever their spacing.
+fn tracked_gaps(run: &[RunCell]) -> Vec<bool> {
+    struct Gap {
+        left: usize,
+        right: usize,
+        pt: f64,
+        n: f64,
+        left_class: TrackClass,
+        right_class: TrackClass,
+    }
+    let mut gaps: Vec<Gap> = Vec::new();
+    let mut prev: Option<usize> = None;
     let mut crossed_space = false;
-    for c in run {
+    for (i, c) in run.iter().enumerate() {
         if c.space {
             crossed_space = true;
             continue;
         }
         if let (Some(p), false) = (prev, crossed_space) {
+            gaps.push(Gap {
+                left: p,
+                right: i,
+                pt: forward_gap(&run[p], c),
+                n: normalized_gap(&run[p], c),
+                left_class: track_class(&run[p].cell.text),
+                right_class: track_class(&c.cell.text),
+            });
+        }
+        prev = Some(i);
+        crossed_space = false;
+    }
+    // `gaps[k]` and `gaps[k + 1]` share a glyph — no space glyph between.
+    let joined = |k: usize| gaps[k + 1].left == gaps[k].right;
+    // The longest stretch from `k` of joined gaps that `fits`, as its end.
+    let stretch = |k: usize, fits: &dyn Fn(&Gap) -> bool| {
+        let mut end = k;
+        while end < gaps.len() && fits(&gaps[end]) && (end == k || joined(end - 1)) {
+            end += 1;
+        }
+        end
+    };
+    // No gap right before or after `k..end` tighter than `floor` points.
+    let flanks_open = |k: usize, end: usize, floor: f64| {
+        let before = k > 0 && joined(k - 1) && gaps[k - 1].pt < floor;
+        let after = end < gaps.len() && joined(end - 1) && gaps[end].pt < floor;
+        !before && !after
+    };
+
+    let mut tracked = vec![false; run.len()];
+    let mut leader = vec![false; run.len()];
+    let mut letter_tracking: Vec<f64> = Vec::new();
+    let mut k = 0;
+    while k < gaps.len() {
+        let dots = |g: &Gap| {
+            g.left_class == TrackClass::Dot && g.right_class == TrackClass::Dot && g.n <= 1.0
+        };
+        let end = stretch(k, &dots);
+        if end - k >= 3 {
+            for g in &gaps[k..end] {
+                tracked[g.right] = true;
+                leader[g.left] = true;
+                leader[g.right] = true;
+            }
+            k = end;
+            continue;
+        }
+        let first = &gaps[k];
+        let letters = |g: &Gap| {
+            g.left_class == TrackClass::Letter
+                && g.right_class == TrackClass::Letter
+                && (0.1..=1.0).contains(&g.n)
+        };
+        if !letters(first) {
+            k += 1;
+            continue;
+        }
+        let (mut lo, mut hi) = (first.pt, first.pt);
+        let mut end = k + 1;
+        while end < gaps.len()
+            && joined(end - 1)
+            && letters(&gaps[end])
+            && hi.max(gaps[end].pt) - lo.min(gaps[end].pt) <= tracking_tolerance(lo)
+        {
+            lo = lo.min(gaps[end].pt);
+            hi = hi.max(gaps[end].pt);
+            end += 1;
+        }
+        // One character repeated (`C C C C` in a figure, `x x x x`) is a row
+        // of tokens, not a word.
+        let one_char = gaps[k..end]
+            .iter()
+            .all(|g| run[g.right].cell.text == run[first.left].cell.text);
+        if end - k >= 3 && !one_char && flanks_open(k, end, lo - tracking_tolerance(lo)) {
+            for g in &gaps[k..end] {
+                tracked[g.right] = true;
+            }
+            letter_tracking.push(0.5 * (lo + hi));
+            k = end;
+        } else {
+            k += 1;
+        }
+    }
+
+    for &t in &letter_tracking {
+        let tol = tracking_tolerance(t);
+        let same = |g: &Gap| {
+            (g.left_class == TrackClass::Letter || g.right_class == TrackClass::Letter)
+                && g.left_class != TrackClass::Dot
+                && g.right_class != TrackClass::Dot
+                && g.n <= 1.0
+                && (g.pt - t).abs() <= tol
+        };
+        let mut k = 0;
+        while k < gaps.len() {
+            let end = stretch(k, &same);
+            if end == k {
+                k += 1;
+                continue;
+            }
+            if flanks_open(k, end, t - tol) && !gaps[k..end].iter().any(|g| leader[g.left]) {
+                for g in &gaps[k..end] {
+                    tracked[g.right] = true;
+                }
+            }
+            k = end;
+        }
+    }
+    tracked
+}
+
+/// docling-parse ≥ 7's `infer_word_gap`: the line's normalized gaps (not
+/// across an explicit space) split by an eight-step two-cluster k-means;
+/// 0.25 when there are fewer than two or they do not separate, else the
+/// midpoint of the two cluster means, at least 0.18. Letter-spacing gaps
+/// (`tracked`, #921) stay out of the sample: they are settled already, and
+/// their spread would drag the low cluster up into the word gaps.
+fn infer_word_gap(run: &[RunCell], tracked: &[bool]) -> f64 {
+    let mut gaps = Vec::new();
+    let mut prev: Option<&RunCell> = None;
+    let mut crossed_space = false;
+    for (i, c) in run.iter().enumerate() {
+        if c.space {
+            crossed_space = true;
+            continue;
+        }
+        if let (Some(p), false, false) = (prev, crossed_space, tracked[i]) {
             gaps.push(normalized_gap(p, c));
         }
         prev = Some(c);
@@ -963,9 +1144,15 @@ fn contract_runs(cells: &[Cell], gap: WordGap, page_h: f32) -> (Vec<TextCell>, V
     let (mut words_out, mut lines_out) = (Vec::new(), Vec::new());
     for run in &runs {
         let has_spaces = run.iter().any(|c| c.space);
+        let tracked = tracked_gaps(run);
         let threshold = match gap {
             WordGap::Factor(f) => f,
-            _ => (if has_spaces { 1.0 } else { infer_word_gap(run) }).min(0.35),
+            _ => (if has_spaces {
+                1.0
+            } else {
+                infer_word_gap(run, &tracked)
+            })
+            .min(0.35),
         };
         let mut words: Vec<Agg> = Vec::new();
         let mut prev: Option<&RunCell> = None;
@@ -990,7 +1177,8 @@ fn contract_runs(cells: &[Cell], gap: WordGap, page_h: f32) -> (Vec<TextCell>, V
                 starts = true;
             }
             if let (false, Some(p)) = (starts, prev) {
-                starts = !baselines_compatible(p, c) || normalized_gap(p, c) > threshold;
+                starts = !baselines_compatible(p, c)
+                    || (!tracked[i] && normalized_gap(p, c) > threshold);
             }
             if starts {
                 words.push(Agg::of(c.cell));
