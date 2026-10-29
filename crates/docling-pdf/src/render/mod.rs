@@ -39,6 +39,20 @@ pub fn pixels_for_extent(extent: f64) -> u32 {
     ((extent - 1e-6).ceil().max(1.0)) as u32
 }
 
+/// An image the render could not draw as its pixels (#916): a placeholder
+/// block stands in for it (a codec that failed or is missing), or it was left
+/// out. `rect` is the image's device bounding box in the output bitmap's
+/// pixels (before `/Rotate` is applied to the page).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Omission {
+    /// The image XObject's object id (`None` for an inline image).
+    pub object: Option<lopdf::ObjectId>,
+    /// `[x0, y0, x1, y1]`.
+    pub rect: [f64; 4],
+    /// Why, e.g. `JPEG not decoded (Corrupt("no SOI"))`.
+    pub reason: String,
+}
+
 /// A document's renderer: the per-document caches (fonts, CMYK table,
 /// decoded image samples) that its page renders share. The pipeline renders
 /// every page at two scales; hold one `Renderer` per document across both.
@@ -48,6 +62,12 @@ pub struct Renderer<'a> {
 }
 
 impl<'a> Renderer<'a> {
+    /// What the renders since the last call drew as a placeholder or left
+    /// out (#916).
+    pub fn take_omissions(&self) -> Vec<Omission> {
+        self.shared.take_omissions()
+    }
+
     /// A renderer decoding its JPEGs for docling's bitmap hint (1.0 pixel per
     /// PDF unit — the model-input renders).
     pub fn new(meta: &'a PdfMeta) -> Renderer<'a> {

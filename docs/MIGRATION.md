@@ -2348,6 +2348,13 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   Markdown's placeholder mode the block takes the drawing's
   `<!-- image -->`'s place (the picture itself stays in the document and
   in the embedded / referenced modes). docling has no counterpart.
+- **`RenderedPage::omissions`** (#916) — `render_pages` reports, per page, the
+  images the pure-Rust renderer drew as a placeholder block or left out
+  (`docling_pdf::Omission { object, rect, reason }`: `JPEG not decoded
+  (Corrupt("no SOI"))`, `no JPXDecode decoder`, …), where it used to name them
+  only on stderr under `DOCLING_RS_DEBUG`; a page the
+  `DOCLING_RS_MAX_RENDER_PIXELS` cap refuses now fails with the cap's own
+  message instead of "no page renderer". docling has no counterpart.
 - **`docling-rag`** — documents → chunking → embeddings → vector search,
   with swappable embedders (Ollama/Gemini/local ONNX), stores
   (SQLite+sqlite-vec / PostgreSQL+pgvector), LLM, sources and queues, plus an

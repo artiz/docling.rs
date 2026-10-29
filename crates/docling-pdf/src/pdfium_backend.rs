@@ -519,6 +519,11 @@ pub struct RenderedPage {
     pub width: u32,
     pub height: u32,
     pub png: Vec<u8>,
+    /// The images the page's render drew as a placeholder block or left out,
+    /// each with the reason (#916) — empty when everything decoded. Only the
+    /// pure-Rust renderer reports; the docling-parse plugin and pdfium
+    /// renders leave it empty.
+    pub omissions: Vec<crate::render::Omission>,
 }
 
 /// Upper bound, in pixels, on a rendered page bitmap's side. A crafted PDF can
@@ -636,31 +641,33 @@ pub fn render_pages(
         // the Rust raster of an image-only page (pdfium's bitmap byte for
         // byte, no library needed) or the Rust page renderer, then pdfium
         // (`DOCLING_RS_RENDERER=pdfium`, or a file lopdf cannot read).
-        let rust = || {
-            let m = meta.as_ref()?;
-            let g = m.geometry(i)?;
+        // A page the per-side cap refuses is an error naming the cap (#916),
+        // not a missing renderer.
+        let rust = || -> Result<Option<RgbImage>, PdfError> {
+            let Some(g) = meta.as_ref().and_then(|m| m.geometry(i)) else {
+                return Ok(None);
+            };
             let (tw, th) = checked_render_dims(
                 f64::from(g.width * scale),
                 f64::from(g.height * scale),
                 i + 1,
-            )
-            .ok()?;
-            rust_bitmap(
-                Some(m),
+            )?;
+            Ok(rust_bitmap(
+                meta.as_ref(),
                 renderer.as_ref(),
                 session.is_some(),
                 i as i32,
                 tw as u32,
                 th as u32,
                 0.0,
-            )
+            ))
         };
         let bitmap = match (&dparse, &session) {
             (Some(dp), _) => {
                 crate::timing::timed("dparse.rasterize", || dp.render(i, f64::from(scale), 0.0))
                     .map_err(PdfError::Document)?
             }
-            (None, session) => match rust() {
+            (None, session) => match rust()? {
                 Some(img) => img,
                 None => {
                     let Some(s) = session else {
@@ -683,6 +690,10 @@ pub fn render_pages(
             width: bitmap.width(),
             height: bitmap.height(),
             png,
+            omissions: renderer
+                .as_ref()
+                .map(crate::render::Renderer::take_omissions)
+                .unwrap_or_default(),
         });
     }
     Ok(out)
