@@ -8,4 +8,4 @@ Both files are our own (no public `.prn` corpus exists).
 | `sources/laserjet_letter.prn` | a LaserJet stream: the PJL job header and trailer, PCL resets, font selections and a raster `W` data block taken out, a backspace-underlined word |
 
 Regenerate after an intentional change with `DOCLING_RS_REGEN=1
-DOCLING_RS_REGRESSION_FORMATS=prn cargo test -p docling --test regression`.
+DOCLING_RS_REGRESSION_FORMATS=print_file cargo test -p docling --test regression`.

@@ -1272,7 +1272,7 @@ converted once more as that format with a warning.
 
 #### Print files (.prn)
 
-**Backend:** `prn.rs` (#216)\
+**Backend:** `print_file.rs` (#216; not `prn.rs` — `PRN` is a reserved device name on Windows, which cannot check such a path out)\
 **Status:** **docling.rs extension** — docling has no reader
 
 - a DOS or Windows "print to file": a report's fixed-width text (Lotus 1-2-3, dBase, the Generic / Text Only printer) or a printer stream for a PCL (LaserJet) or ESC/P (Epson) printer
@@ -1280,7 +1280,7 @@ converted once more as that format with a warning.
 - overstrikes undone: a backspace overprints (`_⌫X` reads `X`), a bare carriage return's second pass (bold, underline) is dropped; a form feed is a page break
 - UTF-8 when the bytes are, else code page 437; blank-line-separated blocks become paragraphs, a block in columns (most lines hold an inner run of three or more spaces — a report's table) stays preformatted so the columns line up
 - PostScript is a program, not text: refused, with `ps2pdf` named
-- Corpus: two fixtures of our own (`crates/docling/tests/data/prn/`)
+- Corpus: two fixtures of our own (`crates/docling/tests/data/print_file/`)
 
 #### AbiWord (.abw, .zabw, .awt)
 

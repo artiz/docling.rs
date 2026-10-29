@@ -50,6 +50,7 @@ mod picture_alt_text;
 mod picture_ocr;
 mod plain_text;
 mod plugins;
+mod portable_paths;
 mod pptx_charts;
 mod pptx_hidden_layers;
 mod pptx_list_cascade;

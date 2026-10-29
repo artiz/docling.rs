@@ -29,7 +29,7 @@
 //! DOCLING_RS_REGEN=1 cargo test -p docling --test regression
 //! ```
 //!
-//! `DOCLING_RS_REGRESSION_FORMATS=t602,prn` restricts a run (checking or
+//! `DOCLING_RS_REGRESSION_FORMATS=t602,print_file` restricts a run (checking or
 //! regenerating) to those format directories — for working on one backend
 //! without converting the whole corpus.
 
