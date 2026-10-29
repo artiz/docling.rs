@@ -263,12 +263,15 @@ impl PdfDocument {
 fn rust_parser_cells(
     bytes: &[u8],
     password: Option<&str>,
+    word_gap: Option<crate::dp_lines::WordGap>,
 ) -> Option<crate::textparse::PageTextParser> {
     // Only the document load happens here; pages are parsed as the walk
     // reaches them (`cells_timed`), so nothing is decoded for pages outside
     // a `--pages` window and the parse overlaps the workers' inference.
     crate::timing::timed("textparse.open", || {
-        crate::textparse::PageTextParser::open_with_password(bytes, password)
+        let mut parser = crate::textparse::PageTextParser::open_with_password(bytes, password)?;
+        parser.set_word_gap(word_gap);
+        Some(parser)
     })
 }
 
@@ -349,6 +352,7 @@ where
         extract_text,
         range,
         BitmapRender::Eager,
+        None,
         f,
     )
 }
@@ -376,7 +380,10 @@ pub enum BitmapRender {
 }
 
 #[cfg(feature = "render")]
-/// [`for_each_page`] with the 2x bitmaps rendered as `bitmap` says.
+/// [`for_each_page`] with the 2x bitmaps rendered as `bitmap` says, and the
+/// text layer's words split by `word_gap` (#921; `None` = the process
+/// default).
+#[allow(clippy::too_many_arguments)]
 pub fn walk_pages<E, F>(
     bytes: &[u8],
     password: Option<&str>,
@@ -384,6 +391,7 @@ pub fn walk_pages<E, F>(
     extract_text: bool,
     range: Option<(usize, usize)>,
     bitmap: BitmapRender,
+    word_gap: Option<crate::dp_lines::WordGap>,
     mut f: F,
 ) -> Result<(), E>
 where
@@ -414,7 +422,7 @@ where
     // nor pdfium's text page is decoded at all — on vector-dense pages (CAD
     // drawings as 100k+ path segments) that decode is most of the page cost.
     let mut rust = if extract_text {
-        rust_parser_cells(bytes, password)
+        rust_parser_cells(bytes, password, word_gap)
     } else {
         None
     };
@@ -1389,6 +1397,18 @@ pub(crate) struct Glyph {
     /// this quad's axis-aligned extent. `None` for upright text, whose quad is
     /// the `ll/lb/lr/lt` rectangle itself — that path stays exactly as it was.
     pub(crate) quad: Option<[f32; 8]>,
+    /// Where the pen sets the glyph — the text origin on the baseline, rise
+    /// included — and the font size in the same space, as `[x, y, size]`
+    /// (docling-parse's `text_origin_x/y` and `nominal_text_height`). The
+    /// word contraction tests a baseline shift on these (#921): the loose
+    /// box's bottom sits a descent below the baseline, which differs between
+    /// sizes, so a superscript read as shifted further than it is. `None`
+    /// when unknown (a synthetic glyph); the box stands in then.
+    pub(crate) pen: Option<[f32; 3]>,
+    /// The glyph's font is a math face by its name (docling-parse's
+    /// `has_math_positioning_semantics`): a sub- or superscript in it next to
+    /// its base is attached, not a new word (#921).
+    pub(crate) math_font: bool,
 }
 
 impl Glyph {

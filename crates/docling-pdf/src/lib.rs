@@ -131,6 +131,7 @@ use docling_core::Node;
 #[cfg(feature = "ml")]
 use docling_core::{debug_log, env};
 
+pub use dp_lines::WordGap;
 pub use heading_hierarchy::HeadingHierarchyOptions;
 #[cfg(feature = "ml")]
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options, convert_mets_gbs_with_pipeline};
@@ -332,6 +333,18 @@ pub fn convert_text_layer_pages(
     name: &str,
     pages: Option<(usize, usize)>,
 ) -> Result<DoclingDocument, PdfError> {
+    convert_text_layer_pages_with(bytes, name, pages, None)
+}
+
+/// [`convert_text_layer_pages`] with the word-gap rule of the text layer's
+/// line and word contraction (#921, [`WordGap`]); `None` = the process
+/// default (`DOCLING_RS_PDF_WORD_GAP`, else docling-parse ≤6's rule).
+pub fn convert_text_layer_pages_with(
+    bytes: &[u8],
+    name: &str,
+    pages: Option<(usize, usize)>,
+    word_gap: Option<WordGap>,
+) -> Result<DoclingDocument, PdfError> {
     if let Some((first, last)) = pages {
         if first == 0 || last < first {
             return Err(PdfError::Pdfium(format!(
@@ -345,6 +358,7 @@ pub fn convert_text_layer_pages(
     let Some(mut parser) = textparse::PageTextParser::open(bytes) else {
         return Err(PdfError::Document(UNREADABLE.into()));
     };
+    parser.set_word_gap(word_gap);
     // Pages are parsed, assembled and dropped one at a time: holding every
     // page's cells until the end made the peak scale with the whole file —
     // and a page window still paid for every page outside it.
@@ -2419,6 +2433,9 @@ pub struct Pipeline {
     ocr_scale: Option<f32>,
     /// Picture OCR scale (#666). See [`Pipeline::picture_ocr_scale`].
     picture_ocr_scale: Option<f32>,
+    /// The text layer's word-gap rule (#921); `None` = the environment's
+    /// (`DOCLING_RS_PDF_WORD_GAP`), else [`WordGap::Adaptive`].
+    word_gap: Option<WordGap>,
     /// RapidOCR's line orientation handling (#666). See
     /// [`Pipeline::ocr_textline_orientation`].
     textline_orientation: bool,
@@ -2465,6 +2482,7 @@ impl Pipeline {
             ocr_mode: ocr::OcrMode::from_env(),
             ocr_scale: ocr::scale_from_env(),
             picture_ocr_scale: ocr::picture_scale_from_env(),
+            word_gap: None,
             textline_orientation: ocr::textline_orientation_from_env(),
             images: ImageOutput::default(),
             heading_hierarchy: HeadingHierarchyOptions::default(),
@@ -2814,6 +2832,16 @@ impl Pipeline {
         self.sync_ocr_config();
     }
 
+    /// How the text layer splits words where the PDF draws no space glyph
+    /// (#921): docling-parse ≥ 7's line-local [`WordGap::Adaptive`]
+    /// threshold (the default), a fixed [`WordGap::Factor`] of the two
+    /// flanking glyphs' mean advance, or [`WordGap::Legacy`] (docling-parse
+    /// ≤ 6's running-mean rule). `None` keeps `DOCLING_RS_PDF_WORD_GAP`,
+    /// else the default.
+    pub fn set_word_gap(&mut self, gap: Option<WordGap>) {
+        self.word_gap = gap;
+    }
+
     /// See [`set_force_full_page_ocr`](Self::set_force_full_page_ocr).
     pub fn set_ocr_scale(&mut self, scale: Option<f32>) {
         self.ocr_scale = scale
@@ -2980,6 +3008,12 @@ impl Pipeline {
         self.ocr_scale = scale
             .filter(|s| s.is_finite() && *s > 0.0)
             .or_else(ocr::scale_from_env);
+        self
+    }
+
+    /// See [`set_word_gap`](Self::set_word_gap).
+    pub fn word_gap(mut self, gap: Option<WordGap>) -> Self {
+        self.word_gap = gap;
         self
     }
 
@@ -3158,6 +3192,7 @@ impl Pipeline {
             true,
             range,
             deadline,
+            self.word_gap,
             |n, page| {
                 let (mut nodes, links, conf) = text_only_page(&page, images.scale);
                 assemble::stamp_page_no(&mut nodes, n + 1);
@@ -3203,6 +3238,7 @@ impl Pipeline {
         let extract_text = self.extract_text_layer();
         let progress = self.progress.clone();
         let mut done = 0usize;
+        let word_gap = self.word_gap;
         let worker = self.primary()?;
         let timed_out = Self::render_ahead(
             bytes,
@@ -3212,6 +3248,7 @@ impl Pipeline {
             extract_text,
             range,
             deadline,
+            word_gap,
             |n, mut page| {
                 let (mut nodes, links, conf, page_image, ocr_cells) =
                     worker.process(n, &mut page)?;
@@ -3260,6 +3297,7 @@ impl Pipeline {
         extract_text: bool,
         range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
+        word_gap: Option<WordGap>,
         mut consume: F,
     ) -> Result<bool, PdfError>
     where
@@ -3275,6 +3313,7 @@ impl Pipeline {
                     extract_text,
                     range,
                     bitmap,
+                    word_gap,
                     |n, _total, page| {
                         if expired(deadline) {
                             return Err(timeout_sentinel());
@@ -3327,6 +3366,7 @@ impl Pipeline {
         selected: usize,
         deadline: Option<std::time::Instant>,
     ) -> Result<(DoclingDocument, usize, bool), PdfError> {
+        let word_gap = self.word_gap;
         self.ensure_pool_for(selected)?;
         let progress = self.progress.clone();
         let pages_done = std::sync::atomic::AtomicUsize::new(0);
@@ -3397,6 +3437,7 @@ impl Pipeline {
                 extract_text,
                 range,
                 bitmap,
+                word_gap,
                 |i, _total, page| {
                     if expired(deadline) {
                         return Err(timeout_sentinel());
@@ -3537,6 +3578,7 @@ impl Pipeline {
             true,
             range,
             deadline,
+            self.word_gap,
             |n, page| {
                 let (nodes, links, _conf) = text_only_page(&page, images.scale);
                 done += 1;
@@ -3573,6 +3615,7 @@ impl Pipeline {
         let bitmap = self.bitmap_render();
         let extract_text = self.extract_text_layer();
         let progress = self.progress.clone();
+        let word_gap = self.word_gap;
         let worker = self.primary()?;
         let mut done = 0usize;
         let timed_out = Self::render_ahead(
@@ -3583,6 +3626,7 @@ impl Pipeline {
             extract_text,
             range,
             deadline,
+            word_gap,
             |n, mut page| {
                 // Confidence is dropped on the streaming path: the report is
                 // only complete once every page has run, which defeats
@@ -3621,6 +3665,7 @@ impl Pipeline {
     where
         F: FnMut(Vec<Node>, Vec<(String, String)>) -> Result<(), PdfError>,
     {
+        let word_gap = self.word_gap;
         self.ensure_pool_for(selected)?;
         let n_workers = self.pool.len();
         let render_image = !self.no_ocr;
@@ -3671,6 +3716,7 @@ impl Pipeline {
                         extract_text,
                         range,
                         bitmap,
+                        word_gap,
                         |i, _total, page| {
                             if expired(deadline) {
                                 return Err(timeout_sentinel());

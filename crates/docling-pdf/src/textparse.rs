@@ -97,6 +97,10 @@ struct Font {
     ascent: f64,
     descent: f64,
     hash: u64,
+    /// Whether the font's docling-parse name marks a math face
+    /// ([`is_math_font_name`]) — for the word contraction's local
+    /// attachments (#921).
+    math: bool,
     /// Weight and slant read from the `/BaseFont` name (the heading
     /// hierarchy's style signal, #302).
     style: crate::font_style::FontStyle,
@@ -197,6 +201,18 @@ fn deref<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Object> {
 /// itself to the preceding run while the font barrier then cut it off from
 /// its own word (`fi nancial`); docling's `financial` needs the two
 /// resources to compare equal.
+/// docling-parse's `has_math_positioning_semantics`, the font-name half: a
+/// TeX math or symbol face (`cmmi`, `cmsy`, `cmex`, `cmr`, `cmbx`, `msam`,
+/// `msbm`) or any name saying `math`, `symbol` or `mtextra`.
+fn is_math_font_name(name: &[u8]) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [
+        "cmmi", "cmsy", "cmex", "cmr", "cmbx", "msam", "msbm", "math", "symbol", "mtextra",
+    ]
+    .iter()
+    .any(|t| lower.windows(t.len()).any(|w| w == t.as_bytes()))
+}
+
 fn sanitizer_font_name(doc: &Document, fdict: &Dictionary, two_byte: bool) -> Vec<u8> {
     let descriptor_font_name = |owner: &Dictionary| {
         owner
@@ -308,6 +324,7 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
     };
 
     let (ascent, descent) = font_ascent_descent(doc, fdict, two_byte);
+    let sanitizer_name = sanitizer_font_name(doc, fdict, two_byte);
 
     Font {
         two_byte,
@@ -319,7 +336,8 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         program_encoding,
         ascent,
         descent,
-        hash: hash_name(&sanitizer_font_name(doc, fdict, two_byte)),
+        hash: hash_name(&sanitizer_name),
+        math: is_math_font_name(&sanitizer_name),
         style: crate::font_style::parse_font_style(&String::from_utf8_lossy(
             &base_font_name(fdict).unwrap_or_else(|| name.to_vec()),
         )),
@@ -1277,6 +1295,9 @@ pub struct PageTextParser {
     caches: DocCaches,
     /// Page object ids in document order (page 1 first).
     pages: Vec<lopdf::ObjectId>,
+    /// How words split where no space glyph does (#921); from
+    /// `DOCLING_RS_PDF_WORD_GAP` unless [`Self::set_word_gap`] says.
+    word_gap: crate::dp_lines::WordGap,
 }
 
 impl PageTextParser {
@@ -1296,7 +1317,17 @@ impl PageTextParser {
             doc,
             caches: DocCaches::default(),
             pages: pages.into_iter().map(|(_, pid)| pid).collect(),
+            word_gap: crate::dp_lines::WordGap::from_env(),
         })
+    }
+
+    /// The word-gap rule the line and word cells are built with (#921);
+    /// `None` keeps the environment's (`DOCLING_RS_PDF_WORD_GAP`, else
+    /// `adaptive`).
+    pub fn set_word_gap(&mut self, gap: Option<crate::dp_lines::WordGap>) {
+        if let Some(g) = gap {
+            self.word_gap = g;
+        }
     }
 
     /// The glyph boxes and font styles of the 0-based page `index` — the
@@ -1351,7 +1382,8 @@ impl PageTextParser {
         };
         let (_w, h) = page_size(&self.doc, pid);
         let (glyphs, inks) = page_glyphs_and_inks(&self.doc, pid, &mut self.caches);
-        let (prose, words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
+        let (prose, words) =
+            crate::dp_lines::line_and_word_cells_with(&glyphs, h, true, self.word_gap);
         PageParserCells {
             prose,
             words,
@@ -1378,7 +1410,8 @@ impl PageTextParser {
             }
             None => (0.0, 0.0, Default::default()),
         };
-        let (mut prose, mut words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
+        let (mut prose, mut words) =
+            crate::dp_lines::line_and_word_cells_with(&glyphs, h, true, self.word_gap);
         drop_overpainted_cells(&mut prose);
         drop_overpainted_cells(&mut words);
         crate::pdfium_backend::PdfPage {
@@ -2165,6 +2198,12 @@ fn show_text(
                 Some(q),
             )
         };
+        // The pen's origin (rise included) and the font size's extent from
+        // it, as docling-parse maps them (`map_text_point(0, rise)` and
+        // `(0, rise + font_size)`).
+        let (ox, oy) = trm.apply(0.0, 0.0);
+        let (sx, sy) = trm.apply(0.0, 1.0);
+        let pen = Some([ox as f32, oy as f32, (sx - ox).hypot(sy - oy) as f32]);
         if let Some(s) = text {
             // A run may map one code to multiple chars (ligature/fraction); share box.
             for ch in s.chars() {
@@ -2181,6 +2220,8 @@ fn show_text(
                         lt: top as f32,
                         font: font.hash,
                         quad,
+                        pen,
+                        math_font: font.math,
                     });
                 }
             }
@@ -3613,23 +3654,52 @@ mod base14_fonts {
         );
     }
 
-    /// The font barrier itself is untouched: two *different* faces (regular
-    /// and bold Helvetica, which docling-parse names apart) set flush against
-    /// each other stay separate line cells, as `enforce_same_font` demands.
+    /// Under `legacy` the font barrier itself is untouched: two *different*
+    /// faces (regular and bold Helvetica, which docling-parse names apart) set
+    /// flush against each other stay separate line cells, as
+    /// `enforce_same_font` demands. docling-parse 7 dropped the barrier — its
+    /// line runs follow geometry alone — so under the default `adaptive` the
+    /// flush pair is one line and one word.
     #[test]
-    fn different_faces_still_keep_the_font_barrier() {
+    fn different_faces_keep_the_font_barrier_only_under_legacy() {
         let f1 = b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>";
         let f2 = b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Bold/Encoding/WinAnsiEncoding>>";
         let content = b"BT 72 720 Td /F2 12 Tf (Total:) Tj /F1 12 Tf (42) Tj ET\n";
-        let cs = cells(&pdf_with_fonts(&[f1, f2], content));
-        let texts: Vec<&str> = cs.iter().map(|c| c.text.as_str()).collect();
-        assert_eq!(texts, ["Total:", "42"], "{cs:?}");
+        let pdf = pdf_with_fonts(&[f1, f2], content);
+        let lines = |gap| {
+            let mut p = super::PageTextParser::open(&pdf).expect("opens");
+            p.set_word_gap(Some(gap));
+            p.cells(0)
+                .prose
+                .into_iter()
+                .map(|c| c.text)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(lines(crate::dp_lines::WordGap::Legacy), ["Total:", "42"]);
+        assert_eq!(lines(crate::dp_lines::WordGap::Adaptive), ["Total:42"]);
     }
 
     /// The identity follows docling-parse's precedence: a `/FontDescriptor/FontName`
     /// wins over `/BaseFont`, so two dictionaries that share a `/BaseFont` but
     /// describe different programs are two fonts, and two that share the
     /// descriptor name are one whatever their `/BaseFont` says.
+    #[test]
+    fn math_faces_are_named_like_docling_parse_names_them() {
+        for name in [
+            "ABCDEF+CMR7",
+            "CMMI10",
+            "MSBM10",
+            "Cambria-Math",
+            "Symbol",
+            "MTExtra",
+        ] {
+            assert!(super::is_math_font_name(name.as_bytes()), "{name}");
+        }
+        for name in ["Helvetica", "ABCDEF+TimesNewRomanPSMT", "Arial-BoldMT"] {
+            assert!(!super::is_math_font_name(name.as_bytes()), "{name}");
+        }
+    }
+
     #[test]
     fn sanitizer_font_name_follows_docling_parse_precedence() {
         use lopdf::{dictionary, Document, Object};

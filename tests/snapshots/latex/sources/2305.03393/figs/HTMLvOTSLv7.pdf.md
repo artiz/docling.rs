@@ -34,15 +34,13 @@
 
 1
 
-128
-
 B
 
 D
 
 HTML
 
-OTSL model shows clean bounding box alignment
+OTSLmodel shows clean bounding box alignment
 
 A
 
@@ -84,7 +82,7 @@ R
 
 12
 
-≥
+≥ 128
 
 1
 
@@ -146,7 +144,7 @@ C C C C C C C C C C C C C C NL
 
 C C C C C C C C C C C C C C NL
 
-HTML model shows bounding box drifting
+HTMLmodel shows bounding box drifting
 
 C
 

@@ -1,26 +1,26 @@
 ## Instructions for Using Springer's llncs Class for Computer Science Proceedings Papers
 
-llncs , Version 2.22, Sep 05, 2022
+llncs, Version 2.22, Sep 05, 2022
 
 ## 1 Installation
 
-Copy llncs.cls to a directory that is searched by L A T E X, e.g. either your texmf tree or the local work directory with your main L A T E X file.
+Copy llncs.cls to a directory that is searched by LATEX, e.g. either your texmf tree or the local work directory with your main LATEX file.
 
 ## 2 Working with the llncs Document Class
 
 ## 2.1 General Information
 
-The llncs class is an extension of the standard L A T E X article class. Therefore you may use all article commands in your manuscript.
+The llncs class is an extension of the standard LATEX article class. Therefore you may use all article commands in your manuscript.
 
-If you are already familiar with L A T E X, the llncs class should not give you any major difficulties. It basically adjusts the layout to the required standard, defining styles and spacing of headings and captions and setting the printing area to 122mm horizontally by 193 mm vertically. To keep the layout consistent, we kindly ask you to refrain from using any L A T E X or T E X command that modifies these settings (i.e. \textheight , \vspace , baselinestretch , etc.). Such manual layout adjustments should be limited to very exceptional cases.
+If you are already familiar with LATEX, the llncs class should not give you any major difficulties. It basically adjusts the layout to the required standard, defining styles and spacing of headings and captions and setting the printing area to 122mm horizontally by 193mm vertically. To keep the layout consistent, we kindly ask you to refrain from using any LATEX or TEX command that modifies these settings (i.e. \textheight, \vspace, baselinestretch, etc.). Such manual layout adjustments should be limited to very exceptional cases.
 
 In addition to defining the general layout, the llncs document class provides some special commands for typesetting the contribution header, i.e. title, authors, affiliations, abstract, and additional metadata. These special commands are described in Sect. 3.
 
-For a more detailed description of how to prepare your text, illustrations, and references, see the Springer Guidelines for Authors of Proceedings .
+For a more detailed description of how to prepare your text, illustrations, and references, see the Springer Guidelines for Authors of Proceedings.
 
 ## 2.2 How to Use the llncs Document Class
 
-The llncs class is invoked by replacing article by llncs in the first line of your L A T E X document:
+The llncs class is invoked by replacing article by llncs in the first line of your LATEX document:
 
 \documentclass{llncs}
 
@@ -42,15 +42,15 @@ Please code the title of your contribution as follows: \title
 
 \title{&lt;Your contribution title&gt;}
 
-All words in titles should be capitalized except for conjunctions, prepositions (e.g. on, of, by, and, or, but, from, with, without, under), and definite/indefinite articles (the, a, an), unless they appear at the beginning. Formula letters are typeset as in the text. Long titles that run over multiple lines can be wrapped explicitly with \\ . Titles have no end punctuation.
+All words in titles should be capitalized except for conjunctions, prepositions (e.g. on, of, by, and, or, but, from, with, without, under), and definite/indefinite articles (the, a, an), unless they appear at the beginning. Formula letters are typeset as in the text. Long titles that run over multiple lines can be wrapped explicitly with \\. Titles have no end punctuation.
 
-Acknowledgements should generally be placed in an unnumbered subsection at the end of the paper. If you still need to refer to a support or funding program in a note to the title, you can use the \thanks macro inside the title:
+Acknowledgements should generally be placed in an unnumbered subsection at the end of the paper. If you still need to refer to a support or funding program in a note to the title, you can use the\thanks macro inside the title:
 
 \title{&lt;Your contribution title&gt;\thanks{&lt;granted by x&gt;}}
 
 Please do not use \thanks inside \author or \institute as footnotes for these elements are not supported in the online version and will therefore be dropped.
 
-If you need two or more footnotes please separate them with \fnmsep (i.e. f oot n ote m ark sep arator).
+If you need two or more footnotes please separate them with \fnmsep (i.e. footnote mark separator).
 
 If a long title does not fit in the single line of the running head, a warning is generated. You can specify an abbreviated title for the running head with the command
 
@@ -66,9 +66,9 @@ The name(s) of the author(s) are specified by: \author
 
 \author{&lt;author(s) name(s)&gt;}
 
-If there is more than one author, please separate them by \and . This makes sure \and that correct punctuation is inserted according to the number of authors.
+If there is more than one author, please separate them by \and. This makes sure \and that correct punctuation is inserted according to the number of authors.
 
-Numbers referring to different addresses or affiliations should be attached to \inst each author with the \inst{&lt;number&gt;} command. If an author is affiliated with multiple institutions the numbers should be separated by a comma, for example \inst{2,3} .
+Numbers referring to different addresses or affiliations should be attached to \inst each author with the \inst{&lt;number&gt;} command. If an author is affiliated with multiple institutions the numbers should be separated by a comma, for example \inst{2,3}.
 
 ORCID identifiers can be included with \orcidID
 
@@ -84,7 +84,7 @@ If you have done this correctly, the author line now reads, for example:
 \author{First Author\inst{1}\orcidID{0000-1111-2222-3333} \and Second Author\inst{2,3}\orcidID{1111-2222-3333-4444}}
 ```
 
-The given name(s) should always be followed by the family name(s). Authors who have more than one family name should indicate which part of their name represents the family name(s), for example by non-breaking spaces Jos\'{e} Martinez~Perez or curly braces Jos\'{e} {Martinez Perez} .
+The given name(s) should always be followed by the family name(s). Authors who have more than one family name should indicate which part of their name represents the family name(s), for example by non-breaking spaces Jos\'{e} Martinez~Perez or curly braces Jos\'{e} {Martinez Perez}.
 
 As given name(s) are to be shortened to initials in the running heads, specifying an abbreviated author list with the optional command:
 
@@ -94,9 +94,9 @@ might add some clarity about the correct representation of author names, in the 
 
 ## 3.3 Affiliations
 
-Addresses of institutes, companies, etc. should be given in \institute .
+Addresses of institutes, companies, etc. should be given in \institute.
 
-Multiple affiliations are separated by \and , which automatically assures correct numbering:
+Multiple affiliations are separated by \and, which automatically assures correct numbering:
 
 ```
 \institute{<name of an institute> \and <name of the next institute> \and <name of the next institute>} Inside \institute you can use\email \email{<email address>} and\url \url{<url>}
@@ -112,13 +112,13 @@ The command \maketitle formats the header of your paper. If you leave it out \ma
 
 ## 3.5 Abstract and Keywords
 
-The abstract is coded as follows: abstract ( env. )
+The abstract is coded as follows: abstract (env.)
 
 ```
 \begin{abstract} <Text of the summary of your paper> \end{abstract}
 ```
 
-Keywords should be specified inside the abstract environment. Please capitalize \keywords \and the first letter of each keyword and again separate them with \and :
+Keywords should be specified inside the abstract environment. Please capitalize \keywords \and the first letter of each keyword and again separate them with \and:
 
 \keywords{First keyword \and Second keyword \and Third keyword}
 
@@ -128,7 +128,7 @@ The keyword separator will then be properly rendered as a middle dot.
 
 ## 4.1 General Rules
 
-From a technical point of view, the llncs document class does not require any specific L A T E X coding in the body of your paper. You can simply use the commands provided by the 'article' document class. For more information about what will be done with your manuscript before publication, please refer to the Springer Guidelines for Authors of Proceedings .
+From a technical point of view, the llncs document class does not require any specific LATEX coding in the body of your paper. You can simply use the commands provided by the 'article' document class. For more information about what will be done with your manuscript before publication, please refer to the Springer Guidelines for Authors of Proceedings.
 
 ## 4.2 Special Math Characters
 
@@ -138,7 +138,7 @@ The llncs document class supports some additional special characters:
 \grole yields > \lid yields < < \getsto yields ←→ = \gid yields > =
 ```
 
-If you need blackboard bold characters, i.e. for sets of numbers, please load the related A M S -T E Xfonts. If for some reason this is not possible you can also use the following commands from the llncs class:
+If you need blackboard bold characters, i.e. for sets of numbers, please load the related AMS-TEXfonts. If for some reason this is not possible you can also use the following commands from the llncs class:
 
 | \bbbc   | yields   | C   | \bbbf   | yields   | IF   |
 |---------|----------|-----|---------|----------|------|
@@ -146,8 +146,8 @@ If you need blackboard bold characters, i.e. for sets of numbers, please load th
 | \bbbm   | yields   | IM  | \bbbn   | yields   | IN   |
 | \bbbp   | yields   | IP  | \bbbq   | yields   | Q    |
 | \bbbr   | yields   | IR  | \bbbs   | yields   | S    |
-| \bbbt   | yields   | T   | \bbbz   | yields   | Z Z  |
-| \bbbone | yields   | 1 l |         |          |      |
+| \bbbt   | yields   | T   | \bbbz   | yields   | ZZ   |
+| \bbbone | yields   | 1l  |         |          |      |
 
 Please note that all these characters are only available in math mode.
 
@@ -157,27 +157,27 @@ Please note that all these characters are only available in math mode.
 
 ## 5.1 Predefined Theorem-Like Environments
 
-Several theorem-like environments are predefined in the llncs document class. corollary ( env. ) definition ( env. ) lemma ( env. ) The following environments have a bold run-in heading, while the following text is in italics:
+Several theorem-like environments are predefined in the llncs document class. corollary (env.) definition (env.) lemma (env.) The following environments have a bold run-in heading, while the following text is in italics:
 
-proposition
+proposition (env.)
 
 ```
-proposition(env.) \begin{corollary} <text> \end{corollary} \begin{definition} <text> \end{definition} \begin{lemma} <text> \end{lemma} \begin{proposition} <text> \end{proposition} \begin{theorem} <text> \end{theorem}
+\begin{corollary} <text> \end{corollary} \begin{definition} <text> \end{definition} \begin{lemma} <text> \end{lemma} \begin{proposition} <text> \end{proposition} \begin{theorem} <text> \end{theorem}
 ```
 
-Other theorem-like environments render the text in roman, while the run-in case ( env. ) conjecture ( env. ) heading is bold as well:
+Other theorem-like environments render the text in roman, while the run-in case (env.) conjecture (env.) heading is bold as well:
 
 ```
 exercise(env.) property(env.) question(env.) solution(env.) heading is bold as well: example(env.) problem(env.) note(env.) \begin{case} <text> \end{case} \begin{conjecture} <text> \end{conjecture} \begin{example} <text> \end{example} \begin{exercise} <text> \end{exercise} \begin{note} <text> \end{note} \begin{problem} <text> \end{problem} remark(env.) \begin{property} <text> \end{property} \begin{question} <text> \end{question} \begin{remark} <text> \end{remark} \begin{solution} <text> \end{solution}
 ```
 
-Finally, there are also two unnumbered environments that have the run-in headclaim ( env. ) proof ( env. ) ing in italics and the text in upright roman.
+Finally, there are also two unnumbered environments that have the run-in headclaim (env.) proof (env.) ing in italics and the text in upright roman.
 
 ```
 \begin{claim} <text> \end{claim} \begin{proof} <text> \end{proof}
 ```
 
-Proofs may contain an eye catching square, which can be inserted with \qed ) \qed before the environment ends.
+Proofs may contain an eye catching square, which can be inserted with \qed) \qed before the environment ends.
 
 ## 5.2 User-Defined Theorem-Like Environments
 
@@ -191,7 +191,7 @@ We have enhanced the standard \newtheorem command and slightly changed its synta
 
 \spnewtheorem*
 
-citeauthoryear will create a main theorem environment that is numbered together with the predefined theorem . The sharing of the default counter ( [theorem] ) is desired. If you omit the optional second argument of \spnewtheorem , a separate counter for your new environment is used throughout your document.
+citeauthoryear will create a main theorem environment that is numbered together with the predefined theorem. The sharing of the default counter ([theorem]) is desired. If you omit the optional second argument of \spnewtheorem, a separate counter for your new environment is used throughout your document.
 
 In combination with the (obsolete) class option envcountsect (see. Sect. 7), the \spnewtheorem command also supports the syntax:
 
@@ -199,7 +199,7 @@ In combination with the (obsolete) class option envcountsect (see. Sect. 7), the
 \spnewtheorem{<env_nam>}{<caption>}[<within>]{<cap_font>}{<body_font>}
 ```
 
-With the parameter &lt;within&gt; , you can control the sectioning element that resets the theorem counters. If you specify, for example, subsection , the newly defined environment is numbered subsectionwise.
+With the parameter &lt;within&gt;, you can control the sectioning element that resets the theorem counters. If you specify, for example, subsection, the newly defined environment is numbered subsectionwise.
 
 If you wish to add an unnumbered environment, please use the syntax
 
@@ -213,19 +213,19 @@ There are three options for citing references:
 - arabic numbers, i.e. [1], [3-5], [4-6,9], - labels, i.e. [CE1], [AB1,XY2], - author/year system,(Smith et al. 2000),(Miller 1999a, 12; Brown 2018).
 ```
 
-We prefer citations with arabic numbers, i.e. the usage of \bibitem without an optional parameter. If you want to use the author/year system, you can use the class option citeauthoryear , i.e.
+We prefer citations with arabic numbers, i.e. the usage of \bibitem without an optional parameter. If you want to use the author/year system, you can use the class option citeauthoryear, i.e.
 
 \documentclass[citeauthoryear]{llncs}
 
 Please note that this option does not automatically change your citations to the author/year style. It basically redefines the \bibitem command to take the publication year as an optional parameter that is displayed instead of an arabic number. Author name(s) and, if necessary, parentheses are to be typed manually. If your reference reads
 
 ```
-\bibitem[2016]{vdaalst:2016} van der Aalst, W.: Process Mining, 2nd ed. Springer, Heidelberg(2016) and is cited as follows: ... is shown by van der Aalst(\cite{vdaalst:2016}) the resulting text will be: '...is shown by van der Aalst(2016).'
+\bibitem[2016]{vdaalst:2016} van der Aalst, W.: Process Mining, 2nd ed. Springer, Heidelberg(2016) and is cited as follows: ... is shown by van der Aalst(\cite{vdaalst:2016}) the resulting text will be: "...is shown by van der Aalst(2016)."
 ```
 
-splncs04.bst We encourage you to use Bib T E X for typesetting your references. For formatting the bibliography according to Springer's standard (for mathematics, physical sciences, and computer science), please use the bibliography style file splncs04.bst that comes with the llncs document class. You simply need to add \bibliographystyle{splncs04} to your document. DOIs should be provided in the doi field of your .bib database. Bib T E X will then automatically add them to your references. Please note that we do not provide an option to implement
+splncs04.bst We encourage you to use BibTEX for typesetting your references. For formatting the bibliography according to Springer's standard (for mathematics, physical sciences, and computer science), please use the bibliography style file splncs04.bst that comes with the llncs document class. You simply need to add \bibliographystyle{splncs04} to your document. DOIs should be provided in the doi field of your .bib database. BibTEX will then automatically add them to your references. Please note that we do not provide an option to implement
 
-If you do not use Bib T E X, you can include a DOI with the \doi command: \doi
+If you do not use BibTEX, you can include a DOI with the \doi command: \doi
 
 \doi{&lt;DOI&gt;}
 
@@ -235,7 +235,7 @@ The DOI will be expanded to the URL https://doi.org/&lt;DOI&gt; in accordance wi
 
 The llncs document class contains several class options that have become obsolete over the years. We only mention them for completeness:
 
-- The llncs document class changes the formatting of vectors coded with orivec \vec to boldface italics. If you absolutely need the original L A T E X design for vectors, i.e. an arrow above the related variable, you can restore it with the orivec option.
+- The llncs document class changes the formatting of vectors coded with orivec \vec to boldface italics. If you absolutely need the original LATEX design for vectors, i.e. an arrow above the related variable, you can restore it with the orivec option.
 
 envcountsame
 
@@ -245,5 +245,5 @@ envcountreset envcountsect openbib oribibl
 
 - All theorem-like environments are numbered per section, i.e. the related counters are reset to 1 in every section.
 - All theorem-like environments are numbered per section, and the section number added to the individual counter, i.e. Theorem 1.2, Lemma 2.2, etc.
-- This option produces the 'open' bibliography style, in which each block starts on a new line, and succeeding lines in a block are indented by \bibindent .
-- This option restores the original L A T E X definitions for the bibliography and the \cite mechanism that some Bib T E X applications rely on.
+- This option produces the "open" bibliography style, in which each block starts on a new line, and succeeding lines in a block are indented by \bibindent.
+- This option restores the original LATEX definitions for the bibliography and the \cite mechanism that some BibTEX applications rely on.

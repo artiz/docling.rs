@@ -55,6 +55,11 @@ struct Cell {
     b_r: f64,
     b_b: f64,
     b_t: f64,
+    /// The pen's origin and the font size, `[x, y, size]` ([`Glyph::pen`]),
+    /// for the word contraction's baseline test (#921).
+    pen: Option<[f64; 3]>,
+    /// The glyph's font is a math face ([`Glyph::math_font`]).
+    math_font: bool,
 }
 
 impl Cell {
@@ -420,14 +425,17 @@ fn build_cells(glyphs: &[Glyph], euclidean: bool) -> Vec<Cell> {
             b_r: (g.ll as f64).max(g.lr as f64),
             b_b: (g.lb as f64).min(g.lt as f64),
             b_t: (g.lb as f64).max(g.lt as f64),
+            pen: g.pen.map(|p| p.map(f64::from)),
+            math_font: g.math_font,
         });
     }
     cells
 }
 
-/// Build line cells from a page's glyph stream via the docling-parse contraction.
+/// Build line cells from a page's glyph stream under the process's word-gap
+/// rule (`DOCLING_RS_PDF_WORD_GAP`, #921).
 pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<TextCell> {
-    line_and_word_cells(glyphs, page_h, euclidean).0
+    line_and_word_cells_with(glyphs, page_h, euclidean, WordGap::from_env()).0
 }
 
 /// Build **word** cells from a page's glyph stream via docling-parse's
@@ -438,19 +446,36 @@ pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<
 /// `1군감염병`); real space glyphs are hard barriers and are erased afterwards.
 /// These are the per-word tokens TableFormer matches table-grid cells against.
 pub(crate) fn word_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<TextCell> {
-    line_and_word_cells(glyphs, page_h, euclidean).1
+    line_and_word_cells_with(glyphs, page_h, euclidean, WordGap::from_env()).1
 }
 
-/// Build the line cells **and** the word cells from one shared glyph build:
-/// the char cells are constructed once and contracted twice, under the line
-/// factors and the word factors respectively — exactly docling-parse's
-/// `create_line_cells` + `create_word_cells` pair.
+/// Build the line cells **and** the word cells from one shared glyph build
+/// under docling-parse ≤ 6's contraction ([`WordGap::Legacy`]): the char
+/// cells are constructed once and contracted twice, under the line factors
+/// and the word factors respectively — exactly docling-parse's
+/// `create_line_cells` + `create_word_cells` pair. The tests pin the legacy
+/// contraction through it; production goes through the process's rule.
+#[cfg(test)]
 pub(crate) fn line_and_word_cells(
     glyphs: &[Glyph],
     page_h: f32,
     euclidean: bool,
 ) -> (Vec<TextCell>, Vec<TextCell>) {
+    line_and_word_cells_with(glyphs, page_h, euclidean, WordGap::Legacy)
+}
+
+/// [`line_and_word_cells`] under the word-gap rule `gap` (#921): the legacy
+/// contraction, or docling-parse ≥ 7's line runs.
+pub(crate) fn line_and_word_cells_with(
+    glyphs: &[Glyph],
+    page_h: f32,
+    euclidean: bool,
+    gap: WordGap,
+) -> (Vec<TextCell>, Vec<TextCell>) {
     let built = build_cells(glyphs, euclidean);
+    if gap != WordGap::Legacy {
+        return contract_runs(&built, gap, page_h);
+    }
     let to_text_cell = |c: Cell| {
         let l = c.rx0.min(c.rx1).min(c.rx2).min(c.rx3) as f32;
         let r = c.rx0.max(c.rx1).max(c.rx2).max(c.rx3) as f32;
@@ -582,6 +607,652 @@ fn is_ligature(s: &str) -> bool {
         || s.chars().any(|c| (0xFB00..=0xFB06).contains(&(c as u32)))
 }
 
+// ------------------------------------------------------------ word gaps (#921)
+
+/// How a word boundary is decided where the PDF draws no space glyph — a
+/// word set apart only by moving the text cursor (#921).
+///
+/// [`WordGap::Adaptive`], the default, and [`WordGap::Factor`] follow
+/// docling-parse ≥ 7's contractor (`cells.h::contract`, 2026-09, PR #351 —
+/// what docling ≥ 2.142 runs on, `docling-parse>=7.22`): glyphs are grouped
+/// into line runs by geometry alone (no font boundary), every gap between
+/// two visible glyphs is normalized by the mean advance of those two
+/// glyphs, and a normalized gap above the threshold starts a new word; an
+/// explicit space glyph is always a boundary. Line cells are the run's
+/// words joined by single spaces. Letter spacing is detected first
+/// ([`tracked_gaps`]) — our addition, where docling-parse cuts letter-spaced
+/// words mid-word.
+///
+/// [`WordGap::Legacy`] is the contraction above: the docling-parse ≤ 6 rule
+/// this port started from, where a gap splits two words when it exceeds
+/// 0.33 × the running mean advance of the cell accumulated so far — a cell
+/// that restarts at every font change, so the threshold drifts along a line
+/// (`und dem` in a second font resource read `unddem`: 1.955 pt against
+/// 0.33 × 5.925 pt, the mean of `und` alone).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum WordGap {
+    /// docling-parse ≤ 6's running-mean contraction.
+    Legacy,
+    /// A fixed normalized threshold for every line.
+    Factor(f64),
+    /// docling-parse ≥ 7's line-local threshold: a two-cluster k-means over
+    /// the line's normalized gaps (character spacing vs word spacing), at
+    /// least 0.18, capped at 0.35, 0.25 when the gaps do not separate.
+    #[default]
+    Adaptive,
+}
+
+impl WordGap {
+    /// The accepted spellings, for error messages.
+    pub const ACCEPTED: &'static str = "legacy, adaptive, or a factor in (0, 4]";
+
+    /// `legacy` / `adaptive` / a positive factor up to 4 (case-insensitive);
+    /// `Err` with the reason for anything else.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        let t = s.trim().to_ascii_lowercase();
+        match t.as_str() {
+            "legacy" => Ok(WordGap::Legacy),
+            "adaptive" | "auto" | "default" => Ok(WordGap::Adaptive),
+            _ => match t.parse::<f64>() {
+                Ok(f) if f.is_finite() && f > 0.0 && f <= 4.0 => Ok(WordGap::Factor(f)),
+                _ => Err(format!(
+                    "pdf_word_gap must be {}, got {s:?}",
+                    WordGap::ACCEPTED
+                )),
+            },
+        }
+    }
+
+    /// `DOCLING_RS_PDF_WORD_GAP`, or the default ([`WordGap::Adaptive`])
+    /// when it is unset (an unreadable value warns once and keeps the
+    /// default).
+    pub fn from_env() -> Self {
+        let Some(v) = docling_core::env::nonempty("DOCLING_RS_PDF_WORD_GAP") else {
+            return WordGap::default();
+        };
+        WordGap::parse(&v).unwrap_or_else(|e| {
+            static WARNED: std::sync::Once = std::sync::Once::new();
+            WARNED.call_once(|| {
+                eprintln!("docling-pdf: DOCLING_RS_PDF_WORD_GAP: {e}; using adaptive")
+            });
+            WordGap::default()
+        })
+    }
+}
+
+/// One glyph cell of a line run, with its writing axis precomputed.
+struct RunCell<'a> {
+    cell: &'a Cell,
+    /// Unit vector along the bottom edge (the writing direction).
+    ux: f64,
+    uy: f64,
+    /// Bottom-edge length: the advance the glyph's loose box spans.
+    advance: f64,
+    height: f64,
+    space: bool,
+}
+
+impl<'a> RunCell<'a> {
+    fn new(cell: &'a Cell) -> Self {
+        let (dx, dy) = (cell.rx1 - cell.rx0, cell.ry1 - cell.ry0);
+        let advance = dx.hypot(dy);
+        let (ux, uy) = if advance > 1e-9 {
+            (dx / advance, dy / advance)
+        } else {
+            (1.0, 0.0)
+        };
+        let h0 = (cell.rx3 - cell.rx0).hypot(cell.ry3 - cell.ry0);
+        let h1 = (cell.rx2 - cell.rx1).hypot(cell.ry2 - cell.ry1);
+        RunCell {
+            cell,
+            ux,
+            uy,
+            advance,
+            height: 0.5 * (h0 + h1),
+            space: cell.blank,
+        }
+    }
+
+    /// The normalization length of a gap next to this glyph: its advance,
+    /// else half its height (docling-parse's `cell_space_width` fallback).
+    fn scale(&self) -> f64 {
+        if self.advance > 1e-6 {
+            self.advance
+        } else {
+            (0.5 * self.height).max(1e-6)
+        }
+    }
+}
+
+/// Signed distance along `lhs`'s writing direction from where its pen
+/// advance ends to where `rhs`'s starts (`forward_gap`, the
+/// `has_text_placement` form docling-parse takes for every rendered glyph).
+/// Our quads run in pen order — `r0 → r1` is the advance — so this is the
+/// trailing edge of `lhs` to the leading edge of `rhs` whatever the script:
+/// right-to-left text drawn in visual order still advances along `+u`, and
+/// flipping the axis for it (the geometric fallback) read every Arabic or
+/// Hebrew glyph pair as a step back of two advances, a new line each.
+fn forward_gap(lhs: &RunCell, rhs: &RunCell) -> f64 {
+    let (l, r) = (lhs.cell, rhs.cell);
+    let (tx, ty) = (0.5 * (l.rx1 + l.rx2), 0.5 * (l.ry1 + l.ry2));
+    let (hx, hy) = (0.5 * (r.rx0 + r.rx3), 0.5 * (r.ry0 + r.ry3));
+    (hx - tx) * lhs.ux + (hy - ty) * lhs.uy
+}
+
+/// Overlap, across the writing direction, of `lhs`'s trailing edge and
+/// `rhs`'s leading edge — positive for glyphs on one text line.
+fn facing_edge_overlap(lhs: &RunCell, rhs: &RunCell) -> f64 {
+    let (l, r) = (lhs.cell, rhs.cell);
+    let (ux, uy) = if l.ltr {
+        (lhs.ux, lhs.uy)
+    } else {
+        (-lhs.ux, -lhs.uy)
+    };
+    let (nx, ny) = (-uy, ux);
+    let proj = |x: f64, y: f64| x * nx + y * ny;
+    let (a0, a1) = if l.ltr {
+        (proj(l.rx1, l.ry1), proj(l.rx2, l.ry2))
+    } else {
+        (proj(l.rx0, l.ry0), proj(l.rx3, l.ry3))
+    };
+    let (b0, b1) = if l.ltr {
+        (proj(r.rx0, r.ry0), proj(r.rx3, r.ry3))
+    } else {
+        (proj(r.rx1, r.ry1), proj(r.rx2, r.ry2))
+    };
+    a0.max(a1).min(b0.max(b1)) - a0.min(a1).max(b0.min(b1))
+}
+
+/// A glyph of a mathematical layout by its symbols — the symbol half of
+/// `has_math_positioning_semantics`; the font-name half is
+/// [`Glyph::math_font`].
+fn is_math_glyph(text: &str) -> bool {
+    const MATH: &str = "∑∏∫√∞∈∉≠≤≥⊂⊃⊆⊇⊥∪∩⎛⎜⎝⎞⎟⎠⎡⎢⎣⎤⎥⎦";
+    text.chars().any(|c| MATH.contains(c))
+}
+
+/// A sub- or superscript placed by moving the cursor next to its base in a
+/// mathematical context (`is_local_positioned_attachment`).
+fn is_local_attachment(lhs: &RunCell, rhs: &RunCell) -> bool {
+    let scale = lhs.scale().max(rhs.scale());
+    if forward_gap(lhs, rhs) > 0.10 * scale {
+        return false;
+    }
+    let (off, (lh, rh)) = baseline_offset(lhs, rhs);
+    let math = |c: &RunCell| c.cell.math_font || is_math_glyph(&c.cell.text);
+    off <= 2.0 * lh.max(rh).max(1e-6) && (math(lhs) || math(rhs))
+}
+
+/// How far `rhs` sits from `lhs`'s baseline, across `lhs`'s writing axis,
+/// and the two glyphs' nominal heights: the pens' origins and the font sizes
+/// when the parser knows them (docling-parse's `text_origin` /
+/// `nominal_text_height`), else the loose boxes' bottom corners and heights.
+/// The boxes overstate a size change — a superscript's box bottom sits only
+/// its own, smaller descent below a raised baseline — so `Lysak` + its ORCID
+/// read as two words where docling-parse 7 keeps one.
+fn baseline_offset(lhs: &RunCell, rhs: &RunCell) -> (f64, (f64, f64)) {
+    let (nx, ny) = (-lhs.uy, lhs.ux);
+    match (lhs.cell.pen, rhs.cell.pen) {
+        (Some(a), Some(b)) => (
+            ((b[0] - a[0]) * nx + (b[1] - a[1]) * ny).abs(),
+            (a[2], b[2]),
+        ),
+        _ => (
+            ((rhs.cell.rx0 - lhs.cell.rx0) * nx + (rhs.cell.ry0 - lhs.cell.ry0) * ny).abs(),
+            (lhs.height, rhs.height),
+        ),
+    }
+}
+
+/// Whether `rhs` continues `lhs`'s text line (`continues_line`): the same
+/// writing direction, facing edges that overlap across it, and a cursor
+/// move between a step back and four advances forward.
+fn continues_line(lhs: &RunCell, rhs: &RunCell) -> bool {
+    if lhs.ux * rhs.ux + lhs.uy * rhs.uy < 0.985 {
+        return false;
+    }
+    let scale = lhs.scale().max(rhs.scale());
+    let gap = forward_gap(lhs, rhs);
+    if facing_edge_overlap(lhs, rhs) <= 1e-6 && !is_local_attachment(lhs, rhs) {
+        return false;
+    }
+    -scale <= gap && gap <= 4.0 * scale
+}
+
+/// Whether two glyphs sit on one baseline (`word_baselines_compatible`): a
+/// baseline shift beyond 0.35 × the smaller height starts a new word,
+/// unless it is a mathematical attachment.
+fn baselines_compatible(lhs: &RunCell, rhs: &RunCell) -> bool {
+    let (off, (lh, rh)) = baseline_offset(lhs, rhs);
+    off <= 0.35 * lh.min(rh).max(1e-6) || is_local_attachment(lhs, rhs)
+}
+
+/// The gap between two visible glyphs over their mean advance.
+fn normalized_gap(lhs: &RunCell, rhs: &RunCell) -> f64 {
+    forward_gap(lhs, rhs).max(0.0) / (0.5 * (lhs.scale() + rhs.scale())).max(1e-6)
+}
+
+/// What a glyph is to the letter-spacing detector.
+#[derive(Clone, Copy, PartialEq)]
+enum TrackClass {
+    /// Letters and digits — what letter-spaced (Sperrsatz) words are set in.
+    Letter,
+    /// Leader dots.
+    Dot,
+    Other,
+}
+
+fn track_class(text: &str) -> TrackClass {
+    if matches!(text, "." | "·" | "…") {
+        TrackClass::Dot
+    } else if !text.is_empty() && text.chars().all(char::is_alphanumeric) {
+        TrackClass::Letter
+    } else {
+        TrackClass::Other
+    }
+}
+
+/// Points two letter-spacing gaps may differ by and still be one tracking:
+/// producers set a letter-spaced word with one constant cursor move (#921's
+/// fixtures: within 0.17 pt), which rounding and kerning blur slightly.
+fn tracking_tolerance(gap: f64) -> f64 {
+    (0.08 * gap).max(0.25)
+}
+
+/// Letter spacing (Sperrsatz, tracked capitals, leader dots) in a line run
+/// (#921): `true` at index `i` when the gap from the previous visible glyph
+/// to `run[i]` is tracking inside one word rather than a word boundary.
+///
+/// docling-parse ≥ 7 judges each gap by its width over the flanking glyphs'
+/// mean advance, and a letter-spaced word defeats that: its gaps are one
+/// constant cursor move in points, but divided by the advances of `i`, `l`
+/// or `t` beside `M` or `D` they spread over 0.25–0.75, straddling any
+/// threshold, so the word is cut mid-word (`Di ens tk lasse`, `Heimarbei
+/// tstari f`). Constancy in points is the signal instead: a chain of three
+/// or more consecutive gaps between letters that are open (≥ 0.1 of an
+/// advance), at most one advance wide (not table columns) and equal within
+/// [`tracking_tolerance`] is tracking — when nothing on either side of it is
+/// tighter. That last test is what tells it from justified prose, whose
+/// word gaps are equal along a line too and chain up across one-letter
+/// words (`Peter W J Staar`, `Abs 1 Z 3 UrlG`): there the chain is flanked
+/// by abutting letters, while a letter-spaced word starts and ends at the
+/// line's ends, a space glyph or a wider gap; and one character repeated
+/// (`C C C C`, a figure's token row) is no word. Once a run has such a chain,
+/// shorter stretches at the same tracking with the same open flanks join
+/// it: the short words of the heading (`für`, `und`, `II`) and closing
+/// punctuation (`:`). Four or more dots in a row, each within an advance of
+/// the last, are one leader whatever their spacing.
+fn tracked_gaps(run: &[RunCell]) -> Vec<bool> {
+    struct Gap {
+        left: usize,
+        right: usize,
+        pt: f64,
+        n: f64,
+        left_class: TrackClass,
+        right_class: TrackClass,
+    }
+    let mut gaps: Vec<Gap> = Vec::new();
+    let mut prev: Option<usize> = None;
+    let mut crossed_space = false;
+    for (i, c) in run.iter().enumerate() {
+        if c.space {
+            crossed_space = true;
+            continue;
+        }
+        if let (Some(p), false) = (prev, crossed_space) {
+            gaps.push(Gap {
+                left: p,
+                right: i,
+                pt: forward_gap(&run[p], c),
+                n: normalized_gap(&run[p], c),
+                left_class: track_class(&run[p].cell.text),
+                right_class: track_class(&c.cell.text),
+            });
+        }
+        prev = Some(i);
+        crossed_space = false;
+    }
+    // `gaps[k]` and `gaps[k + 1]` share a glyph — no space glyph between.
+    let joined = |k: usize| gaps[k + 1].left == gaps[k].right;
+    // The longest stretch from `k` of joined gaps that `fits`, as its end.
+    let stretch = |k: usize, fits: &dyn Fn(&Gap) -> bool| {
+        let mut end = k;
+        while end < gaps.len() && fits(&gaps[end]) && (end == k || joined(end - 1)) {
+            end += 1;
+        }
+        end
+    };
+    // No gap right before or after `k..end` tighter than `floor` points.
+    let flanks_open = |k: usize, end: usize, floor: f64| {
+        let before = k > 0 && joined(k - 1) && gaps[k - 1].pt < floor;
+        let after = end < gaps.len() && joined(end - 1) && gaps[end].pt < floor;
+        !before && !after
+    };
+
+    let mut tracked = vec![false; run.len()];
+    let mut leader = vec![false; run.len()];
+    let mut letter_tracking: Vec<f64> = Vec::new();
+    let mut k = 0;
+    while k < gaps.len() {
+        let dots = |g: &Gap| {
+            g.left_class == TrackClass::Dot && g.right_class == TrackClass::Dot && g.n <= 1.0
+        };
+        let end = stretch(k, &dots);
+        if end - k >= 3 {
+            for g in &gaps[k..end] {
+                tracked[g.right] = true;
+                leader[g.left] = true;
+                leader[g.right] = true;
+            }
+            k = end;
+            continue;
+        }
+        let first = &gaps[k];
+        let letters = |g: &Gap| {
+            g.left_class == TrackClass::Letter
+                && g.right_class == TrackClass::Letter
+                && (0.1..=1.0).contains(&g.n)
+        };
+        if !letters(first) {
+            k += 1;
+            continue;
+        }
+        let (mut lo, mut hi) = (first.pt, first.pt);
+        let mut end = k + 1;
+        while end < gaps.len()
+            && joined(end - 1)
+            && letters(&gaps[end])
+            && hi.max(gaps[end].pt) - lo.min(gaps[end].pt) <= tracking_tolerance(lo)
+        {
+            lo = lo.min(gaps[end].pt);
+            hi = hi.max(gaps[end].pt);
+            end += 1;
+        }
+        // One character repeated (`C C C C` in a figure, `x x x x`) is a row
+        // of tokens, not a word.
+        let one_char = gaps[k..end]
+            .iter()
+            .all(|g| run[g.right].cell.text == run[first.left].cell.text);
+        if end - k >= 3 && !one_char && flanks_open(k, end, lo - tracking_tolerance(lo)) {
+            for g in &gaps[k..end] {
+                tracked[g.right] = true;
+            }
+            letter_tracking.push(0.5 * (lo + hi));
+            k = end;
+        } else {
+            k += 1;
+        }
+    }
+
+    for &t in &letter_tracking {
+        let tol = tracking_tolerance(t);
+        let same = |g: &Gap| {
+            (g.left_class == TrackClass::Letter || g.right_class == TrackClass::Letter)
+                && g.left_class != TrackClass::Dot
+                && g.right_class != TrackClass::Dot
+                && g.n <= 1.0
+                && (g.pt - t).abs() <= tol
+        };
+        let mut k = 0;
+        while k < gaps.len() {
+            let end = stretch(k, &same);
+            if end == k {
+                k += 1;
+                continue;
+            }
+            if flanks_open(k, end, t - tol) && !gaps[k..end].iter().any(|g| leader[g.left]) {
+                for g in &gaps[k..end] {
+                    tracked[g.right] = true;
+                }
+            }
+            k = end;
+        }
+    }
+    tracked
+}
+
+/// docling-parse ≥ 7's `infer_word_gap`: the line's normalized gaps (not
+/// across an explicit space) split by an eight-step two-cluster k-means;
+/// 0.25 when there are fewer than two or they do not separate, else the
+/// midpoint of the two cluster means, at least 0.18. Letter-spacing gaps
+/// (`tracked`, #921) stay out of the sample: they are settled already, and
+/// their spread would drag the low cluster up into the word gaps.
+fn infer_word_gap(run: &[RunCell], tracked: &[bool]) -> f64 {
+    let mut gaps = Vec::new();
+    let mut prev: Option<&RunCell> = None;
+    let mut crossed_space = false;
+    for (i, c) in run.iter().enumerate() {
+        if c.space {
+            crossed_space = true;
+            continue;
+        }
+        if let (Some(p), false, false) = (prev, crossed_space, tracked[i]) {
+            gaps.push(normalized_gap(p, c));
+        }
+        prev = Some(c);
+        crossed_space = false;
+    }
+    if gaps.len() < 2 {
+        return 0.25;
+    }
+    let mut low = gaps.iter().copied().fold(f64::INFINITY, f64::min);
+    let mut high = gaps.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if high < 0.18 || high - low < 0.08 {
+        return 0.25;
+    }
+    for _ in 0..8 {
+        let mid = 0.5 * (low + high);
+        let (mut ls, mut ln, mut hs, mut hn) = (0.0, 0usize, 0.0, 0usize);
+        for &g in &gaps {
+            if g <= mid {
+                ls += g;
+                ln += 1;
+            } else {
+                hs += g;
+                hn += 1;
+            }
+        }
+        if ln == 0 || hn == 0 {
+            return 0.25;
+        }
+        low = ls / ln as f64;
+        high = hs / hn as f64;
+    }
+    if high < 0.18 || high - low < 0.08 {
+        return 0.25;
+    }
+    (0.5 * (low + high)).max(0.18)
+}
+
+/// A word or line being assembled: its text and its rotation-aligned box.
+struct Agg {
+    text: String,
+    ltr: bool,
+    q: [f64; 8],
+}
+
+impl Agg {
+    fn of(c: &Cell) -> Self {
+        Agg {
+            text: c.text.clone(),
+            ltr: c.ltr,
+            q: [c.rx0, c.ry0, c.rx1, c.ry1, c.rx2, c.ry2, c.rx3, c.ry3],
+        }
+    }
+
+    /// `append_cell`: the text in reading order (an RTL piece prepends), and
+    /// the smallest rectangle aligned with the writing direction holding
+    /// both boxes.
+    fn append(&mut self, text: &str, ltr: bool, q: &[f64; 8], space: bool) {
+        if self.ltr && ltr {
+            if space {
+                self.text.push(' ');
+            }
+            self.text.push_str(text);
+        } else {
+            let sep = if space { " " } else { "" };
+            self.text = format!("{text}{sep}{}", self.text);
+            self.ltr = false;
+        }
+        let (mut ux, mut uy) = (self.q[2] - self.q[0], self.q[3] - self.q[1]);
+        if ux.hypot(uy) <= 1e-9 {
+            (ux, uy) = (q[2] - q[0], q[3] - q[1]);
+        }
+        let n = ux.hypot(uy);
+        if n <= 1e-9 {
+            return;
+        }
+        let (ux, uy) = (ux / n, uy / n);
+        let (nx, ny) = (-uy, ux);
+        let (mut u0, mut u1, mut n0, mut n1) = (
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        );
+        for k in 0..4 {
+            for (x, y) in [(self.q[2 * k], self.q[2 * k + 1]), (q[2 * k], q[2 * k + 1])] {
+                let (u, v) = (x * ux + y * uy, x * nx + y * ny);
+                u0 = u0.min(u);
+                u1 = u1.max(u);
+                n0 = n0.min(v);
+                n1 = n1.max(v);
+            }
+        }
+        let pt = |u: f64, v: f64| (u * ux + v * nx, u * uy + v * ny);
+        let (a, b, c, d) = (pt(u0, n0), pt(u1, n0), pt(u1, n1), pt(u0, n1));
+        self.q = [a.0, a.1, b.0, b.1, c.0, c.1, d.0, d.1];
+    }
+
+    fn into_cell(self, page_h: f32) -> TextCell {
+        let xs = [self.q[0], self.q[2], self.q[4], self.q[6]];
+        let ys = [self.q[1], self.q[3], self.q[5], self.q[7]];
+        let (l, r) = (
+            xs.iter().copied().fold(f64::INFINITY, f64::min),
+            xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        );
+        let (b, t) = (
+            ys.iter().copied().fold(f64::INFINITY, f64::min),
+            ys.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        );
+        TextCell {
+            text: self.text,
+            l: l as f32,
+            t: page_h - t as f32,
+            r: r as f32,
+            b: page_h - b as f32,
+        }
+    }
+}
+
+/// docling-parse ≥ 7's contraction (`cells.h::contract`) over our char
+/// cells, with the word threshold `gap` picks: the line runs, their words,
+/// and the lines as the words joined by single spaces.
+fn contract_runs(cells: &[Cell], gap: WordGap, page_h: f32) -> (Vec<TextCell>, Vec<TextCell>) {
+    // Line runs, in source order. Explicit spaces belong to the open run as
+    // boundary markers and take no part in the geometry test.
+    let mut runs: Vec<Vec<RunCell>> = Vec::new();
+    for c in cells.iter().filter(|c| !c.text.is_empty()) {
+        let rc = RunCell::new(c);
+        if rc.space {
+            match runs.last_mut() {
+                Some(run) => run.push(rc),
+                None => runs.push(vec![rc]),
+            }
+            continue;
+        }
+        let starts = match runs.last().and_then(|r| r.iter().rev().find(|c| !c.space)) {
+            Some(prev) => !continues_line(prev, &rc),
+            None => runs.is_empty(),
+        };
+        if starts {
+            runs.push(Vec::new());
+        }
+        runs.last_mut().expect("a run is open").push(rc);
+    }
+
+    let (mut words_out, mut lines_out) = (Vec::new(), Vec::new());
+    for run in &runs {
+        let has_spaces = run.iter().any(|c| c.space);
+        let tracked = tracked_gaps(run);
+        // A line that draws its word spaces as glyphs marks its boundaries
+        // itself; docling-parse 7 splits an unmarked gap there only above
+        // 0.35 (`min(0.35, 1.0)`). A fixed factor keeps that floor: its job
+        // is the space-less lines (#921), and below it a spaced line's
+        // loosely kerned pairs fall apart — EUR-Lex's `f|l` at 0.24 read
+        // `Verpf lichtungen` under 0.2.
+        let threshold = match gap {
+            WordGap::Factor(f) if has_spaces => f.max(0.35),
+            WordGap::Factor(f) => f,
+            _ => (if has_spaces {
+                1.0
+            } else {
+                infer_word_gap(run, &tracked)
+            })
+            .min(0.35),
+        };
+        let mut words: Vec<Agg> = Vec::new();
+        let mut prev: Option<&RunCell> = None;
+        let mut boundary = false;
+        for (i, c) in run.iter().enumerate() {
+            if c.space {
+                boundary = true;
+                continue;
+            }
+            let mut starts = words.is_empty() || boundary;
+            // A TOC leader may omit the boundary before its first dot while
+            // spacing every later one: keep that dot with the leader.
+            if !starts
+                && c.cell.text == "."
+                && i + 4 < run.len()
+                && run[i + 1].space
+                && run[i + 2].cell.text == "."
+                && run[i + 3].space
+                && run[i + 4].cell.text == "."
+                && prev.is_some_and(|p| p.cell.text != ".")
+            {
+                starts = true;
+            }
+            if let (false, Some(p)) = (starts, prev) {
+                starts = !baselines_compatible(p, c)
+                    || (!tracked[i] && normalized_gap(p, c) > threshold);
+            }
+            if starts {
+                words.push(Agg::of(c.cell));
+            } else {
+                let q = [
+                    c.cell.rx0, c.cell.ry0, c.cell.rx1, c.cell.ry1, c.cell.rx2, c.cell.ry2,
+                    c.cell.rx3, c.cell.ry3,
+                ];
+                words.last_mut().expect("a word is open").append(
+                    &c.cell.text,
+                    c.cell.ltr,
+                    &q,
+                    false,
+                );
+            }
+            prev = Some(c);
+            boundary = false;
+        }
+        let mut it = words.into_iter();
+        let Some(first) = it.next() else {
+            continue;
+        };
+        let mut line = Agg {
+            text: first.text.clone(),
+            ltr: first.ltr,
+            q: first.q,
+        };
+        words_out.push(first.into_cell(page_h));
+        for w in it {
+            line.append(&w.text, w.ltr, &w.q, true);
+            words_out.push(w.into_cell(page_h));
+        }
+        lines_out.push(line.into_cell(page_h));
+    }
+    (lines_out, words_out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,6 +1270,8 @@ mod tests {
             lt: 110.0,
             font: 0,
             quad: None,
+            pen: None,
+            math_font: false,
         }
     }
 
@@ -674,5 +1347,201 @@ mod tests {
         assert_eq!((lines.len(), words.len()), (10, 100));
         assert_eq!(lines.capacity(), lines.len());
         assert_eq!(words.capacity(), words.len());
+    }
+
+    /// #921, page 8 of the reporter's collective agreement: `und dem` sits in
+    /// a second font resource between runs of the body font, word gaps are
+    /// cursor moves (no space glyph). Glyph boxes as the parser reads them.
+    fn und_dem_line() -> Vec<Glyph> {
+        let at = |ch: char, l: f32, r: f32, font: u64| Glyph {
+            ch,
+            l,
+            b: 682.056,
+            r,
+            t: 691.05,
+            ll: l,
+            lb: 682.056,
+            lr: r,
+            lt: 691.05,
+            font,
+            quad: None,
+            pen: None,
+            math_font: false,
+        };
+        let mut g = Vec::new();
+        let mut run = |text: &str, edges: &[f32], font: u64| {
+            for (i, ch) in text.chars().enumerate() {
+                g.push(at(ch, edges[i], edges[i + 1], font));
+            }
+        };
+        run(
+            "schaft",
+            &[
+                328.976, 333.216, 338.572, 344.325, 350.486, 353.920, 357.248,
+            ],
+            1,
+        );
+        run("und", &[359.261, 365.121, 370.875, 377.035], 2);
+        run("dem", &[378.990, 385.151, 390.701, 399.287], 2);
+        run("Öst", &[401.214, 409.092, 413.332, 416.660], 1);
+        g
+    }
+
+    #[test]
+    fn legacy_rule_keeps_the_borderline_und_dem_glued() {
+        // The baselines' rule: the cell restarts at the font change, so the
+        // threshold is 0.33 × the mean advance of `und` alone (1.9553 pt)
+        // and the 1.9550 pt gap stays inside the word.
+        let (lines, words) = line_and_word_cells(&und_dem_line(), 792.0, true);
+        assert!(lines.iter().any(|c| c.text == "unddem"), "{lines:?}");
+        assert!(words.iter().any(|c| c.text == "unddem"), "{words:?}");
+    }
+
+    #[test]
+    fn line_local_word_gaps_split_und_dem() {
+        for gap in [WordGap::Adaptive, WordGap::Factor(0.2)] {
+            let (lines, words) = line_and_word_cells_with(&und_dem_line(), 792.0, true, gap);
+            let texts: Vec<&str> = lines.iter().map(|c| c.text.as_str()).collect();
+            assert_eq!(texts, ["schaft und dem Öst"], "{gap:?}");
+            let texts: Vec<&str> = words.iter().map(|c| c.text.as_str()).collect();
+            assert_eq!(texts, ["schaft", "und", "dem", "Öst"], "{gap:?}");
+            // The word boxes are the glyphs' own extent.
+            assert!((words[1].l - 359.261).abs() < 1e-3 && (words[1].r - 377.035).abs() < 1e-3);
+        }
+        // A factor above the normalized gaps (0.234 … 0.438) keeps them all.
+        let (lines, _) =
+            line_and_word_cells_with(&und_dem_line(), 792.0, true, WordGap::Factor(0.5));
+        assert_eq!(lines[0].text, "schaftunddemÖst");
+    }
+
+    #[test]
+    fn a_superscript_attaches_by_pen_origin_and_math_face() {
+        // `Lysak` at 10 pt, then `[0000` at 7 pt raised `rise` pt with no gap.
+        // The baseline test reads the pens' origins and font sizes, as
+        // docling-parse 7 does (`pen: None` falls back to the loose boxes).
+        let at = |ch: char, l: f32, y: f32, size: f32, math: bool, pen: bool| Glyph {
+            lb: y - 0.2 * size,
+            lt: y + 0.8 * size,
+            b: y - 0.2 * size,
+            t: y + 0.8 * size,
+            pen: pen.then_some([l, y, size]),
+            math_font: math,
+            ..glyph(ch, l, l + 0.5 * size)
+        };
+        let line = |rise: f32, math: bool, pen: bool| {
+            let mut g: Vec<Glyph> = "Lysak"
+                .chars()
+                .enumerate()
+                .map(|(k, ch)| at(ch, 100.0 + 5.0 * k as f32, 600.0, 10.0, math, pen))
+                .collect();
+            g.extend(
+                "[0000"
+                    .chars()
+                    .enumerate()
+                    .map(|(k, ch)| at(ch, 125.0 + 3.5 * k as f32, 600.0 + rise, 7.0, math, pen)),
+            );
+            let (lines, _) = line_and_word_cells_with(&g, 792.0, true, WordGap::Adaptive);
+            lines[0].text.clone()
+        };
+        // 2305.03393v1's ORCID: 3.6 pt up is more than 0.35 × 7 pt, a new word
+        // unless it is a local attachment, which a TeX face (`cmr`) makes it.
+        assert_eq!(line(3.6, true, true), "Lysak[0000");
+        assert_eq!(line(3.6, false, true), "Lysak [0000");
+        // 2 pt up: on the pens 2.0 ≤ 0.35 × 7, one word; the boxes' bottoms
+        // differ by the descents too (2.6 pt), which read it as two.
+        assert_eq!(line(2.0, false, true), "Lysak[0000");
+        assert_eq!(line(2.0, false, false), "Lysak [0000");
+    }
+
+    #[test]
+    fn a_factor_keeps_docling_parse_s_floor_on_lines_with_space_glyphs() {
+        // `Verpf` + `lichtungen` 0.6 pt apart (0.24 of the flanking advances)
+        // on a line whose word spaces are glyphs: below the 0.35 floor
+        // docling-parse 7 keeps for such lines, so it is not a boundary even
+        // under a factor of 0.2. The same gap on a space-less line splits.
+        let mut g = Vec::new();
+        let mut x = 100.0f32;
+        let put = |g: &mut Vec<Glyph>, s: &str, x: &mut f32| {
+            for ch in s.chars() {
+                g.push(glyph(ch, *x, *x + 2.5));
+                *x += 2.5;
+            }
+        };
+        put(&mut g, "Die", &mut x);
+        g.push(glyph(' ', x, x + 2.5));
+        x += 2.5;
+        put(&mut g, "Verpf", &mut x);
+        x += 0.6;
+        put(&mut g, "lichtungen", &mut x);
+        let (lines, _) = line_and_word_cells_with(&g, 792.0, true, WordGap::Factor(0.2));
+        assert_eq!(lines[0].text, "Die Verpflichtungen");
+        let spaceless: Vec<Glyph> = g.into_iter().filter(|c| c.ch != ' ').collect();
+        let (lines, _) = line_and_word_cells_with(&spaceless, 792.0, true, WordGap::Factor(0.2));
+        assert_eq!(lines[0].text, "Die Verpf lichtungen");
+    }
+
+    #[test]
+    fn right_to_left_glyphs_in_visual_order_stay_one_line() {
+        // Arabic drawn in visual order (the pen moves left to right, as most
+        // producers store it): the gap runs along the pen, not against the
+        // script — reversed, every glyph pair read as a step back of two
+        // advances and each glyph became a line of its own.
+        let mut g = Vec::new();
+        let mut x = 100.0f32;
+        for (k, word) in [
+            "\u{0631}\u{0627}\u{0632}\u{0627}\u{0628}",
+            "\u{0631}\u{062f}",
+        ]
+        .iter()
+        .enumerate()
+        {
+            if k > 0 {
+                x += 3.0;
+            }
+            for ch in word.chars() {
+                g.push(glyph(ch, x, x + 5.0));
+                x += 5.0;
+            }
+        }
+        for gap in [WordGap::Adaptive, WordGap::Factor(0.2)] {
+            let (lines, words) = line_and_word_cells_with(&g, 792.0, true, gap);
+            assert_eq!(
+                lines.len(),
+                1,
+                "{gap:?}: {:?}",
+                lines.iter().map(|c| &c.text).collect::<Vec<_>>()
+            );
+            assert_eq!(words.len(), 2, "{gap:?}");
+        }
+    }
+
+    #[test]
+    fn letter_spacing_stays_one_word_under_the_adaptive_rule() {
+        // Sperrsatz: every letter 1.5 pt apart, the words 6 pt apart. The
+        // line's gaps form two clusters, so the letters stay together.
+        let mut g = Vec::new();
+        let mut x = 100.0f32;
+        for (k, word) in ["Allgemeine", "Bestimmungen"].iter().enumerate() {
+            if k > 0 {
+                x += 6.0;
+            }
+            for ch in word.chars() {
+                g.push(glyph(ch, x, x + 5.0));
+                x += 5.0 + 1.5;
+            }
+            x -= 1.5;
+        }
+        let (lines, _) = line_and_word_cells_with(&g, 792.0, true, WordGap::Adaptive);
+        assert_eq!(lines[0].text, "Allgemeine Bestimmungen");
+    }
+
+    #[test]
+    fn word_gap_spellings() {
+        assert_eq!(WordGap::parse("adaptive"), Ok(WordGap::Adaptive));
+        assert_eq!(WordGap::parse(" Legacy "), Ok(WordGap::Legacy));
+        assert_eq!(WordGap::parse("0.2"), Ok(WordGap::Factor(0.2)));
+        for bad in ["0", "-1", "5", "nan", "wide"] {
+            assert!(WordGap::parse(bad).is_err(), "{bad}");
+        }
     }
 }

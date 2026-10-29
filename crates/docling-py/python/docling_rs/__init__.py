@@ -305,6 +305,12 @@ class DocumentConverter:
       text layer) and ``OcrOptions.scale`` (OCR input resolution in px per PDF
       point), #254. Also accepted docling-shaped, via
       ``pipeline_options.ocr_options.mode`` / ``.scale``.
+    * ``pdf_word_gap`` — where a PDF's text layer splits words the file draws
+      with a cursor move and no space glyph (#921): ``"adaptive"`` (default,
+      docling-parse >= 7's line-local threshold; also
+      ``DOCLING_RS_PDF_WORD_GAP``) | ``"legacy"`` (docling-parse <= 6) | a
+      factor such as ``0.2`` of the two flanking glyphs' mean advance, in
+      (0, 4].
     * ``ocr_textline_orientation`` — RapidOCR's text-line orientation
       handling (#666): detected lines cropped along their rotated rectangle,
       tall crops turned 90°, upside-down lines turned by the 0/180 classifier
@@ -520,6 +526,7 @@ class DocumentConverter:
         ocr_lang: Optional[str] = None,
         ocr_mode: Optional[str] = None,
         ocr_scale: Optional[float] = None,
+        pdf_word_gap: Optional[Union[str, float]] = None,
         ocr_textline_orientation: Optional[bool] = None,
         ocr_engine: Optional[str] = None,
         skip_empty_cells: bool = False,
@@ -787,6 +794,7 @@ class DocumentConverter:
             ocr_lang=ocr_lang,
             ocr_mode=ocr_mode,
             ocr_scale=ocr_scale,
+            pdf_word_gap=None if pdf_word_gap is None else str(pdf_word_gap),
             ocr_textline_orientation=ocr_textline_orientation,
             ocr_engine=ocr_engine,
             skip_empty_cells=skip_empty_cells,

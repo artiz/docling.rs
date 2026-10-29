@@ -24,15 +24,11 @@
 25. If your country has an institutional legal aid provider (e.g. public defender), does it have specialized providers and/or units for representing child victims, child witnesses or suspected and accused children?
 -  Yes, at the national (federal) level
 
-
-
-Yes, at regional (district) level
+ Yes, at regional (district) level
 
 -  Yes, at the local (municipal) level
 
-
-
-No
+ No
 
 26. If your country allows legal aid services through university-based student law clinics, are there national guidelines on how students are supervised in providing legal aid services? (Please select all that apply)
 -  Yes, there are specific guidelines for non-lawyers providing legal aid services

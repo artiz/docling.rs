@@ -120,6 +120,12 @@ pub struct ConverterOptions {
     /// #254); unset reads the pipeline's own 2.0 px/pt render (docling's
     /// default is 3 = 216 dpi).
     pub ocr_scale: Option<f64>,
+    /// Where a PDF's text layer splits words drawn without a space glyph
+    /// (#921): `"adaptive"` (default, docling-parse ≥ 7's line-local
+    /// threshold; also `DOCLING_RS_PDF_WORD_GAP`) | `"legacy"`
+    /// (docling-parse ≤ 6) | a factor such as `"0.2"` of the two flanking
+    /// glyphs' mean advance, in (0, 4].
+    pub pdf_word_gap: Option<String>,
     /// RapidOCR's text-line orientation handling (#666): oriented line
     /// crops, tall lines turned 90°, upside-down lines turned by the 0/180
     /// classifier (`.models/ocr_textline_ori.onnx`). Unset = off unless
@@ -469,6 +475,8 @@ pub struct ConvertOptions {
     /// OCR render scale in px per PDF point (docling's `OcrOptions.scale`,
     /// #254); unset reads the pipeline's own 2.0 px/pt render.
     pub ocr_scale: Option<f64>,
+    /// The PDF text layer's word-gap rule (#921). See [`ConverterOptions`].
+    pub pdf_word_gap: Option<String>,
     /// RapidOCR's text-line orientation handling (#666). See
     /// [`ConverterOptions`].
     pub ocr_textline_orientation: Option<bool>,
@@ -1629,6 +1637,9 @@ struct WarmPipelineConfig {
     tesseract_lang: Option<String>,
     ocr_mode: Option<docling::OcrMode>,
     ocr_scale: Option<f32>,
+    /// The PDF text layer's word-gap rule (#921); `None` = the
+    /// environment's default.
+    word_gap: Option<docling::PdfWordGap>,
     /// RapidOCR's text-line orientation handling (#666); `None` = the
     /// environment's default.
     ocr_textline_orientation: Option<bool>,
@@ -1664,6 +1675,7 @@ fn warm_pipeline_config(o: &ConverterOptions) -> Result<WarmPipelineConfig> {
         tesseract_lang: s.tesseract_lang().map_err(option_err)?,
         ocr_mode: s.ocr_mode().map_err(option_err)?,
         ocr_scale: s.ocr_scale,
+        word_gap: s.pdf_word_gap().map_err(option_err)?,
         ocr_textline_orientation: s.ocr_textline_orientation,
         images: s.image_output(),
         enrich: s.enrichments(),
@@ -1675,7 +1687,7 @@ impl Pipeline {
     /// Construct the pipeline. `strict` (cleaner Markdown), the three
     /// enrichment switches (`doPictureClassification`, `doCodeEnrichment`,
     /// `doFormulaEnrichment`, #423) and every PDF/image option the one-shot
-    /// calls honour — `ocrEngine`, `ocrLang`, `ocrMode`, `ocrScale`,
+    /// calls honour — `ocrEngine`, `ocrLang`, `ocrMode`, `ocrScale`, `pdfWordGap`,
     /// `noOcr`, `textLayerOnly`, `password`, `forceFullPageOcr`,
     /// `noTextPanels`, `headingHierarchy`,
     /// `pages` — are read here and apply to every conversion on this
@@ -1732,6 +1744,7 @@ impl Pipeline {
             .tesseract_lang(warm.tesseract_lang)
             .ocr_mode(warm.ocr_mode)
             .ocr_scale(warm.ocr_scale)
+            .word_gap(warm.word_gap)
             .images_scale(warm.images.scale)
             .generate_page_images(warm.images.page_images)
             .pages(warm.page_range)
@@ -3076,6 +3089,7 @@ mod tests {
                 tesseract_lang: None,
                 ocr_mode: None,
                 ocr_scale: None,
+                word_gap: None,
                 ocr_textline_orientation: None,
                 images: docling::ImageOutput::default(),
                 enrich: docling::EnrichmentOptions::default(),

@@ -1,6 +1,4 @@
-Transformer Block ×
-
-𝐿𝐿
+Transformer Block ×𝐿𝐿
 
 Feed-Forward Network
 
@@ -12,17 +10,15 @@ RMSNorm
 
 0
 
-Output Hidden 𝐡𝐡
-
-𝑡𝑡 ... ...
+Output Hidden 𝐡𝐡𝑡𝑡′
 
 1
 
 ...
 
-′
+𝑁𝑁𝑠𝑠
 
-𝑠𝑠
+... ...
 
 1
 
@@ -30,63 +26,17 @@ Output Hidden 𝐡𝐡
 
 Router
 
-... 1 ...
+1 ... ...
 
 Multi-Head Latent Attention (MLA)
 
 0
 
-Output Hidden
-
-{[ 𝐪𝐪 𝑡𝑡 , 𝑖𝑖 𝐶𝐶 ; 𝐪𝐪 𝑡𝑡 , 𝑖𝑖 𝑅𝑅 ]}
-
-... ...
-
-Multi-Head Attention 𝐤𝐤
-
-𝑅𝑅
-
-concatenate apply
-
-{ 𝐪𝐪 𝑡𝑡 , 𝑖𝑖 𝐶𝐶 } { 𝐪𝐪 𝑡𝑡 , 𝑖𝑖 𝑅𝑅 }
-
-{ 𝐯𝐯
-
-{[ 𝐤𝐤 𝑡𝑡 , 𝑖𝑖 𝐶𝐶 ; 𝐤𝐤 𝑡𝑡 𝑅𝑅 ]}
-
-𝐮𝐮
+Output Hidden 𝐮𝐮𝑡𝑡
 
 concatenate
 
-...
-
-Latent
-
-Input Hidden apply 𝑡𝑡
-
-RoPE
-
-... ...
-
-𝑡𝑡 , 𝑖𝑖 𝐶𝐶 } { 𝐤𝐤 𝑡𝑡 , 𝑖𝑖 𝐶𝐶 }
-
-Latent
-
-...
-
-𝑡𝑡
-
-𝑄𝑄 RoPE
-
-𝐜𝐜
-
-𝑡𝑡
-
-𝑁𝑁
-
-3
-
-4
+{[𝐪𝐪𝑡𝑡,𝑖𝑖 𝐶𝐶 ; 𝐪𝐪𝑡𝑡,𝑖𝑖 𝑅𝑅 ]}
 
 Routed Expert
 
@@ -94,18 +44,44 @@ Shared Expert
 
 ...
 
-Top- Input Hidden
+𝑁𝑁𝑟𝑟-1 𝑁𝑁𝑟𝑟
 
-𝐾𝐾 𝑟𝑟
+3
 
-𝑁𝑁 𝑟𝑟 -1 𝑁𝑁
+4
 
-𝑟𝑟
+Top-𝐾𝐾𝑟𝑟
 
-𝐮𝐮
+Input Hidden 𝐮𝐮𝑡𝑡
 
-𝑡𝑡
+Cached During Inference
 
-Cached During Inference 𝐜𝐜
+... ...
 
-𝑡𝑡 𝐾𝐾𝐾𝐾
+Multi-Head Attention 𝐤𝐤𝑡𝑡𝑅𝑅
+
+{[𝐤𝐤𝑡𝑡,𝑖𝑖 𝐶𝐶 ; 𝐤𝐤𝑡𝑡𝑅𝑅 ]}
+
+{𝐪𝐪𝑡𝑡,𝑖𝑖 𝐶𝐶 } {𝐪𝐪𝑡𝑡,𝑖𝑖 𝑅𝑅 }
+
+{𝐯𝐯𝑡𝑡,𝑖𝑖
+
+...
+
+Input Hidden
+
+𝐶𝐶 } {𝐤𝐤𝑡𝑡,𝑖𝑖 𝐶𝐶 }
+
+...
+
+concatenate apply
+
+Latent 𝐜𝐜𝑡𝑡𝑄𝑄 RoPE
+
+apply
+
+RoPE
+
+... ...
+
+Latent 𝐜𝐜𝑡𝑡𝐾𝐾𝐾𝐾

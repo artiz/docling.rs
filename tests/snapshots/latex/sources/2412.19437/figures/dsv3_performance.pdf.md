@@ -40,7 +40,7 @@ Claude-3.5-Sonnet-1022
 
 Codeforces
 
-( Percentile )
+(Percentile)
 
 50.8
 
@@ -54,7 +54,7 @@ Codeforces
 
 MMLU-Pro
 
-( EM )
+(EM)
 
 59.1
 
@@ -68,7 +68,7 @@ MMLU-Pro
 
 GPQA-Diamond
 
-( Pass @1)
+(Pass@1)
 
 65.0
 
@@ -82,7 +82,7 @@ GPQA-Diamond
 
 MATH 500
 
-( EM )
+(EM)
 
 39.2
 
@@ -92,7 +92,7 @@ MATH 500
 
 AIME 2024
 
-( Pass @1)
+(Pass@1)
 
 23.3 23.3
 
@@ -110,4 +110,4 @@ AIME 2024
 
 SWE-bench Verified
 
-( Resolved )
+(Resolved)

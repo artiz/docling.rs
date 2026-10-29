@@ -96,6 +96,7 @@ pub(crate) struct StreamSettings {
     pub tesseract_lang: Option<String>,
     pub ocr_mode: Option<docling_pdf::OcrMode>,
     pub ocr_scale: Option<f32>,
+    pub word_gap: Option<docling_pdf::WordGap>,
     /// [`DocumentConverter::ocr_textline_orientation`] (#666); `None` keeps
     /// the pipeline's environment default.
     pub ocr_textline_orientation: Option<bool>,
@@ -286,6 +287,7 @@ fn run_pdf(
             .tesseract_lang(settings.tesseract_lang.clone())
             .ocr_mode(settings.ocr_mode)
             .ocr_scale(settings.ocr_scale)
+            .word_gap(settings.word_gap)
             .images_scale(settings.images_scale)
             .enrichments(settings.enrich)
             .pages(settings.page_range)

@@ -1,8 +1,4 @@
-)
-
-β
-
-log([OIII]/H
+log([OIII]/Hβ)
 
 1.0
 
@@ -26,4 +22,4 @@ SL 17
 
 0.5
 
-log([NII]/H α )
+log([NII]/Hα)

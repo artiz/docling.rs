@@ -41,8 +41,8 @@ bulk of the porting under review).
 > against *live* docling; the PDF/image/METS ML path lives in `docling-pdf`
 > (a pure-Rust PDF text/metadata parser and page renderer — no native PDF library; the docling-parse renderer plugin is a development oracle — + ONNX
 > layout/TableFormer/OCR + a port of docling-parse's line sanitizer) and is also
-> measured byte-for-byte against live docling — **6 / 14 PDF fixtures exact, 7 / 14
-> whitespace-normalized** (see `PDF_CONFORMANCE.md`), with a snapshot baseline
+> measured byte-for-byte against live docling (2.144, docling-parse 7.24.1) —
+> **7 / 18 PDF fixtures exact, 389 diff lines** (see `PDF_CONFORMANCE.md`), with a snapshot baseline
 > guarding against regressions. `cargo test` is green (unit tests + a 159-source
 > output-regression suite).
 
@@ -1002,7 +1002,7 @@ converted once more as that format with a warning.
 #### JSON-docling
 
 **Backend:** `docling_json.rs` (serde_json)\
-**Status:** Measured by re-serializing docling's *own* documents (`tests/data/pdf/groundtruth/*.json`) and diffing against docling-core 2.96's render of the same file: **14/14 byte-exact** (#384 took it from 479 diff lines to 19, #385 to none — the last 19 were the Markdown serializer's guessed list boundaries)
+**Status:** Measured by re-serializing docling's *own* documents (`tests/data/pdf/groundtruth/*.json`) and diffing against docling-core's render of the same file: **15/15 byte-exact** (docling-core 2.103.1 on the docling-parse 7 groundtruth refreshed for #921; 14/14 against 2.96 before; #384 took it from 479 diff lines to 19, #385 to none — the last 19 were the Markdown serializer's guessed list boundaries)
 
 - #390: a caption's parent survives the round trip — on its picture/table (a PDF conversion), on the item's container ahead of or behind it (a chart, an HTML figure table), or on the body
 - #403: a picture's `image` (docling's `ImageRef`) comes back with the document
@@ -1453,8 +1453,8 @@ content-type resolution, and image extraction — reused by DOCX/PPTX/XLSX/EPUB.
 
 These run docling's *discriminative* PDF pipeline ported to ONNX. They are now
 measured **byte-for-byte against live docling** (the committed PDF groundtruth is
-regenerated from it): **6 / 14 exact (7 / 14 whitespace-normalized)**, the rest
-close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
+regenerated from it; docling 2.144 reproduces it byte for byte): **7 / 18
+exact, 389 diff lines**, the rest close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
 (`scripts/conformance/pdf_conformance.sh`) still guards against regressions.
 
 #### PDF
@@ -2087,12 +2087,10 @@ These are deliberate or unavoidable divergences, not bugs.
      dropped (Form-XObject text and glyph-name-only fonts were the two classes it
      surfaced and fixed).
    - Output is measured **byte-for-byte against live docling** (PDF_CONFORMANCE.md):
-     **6 / 14 exact, 7 / 14 whitespace-normalized**, the rest close. The remaining
-     gaps are model-level (TableFormer structure on complex tables, layout
-     classification, title-page reading order) plus `amt`'s fraction spacing — a
-     docling quirk from its embedded-font OS/2 metrics that our single-spaced output
-     renders more faithfully; matching it exactly needs a font-metrics layer that
-     entangles with the RTL box geometry. The full per-fixture breakdown and the
+     **7 / 18 exact, 389 diff lines**, the rest close. The remaining gaps are
+     model-level (TableFormer structure on complex tables, layout
+     classification, title-page reading order) plus docling-parse 7's own
+     glyph mappings (`∞` for a list bullet, `tildelow` for `~`). The full per-fixture breakdown and the
      model-level blockers live in `PDF_CONFORMANCE.md`.
 
 6. **Extracted image bytes are real but not byte-identical.** Cropped/embedded
@@ -2337,6 +2335,58 @@ These are deliberate or unavoidable divergences, not bugs.
     compound and keeps its dash and space (`Warte- und Behaltefristen`);
     docling fuses it (`Warteund`). Every other wrapped word still fuses
     (docling#3888).
+
+21. **Word gaps without space glyphs** (#921, `pdf_word_gap`). When a PDF
+    marks a word boundary with a cursor move and no space glyph, the text
+    layer decides it from the gap's width. The default (`adaptive`) is
+    docling-parse ≥ 7's rule (docling-parse#351, 2026-09), what docling
+    itself runs on since it pins `docling-parse>=7.22`: lines come from
+    geometry, each gap is divided by the mean advance of the two glyphs
+    flanking it — measured along the pen, so right-to-left text drawn in
+    visual order reads as docling-parse reads it — and a line-local 1-D
+    two-cluster threshold (0.18–0.35, 0.25 when the gaps do not separate)
+    decides. A number `F` is a fixed threshold for that ratio on lines
+    without space glyphs (0.1–0.23 suits body text); a line that draws its
+    spaces keeps docling-parse 7's floor of 0.35, so a loosely kerned `f|l`
+    (0.24 in EUR-Lex notices) is no boundary. `legacy` keeps docling-parse ≤ 6's rule, this port's
+    default until #921: a gap splits when it exceeds 0.33 × the running
+    mean advance of the cell built so far in that contraction pass, and
+    cells restart at every font change (`enforce_same_font`), so the
+    threshold drifts along a line (#921's `und dem`, in a second font
+    inside body text: gap 1.9550 pt, threshold 0.33 × 5.925 = 1.9553 pt →
+    `unddem`). With the switch came docling-parse#349's quote folding —
+    `“ ” „ ‟` → `"`, single quotes still `'` — which applies whatever the
+    word-gap mode. Against docling 2.144 (docling-parse 7.24.1) on the
+    PDF groundtruth the two took the corpus from 6 / 18 strict and 815
+    diff lines to 7 / 18 and 389 (`PDF_CONFORMANCE.md`). Its word test is
+    ported in full: a baseline shift is read on the pens' origins (rise
+    included) against the font size, not on the loose boxes, and a glyph in
+    a TeX/math face (`cmr`, `cmmi`, `msbm`, `…math…`, `symbol`) next to its
+    base is a local attachment — `Lysak[0000-…]`, `LATEX`, `1025×1025`. **Divergence:
+    letter spacing.** A letter-spaced (Sperrsatz) word is one constant
+    cursor move between its letters, but divided by the advances of `i`,
+    `l`, `t` beside `M` or `D` its gaps spread over 0.25–0.75 and straddle
+    every threshold, so docling-parse 7.24.1 cuts it mid-word — `Di ens tk
+    lasse I`, `Heimarbei tstari f`, `De r Bu n d e s k a n z l e r`, `N O T I
+    Z E N` (#921's five fixtures: 105 of 156 letter gaps cut). Here a chain
+    of three or more open letter gaps equal in points (within max(0.25 pt,
+    8 %)) whose flanks hold nothing tighter is tracking and stays inside
+    the word; the run's other gaps of the same width join it (`für`, `II`,
+    a closing `:`), and four or more dots in a row are one leader. The
+    flank test keeps justified prose apart — its equal word gaps chain up
+    across one-letter words (`Peter W J Staar`, `Abs 1 Z 3 UrlG`) but sit
+    between abutting letters — and one character repeated (`C C C C`, an
+    OTSL figure's token row) is no word. On the five fixtures every
+    letter-spaced word reads whole and all 45 cursor-move word gaps still
+    split, under `adaptive` and under every `F` from 0.1 to 0.23 (the
+    issue's reporter confirmed it on their side, and on 127 statute and
+    collective-agreement excerpts `adaptive` introduced no new glue and no
+    mid-word cut); on the
+    81 PDFs of the test corpus the detection changes nothing else. On
+    #921's 92-page document, leader dots aside, words match docling-parse
+    7.24.1's 98.9 % under `adaptive` (98.1 % under `legacy`) and lines
+    96.1 % (76.7 %) — the rest character normalization and the
+    letter-spaced words above.
 
 ---
 

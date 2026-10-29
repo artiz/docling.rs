@@ -1,48 +1,12 @@
 //! Text-layer typography regressions (#919–#923): synthetic one-page PDFs run
 //! through the pure-Rust `convert_text_layer` (no models, so no `ml` gate).
 
+#[path = "support/one_page_pdf.rs"]
+mod one_page_pdf;
+use one_page_pdf::pdf_bytes;
+
 fn pdf(content: &str) -> Vec<u8> {
     pdf_bytes(content.as_bytes())
-}
-
-/// A one-page A4 PDF drawing `content` in Helvetica (`/F1`, WinAnsi).
-fn pdf_bytes(content: &[u8]) -> Vec<u8> {
-    let stream = [
-        format!("<</Length {}>>stream\n", content.len()).as_bytes(),
-        content,
-        b"\nendstream",
-    ]
-    .concat();
-    let objs: Vec<Vec<u8>> = vec![
-        b"<</Type/Catalog/Pages 2 0 R>>".to_vec(),
-        b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec(),
-        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R\
-          /Resources<</Font<</F1 5 0 R>>>>>>"
-            .to_vec(),
-        stream,
-        b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>".to_vec(),
-    ];
-    let mut out = b"%PDF-1.4\n".to_vec();
-    let mut offsets = Vec::new();
-    for (i, body) in objs.iter().enumerate() {
-        offsets.push(out.len());
-        out.extend_from_slice(format!("{} 0 obj", i + 1).as_bytes());
-        out.extend_from_slice(body);
-        out.extend_from_slice(b"endobj\n");
-    }
-    let xref_at = out.len();
-    out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
-    for off in &offsets {
-        out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
-    }
-    out.extend_from_slice(
-        format!(
-            "trailer<</Size {}/Root 1 0 R>>\nstartxref\n{xref_at}\n%%EOF\n",
-            objs.len() + 1
-        )
-        .as_bytes(),
-    );
-    out
 }
 
 fn text_of(pdf: &[u8]) -> String {
@@ -60,7 +24,7 @@ fn body_line(y: i32) -> String {
 
 /// #922: WinAnsi 0x84 (`„`) is in the 0x80–0x9F row the table lacked; the
 /// closing `“` (0x93) was kept, the opening mark vanished. docling's sanitizer
-/// maps both to `'` (`clean_text`).
+/// maps both to `"` (`clean_text`; `'` before docling-parse#349).
 #[test]
 fn low_opening_quote_survives() {
     let content = format!(
@@ -69,7 +33,7 @@ fn low_opening_quote_survives() {
     );
     let text = text_of(&pdf(&content));
     assert!(
-        text.contains("Teilen 'Gewinn oder Verlust' und 'sonstiges' Ergebnis"),
+        text.contains("Teilen \"Gewinn oder Verlust\" und \"sonstiges\" Ergebnis"),
         "{text:?}"
     );
 }

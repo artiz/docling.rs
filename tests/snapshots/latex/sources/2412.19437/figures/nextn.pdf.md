@@ -6,29 +6,19 @@ Main Model
 
 Output Head MTP Module 1
 
-(Next 2  Token Prediction)
+(Next 2 Token Prediction)
 
 Output Head
 
-Transformer Block
+Transformer Block ×𝐿𝐿 Transformer Block ×𝐿𝐿
 
-Transformer Block
+Transformer Block ×𝐿𝐿
 
-Transformer Block
-
-Transformer Block
-
-× 𝐿𝐿 × 𝐿𝐿
-
-× 𝐿𝐿
-
-× 𝐿𝐿
-
-Transformer Block
+Transformer Block ×𝐿𝐿 Transformer Block ×𝐿𝐿
 
 Embedding Layer Transformer Block Linear Projection concatenation RMSNorm RMSNorm Embedding Layer MTP Module 2
 
-(Next 3  Token Prediction)
+(Next 3 Token Prediction)
 
 Output Head
 
@@ -40,30 +30,18 @@ RMSNorm RMSNorm
 
 Embedding Layer
 
-× 𝐿𝐿
-
-ℒ
-
-𝑀𝑀𝑀𝑀𝑀𝑀𝑀𝑀
+ℒ𝑀𝑀𝑀𝑀𝑀𝑀𝑀𝑀
 
 Shared
 
 Shared
 
-ℒ
+ℒMTP 1
 
-1
-
-MTP
+ℒMTP 2
 
 Shared
 
 Shared
-
-ℒ
-
-2
-
-MTP
 
 ··

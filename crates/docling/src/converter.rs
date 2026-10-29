@@ -307,6 +307,9 @@ pub struct DocumentConverter {
     ocr_engine: Option<String>,
     /// OCR render scale in px/pt (#254); validated at the ML call sites.
     ocr_scale: Option<f32>,
+    /// The PDF text layer's word-gap rule (#921); parsed at the PDF call
+    /// sites. See [`Self::pdf_word_gap`].
+    pdf_word_gap: Option<String>,
     /// RapidOCR's line orientation handling (#666); `None` = the
     /// environment's default. See [`Self::ocr_textline_orientation`].
     ocr_textline_orientation: Option<bool>,
@@ -613,6 +616,7 @@ impl Default for DocumentConverter {
             ocr_mode: None,
             ocr_engine: None,
             ocr_scale: None,
+            pdf_word_gap: None,
             ocr_textline_orientation: None,
             images_scale: None,
             generate_page_images: false,
@@ -806,6 +810,7 @@ impl DocumentConverter {
         p.set_tesseract_lang(self.tesseract_lang_choice());
         p.set_ocr_mode(self.ocr_mode_choice());
         p.set_ocr_scale(self.ocr_scale_choice());
+        p.set_word_gap(self.pdf_word_gap_choice());
         p.set_images(docling_pdf::ImageOutput {
             scale: self.images_scale,
             page_images: self.generate_page_images,
@@ -936,6 +941,20 @@ impl DocumentConverter {
             );
         }
         parsed
+    }
+
+    /// The parsed [`Self::pdf_word_gap`] choice (#921), with the same
+    /// warn-and-default degradation as [`ocr_mode_choice`](Self::ocr_mode_choice).
+    #[cfg(any(feature = "pdf", feature = "pdf-text"))]
+    fn pdf_word_gap_choice(&self) -> Option<docling_pdf::WordGap> {
+        let raw = self.pdf_word_gap.as_deref()?;
+        match docling_pdf::WordGap::parse(raw) {
+            Ok(gap) => Some(gap),
+            Err(e) => {
+                eprintln!("docling: {e}; using the default");
+                None
+            }
+        }
     }
 
     /// The validated [`Self::ocr_scale`] (#254): non-positive/non-finite
@@ -2290,6 +2309,26 @@ impl DocumentConverter {
         self
     }
 
+    /// How a PDF's text layer splits words where the file draws no space
+    /// glyph, only a cursor move (#921). `adaptive` (the default; also
+    /// `DOCLING_RS_PDF_WORD_GAP`) is docling-parse ≥ 7's rule, what docling
+    /// itself runs on: each gap over the mean advance of the two glyphs
+    /// flanking it, against a line-local two-cluster threshold (clamped to
+    /// 0.18–0.35). A number `f` in (0, 4] is a fixed threshold for that
+    /// ratio on lines without space glyphs (0.1–0.23 suits most body text;
+    /// a line that draws its spaces keeps docling-parse's 0.35 floor). Both keep letter-spaced
+    /// (Sperrsatz) words whole — equal cursor moves between letters are
+    /// tracking, where docling-parse 7 cuts mid-word. `legacy` is
+    /// docling-parse ≤ 6's rule: a gap separates words when it exceeds 0.33 ×
+    /// the running mean advance of the cell built so far, and cells restart
+    /// at every font change — so the threshold drifts along a line. All
+    /// apply to the exported line text and the word cells. An unknown value
+    /// warns at conversion time and uses the default. PDF text layer only.
+    pub fn pdf_word_gap(mut self, gap: impl Into<String>) -> Self {
+        self.pdf_word_gap = Some(gap.into());
+        self
+    }
+
     /// RapidOCR's handling of text-line orientation (#666), off by default
     /// (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION` sets the process default):
     /// detected lines are cropped along the detector's rotated rectangle, a
@@ -2675,6 +2714,7 @@ impl DocumentConverter {
             tesseract_lang: self.tesseract_lang_choice(),
             ocr_mode: self.ocr_mode_choice(),
             ocr_scale: self.ocr_scale_choice(),
+            word_gap: self.pdf_word_gap_choice(),
             ocr_textline_orientation: self.ocr_textline_orientation,
             images_scale: self.images_scale,
             keep_picture_images: self.keep_picture_images,
@@ -3190,10 +3230,11 @@ impl DocumentConverter {
                 // needs OCR" — say so instead of returning nothing.
                 #[cfg(all(feature = "pdf-text", not(feature = "pdf")))]
                 InputFormat::Pdf => {
-                    let doc = docling_pdf::convert_text_layer_pages(
+                    let doc = docling_pdf::convert_text_layer_pages_with(
                         &source.bytes,
                         &source.name,
                         self.page_range,
+                        self.pdf_word_gap_choice(),
                     )
                     .map_err(|e| ConversionError::with_source("pdf", e))?;
                     if doc.nodes.is_empty() {
