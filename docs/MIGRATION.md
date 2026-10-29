@@ -42,7 +42,7 @@ bulk of the porting under review).
 > (a pure-Rust PDF text/metadata parser and page renderer — no native PDF library; the docling-parse renderer plugin is a development oracle — + ONNX
 > layout/TableFormer/OCR + a port of docling-parse's line sanitizer) and is also
 > measured byte-for-byte against live docling (2.144, docling-parse 7.24.1) —
-> **7 / 18 PDF fixtures exact, 393 diff lines** (see `PDF_CONFORMANCE.md`), with a snapshot baseline
+> **7 / 18 PDF fixtures exact, 389 diff lines** (see `PDF_CONFORMANCE.md`), with a snapshot baseline
 > guarding against regressions. `cargo test` is green (unit tests + a 159-source
 > output-regression suite).
 
@@ -1454,7 +1454,7 @@ content-type resolution, and image extraction — reused by DOCX/PPTX/XLSX/EPUB.
 These run docling's *discriminative* PDF pipeline ported to ONNX. They are now
 measured **byte-for-byte against live docling** (the committed PDF groundtruth is
 regenerated from it; docling 2.144 reproduces it byte for byte): **7 / 18
-exact, 393 diff lines**, the rest close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
+exact, 389 diff lines**, the rest close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
 (`scripts/conformance/pdf_conformance.sh`) still guards against regressions.
 
 #### PDF
@@ -2087,11 +2087,10 @@ These are deliberate or unavoidable divergences, not bugs.
      dropped (Form-XObject text and glyph-name-only fonts were the two classes it
      surfaced and fixed).
    - Output is measured **byte-for-byte against live docling** (PDF_CONFORMANCE.md):
-     **7 / 18 exact, 393 diff lines**, the rest close. The remaining gaps are
+     **7 / 18 exact, 389 diff lines**, the rest close. The remaining gaps are
      model-level (TableFormer structure on complex tables, layout
      classification, title-page reading order) plus docling-parse 7's own
-     glyph mappings (`∞` for a list bullet, `tildelow` for `~`) and the
-     baseline test of superscripts. The full per-fixture breakdown and the
+     glyph mappings (`∞` for a list bullet, `tildelow` for `~`). The full per-fixture breakdown and the
      model-level blockers live in `PDF_CONFORMANCE.md`.
 
 6. **Extracted image bytes are real but not byte-identical.** Cropped/embedded
@@ -2359,7 +2358,11 @@ These are deliberate or unavoidable divergences, not bugs.
     `“ ” „ ‟` → `"`, single quotes still `'` — which applies whatever the
     word-gap mode. Against docling 2.144 (docling-parse 7.24.1) on the
     PDF groundtruth the two took the corpus from 6 / 18 strict and 815
-    diff lines to 7 / 18 and 393 (`PDF_CONFORMANCE.md`). **Divergence:
+    diff lines to 7 / 18 and 389 (`PDF_CONFORMANCE.md`). Its word test is
+    ported in full: a baseline shift is read on the pens' origins (rise
+    included) against the font size, not on the loose boxes, and a glyph in
+    a TeX/math face (`cmr`, `cmmi`, `msbm`, `…math…`, `symbol`) next to its
+    base is a local attachment — `Lysak[0000-…]`, `LATEX`, `1025×1025`. **Divergence:
     letter spacing.** A letter-spaced (Sperrsatz) word is one constant
     cursor move between its letters, but divided by the advances of `i`,
     `l`, `t` beside `M` or `D` its gaps spread over 0.25–0.75 and straddle

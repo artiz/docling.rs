@@ -4,15 +4,15 @@ llncs, Version 2.22, Sep 05, 2022
 
 ## 1 Installation
 
-Copy llncs.cls to a directory that is searched by L A TEX, e.g. either your texmf tree or the local work directory with your main L A TEX file.
+Copy llncs.cls to a directory that is searched by LATEX, e.g. either your texmf tree or the local work directory with your main LATEX file.
 
 ## 2 Working with the llncs Document Class
 
 ## 2.1 General Information
 
-The llncs class is an extension of the standard L A TEX article class. Therefore you may use all article commands in your manuscript.
+The llncs class is an extension of the standard LATEX article class. Therefore you may use all article commands in your manuscript.
 
-If you are already familiar with L A TEX, the llncs class should not give you any major difficulties. It basically adjusts the layout to the required standard, defining styles and spacing of headings and captions and setting the printing area to 122mm horizontally by 193mm vertically. To keep the layout consistent, we kindly ask you to refrain from using any L A TEX or TEX command that modifies these settings (i.e. \textheight, \vspace, baselinestretch, etc.). Such manual layout adjustments should be limited to very exceptional cases.
+If you are already familiar with LATEX, the llncs class should not give you any major difficulties. It basically adjusts the layout to the required standard, defining styles and spacing of headings and captions and setting the printing area to 122mm horizontally by 193mm vertically. To keep the layout consistent, we kindly ask you to refrain from using any LATEX or TEX command that modifies these settings (i.e. \textheight, \vspace, baselinestretch, etc.). Such manual layout adjustments should be limited to very exceptional cases.
 
 In addition to defining the general layout, the llncs document class provides some special commands for typesetting the contribution header, i.e. title, authors, affiliations, abstract, and additional metadata. These special commands are described in Sect. 3.
 
@@ -20,7 +20,7 @@ For a more detailed description of how to prepare your text, illustrations, and 
 
 ## 2.2 How to Use the llncs Document Class
 
-The llncs class is invoked by replacing article by llncs in the first line of your L A TEX document:
+The llncs class is invoked by replacing article by llncs in the first line of your LATEX document:
 
 \documentclass{llncs}
 
@@ -128,7 +128,7 @@ The keyword separator will then be properly rendered as a middle dot.
 
 ## 4.1 General Rules
 
-From a technical point of view, the llncs document class does not require any specific L A TEX coding in the body of your paper. You can simply use the commands provided by the 'article' document class. For more information about what will be done with your manuscript before publication, please refer to the Springer Guidelines for Authors of Proceedings.
+From a technical point of view, the llncs document class does not require any specific LATEX coding in the body of your paper. You can simply use the commands provided by the 'article' document class. For more information about what will be done with your manuscript before publication, please refer to the Springer Guidelines for Authors of Proceedings.
 
 ## 4.2 Special Math Characters
 
@@ -223,9 +223,9 @@ Please note that this option does not automatically change your citations to the
 \bibitem[2016]{vdaalst:2016} van der Aalst, W.: Process Mining, 2nd ed. Springer, Heidelberg(2016) and is cited as follows: ... is shown by van der Aalst(\cite{vdaalst:2016}) the resulting text will be: "...is shown by van der Aalst(2016)."
 ```
 
-splncs04.bst We encourage you to use Bib TEX for typesetting your references. For formatting the bibliography according to Springer's standard (for mathematics, physical sciences, and computer science), please use the bibliography style file splncs04.bst that comes with the llncs document class. You simply need to add \bibliographystyle{splncs04} to your document. DOIs should be provided in the doi field of your .bib database. Bib TEX will then automatically add them to your references. Please note that we do not provide an option to implement
+splncs04.bst We encourage you to use BibTEX for typesetting your references. For formatting the bibliography according to Springer's standard (for mathematics, physical sciences, and computer science), please use the bibliography style file splncs04.bst that comes with the llncs document class. You simply need to add \bibliographystyle{splncs04} to your document. DOIs should be provided in the doi field of your .bib database. BibTEX will then automatically add them to your references. Please note that we do not provide an option to implement
 
-If you do not use Bib TEX, you can include a DOI with the \doi command: \doi
+If you do not use BibTEX, you can include a DOI with the \doi command: \doi
 
 \doi{&lt;DOI&gt;}
 
@@ -235,7 +235,7 @@ The DOI will be expanded to the URL https://doi.org/&lt;DOI&gt; in accordance wi
 
 The llncs document class contains several class options that have become obsolete over the years. We only mention them for completeness:
 
-- The llncs document class changes the formatting of vectors coded with orivec \vec to boldface italics. If you absolutely need the original L A TEX design for vectors, i.e. an arrow above the related variable, you can restore it with the orivec option.
+- The llncs document class changes the formatting of vectors coded with orivec \vec to boldface italics. If you absolutely need the original LATEX design for vectors, i.e. an arrow above the related variable, you can restore it with the orivec option.
 
 envcountsame
 
@@ -246,4 +246,4 @@ envcountreset envcountsect openbib oribibl
 - All theorem-like environments are numbered per section, i.e. the related counters are reset to 1 in every section.
 - All theorem-like environments are numbered per section, and the section number added to the individual counter, i.e. Theorem 1.2, Lemma 2.2, etc.
 - This option produces the "open" bibliography style, in which each block starts on a new line, and succeeding lines in a block are indented by \bibindent.
-- This option restores the original L A TEX definitions for the bibliography and the \cite mechanism that some Bib TEX applications rely on.
+- This option restores the original LATEX definitions for the bibliography and the \cite mechanism that some BibTEX applications rely on.

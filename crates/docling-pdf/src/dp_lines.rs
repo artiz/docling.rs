@@ -55,6 +55,11 @@ struct Cell {
     b_r: f64,
     b_b: f64,
     b_t: f64,
+    /// The pen's origin and the font size, `[x, y, size]` ([`Glyph::pen`]),
+    /// for the word contraction's baseline test (#921).
+    pen: Option<[f64; 3]>,
+    /// The glyph's font is a math face ([`Glyph::math_font`]).
+    math_font: bool,
 }
 
 impl Cell {
@@ -420,6 +425,8 @@ fn build_cells(glyphs: &[Glyph], euclidean: bool) -> Vec<Cell> {
             b_r: (g.ll as f64).max(g.lr as f64),
             b_b: (g.lb as f64).min(g.lt as f64),
             b_t: (g.lb as f64).max(g.lt as f64),
+            pen: g.pen.map(|p| p.map(f64::from)),
+            math_font: g.math_font,
         });
     }
     cells
@@ -756,8 +763,9 @@ fn facing_edge_overlap(lhs: &RunCell, rhs: &RunCell) -> f64 {
     a0.max(a1).min(b0.max(b1)) - a0.min(a1).max(b0.min(b1))
 }
 
-/// A glyph of a mathematical layout (`has_math_positioning_semantics`, by
-/// its symbols — the font-name half needs names the char cells don't keep).
+/// A glyph of a mathematical layout by its symbols — the symbol half of
+/// `has_math_positioning_semantics`; the font-name half is
+/// [`Glyph::math_font`].
 fn is_math_glyph(text: &str) -> bool {
     const MATH: &str = "∑∏∫√∞∈∉≠≤≥⊂⊃⊆⊇⊥∪∩⎛⎜⎝⎞⎟⎠⎡⎢⎣⎤⎥⎦";
     text.chars().any(|c| MATH.contains(c))
@@ -770,10 +778,30 @@ fn is_local_attachment(lhs: &RunCell, rhs: &RunCell) -> bool {
     if forward_gap(lhs, rhs) > 0.10 * scale {
         return false;
     }
+    let (off, (lh, rh)) = baseline_offset(lhs, rhs);
+    let math = |c: &RunCell| c.cell.math_font || is_math_glyph(&c.cell.text);
+    off <= 2.0 * lh.max(rh).max(1e-6) && (math(lhs) || math(rhs))
+}
+
+/// How far `rhs` sits from `lhs`'s baseline, across `lhs`'s writing axis,
+/// and the two glyphs' nominal heights: the pens' origins and the font sizes
+/// when the parser knows them (docling-parse's `text_origin` /
+/// `nominal_text_height`), else the loose boxes' bottom corners and heights.
+/// The boxes overstate a size change — a superscript's box bottom sits only
+/// its own, smaller descent below a raised baseline — so `Lysak` + its ORCID
+/// read as two words where docling-parse 7 keeps one.
+fn baseline_offset(lhs: &RunCell, rhs: &RunCell) -> (f64, (f64, f64)) {
     let (nx, ny) = (-lhs.uy, lhs.ux);
-    let off = ((rhs.cell.rx0 - lhs.cell.rx0) * nx + (rhs.cell.ry0 - lhs.cell.ry0) * ny).abs();
-    off <= 2.0 * lhs.height.max(rhs.height).max(1e-6)
-        && (is_math_glyph(&lhs.cell.text) || is_math_glyph(&rhs.cell.text))
+    match (lhs.cell.pen, rhs.cell.pen) {
+        (Some(a), Some(b)) => (
+            ((b[0] - a[0]) * nx + (b[1] - a[1]) * ny).abs(),
+            (a[2], b[2]),
+        ),
+        _ => (
+            ((rhs.cell.rx0 - lhs.cell.rx0) * nx + (rhs.cell.ry0 - lhs.cell.ry0) * ny).abs(),
+            (lhs.height, rhs.height),
+        ),
+    }
 }
 
 /// Whether `rhs` continues `lhs`'s text line (`continues_line`): the same
@@ -795,9 +823,8 @@ fn continues_line(lhs: &RunCell, rhs: &RunCell) -> bool {
 /// baseline shift beyond 0.35 × the smaller height starts a new word,
 /// unless it is a mathematical attachment.
 fn baselines_compatible(lhs: &RunCell, rhs: &RunCell) -> bool {
-    let (nx, ny) = (-lhs.uy, lhs.ux);
-    let off = ((rhs.cell.rx0 - lhs.cell.rx0) * nx + (rhs.cell.ry0 - lhs.cell.ry0) * ny).abs();
-    off <= 0.35 * lhs.height.min(rhs.height).max(1e-6) || is_local_attachment(lhs, rhs)
+    let (off, (lh, rh)) = baseline_offset(lhs, rhs);
+    off <= 0.35 * lh.min(rh).max(1e-6) || is_local_attachment(lhs, rhs)
 }
 
 /// The gap between two visible glyphs over their mean advance.
@@ -1243,6 +1270,8 @@ mod tests {
             lt: 110.0,
             font: 0,
             quad: None,
+            pen: None,
+            math_font: false,
         }
     }
 
@@ -1336,6 +1365,8 @@ mod tests {
             lt: 691.05,
             font,
             quad: None,
+            pen: None,
+            math_font: false,
         };
         let mut g = Vec::new();
         let mut run = |text: &str, edges: &[f32], font: u64| {
@@ -1381,6 +1412,45 @@ mod tests {
         let (lines, _) =
             line_and_word_cells_with(&und_dem_line(), 792.0, true, WordGap::Factor(0.5));
         assert_eq!(lines[0].text, "schaftunddemÖst");
+    }
+
+    #[test]
+    fn a_superscript_attaches_by_pen_origin_and_math_face() {
+        // `Lysak` at 10 pt, then `[0000` at 7 pt raised `rise` pt with no gap.
+        // The baseline test reads the pens' origins and font sizes, as
+        // docling-parse 7 does (`pen: None` falls back to the loose boxes).
+        let at = |ch: char, l: f32, y: f32, size: f32, math: bool, pen: bool| Glyph {
+            lb: y - 0.2 * size,
+            lt: y + 0.8 * size,
+            b: y - 0.2 * size,
+            t: y + 0.8 * size,
+            pen: pen.then_some([l, y, size]),
+            math_font: math,
+            ..glyph(ch, l, l + 0.5 * size)
+        };
+        let line = |rise: f32, math: bool, pen: bool| {
+            let mut g: Vec<Glyph> = "Lysak"
+                .chars()
+                .enumerate()
+                .map(|(k, ch)| at(ch, 100.0 + 5.0 * k as f32, 600.0, 10.0, math, pen))
+                .collect();
+            g.extend(
+                "[0000"
+                    .chars()
+                    .enumerate()
+                    .map(|(k, ch)| at(ch, 125.0 + 3.5 * k as f32, 600.0 + rise, 7.0, math, pen)),
+            );
+            let (lines, _) = line_and_word_cells_with(&g, 792.0, true, WordGap::Adaptive);
+            lines[0].text.clone()
+        };
+        // 2305.03393v1's ORCID: 3.6 pt up is more than 0.35 × 7 pt, a new word
+        // unless it is a local attachment, which a TeX face (`cmr`) makes it.
+        assert_eq!(line(3.6, true, true), "Lysak[0000");
+        assert_eq!(line(3.6, false, true), "Lysak [0000");
+        // 2 pt up: on the pens 2.0 ≤ 0.35 × 7, one word; the boxes' bottoms
+        // differ by the descents too (2.6 pt), which read it as two.
+        assert_eq!(line(2.0, false, true), "Lysak[0000");
+        assert_eq!(line(2.0, false, false), "Lysak [0000");
     }
 
     #[test]

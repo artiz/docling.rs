@@ -1397,6 +1397,18 @@ pub(crate) struct Glyph {
     /// this quad's axis-aligned extent. `None` for upright text, whose quad is
     /// the `ll/lb/lr/lt` rectangle itself — that path stays exactly as it was.
     pub(crate) quad: Option<[f32; 8]>,
+    /// Where the pen sets the glyph — the text origin on the baseline, rise
+    /// included — and the font size in the same space, as `[x, y, size]`
+    /// (docling-parse's `text_origin_x/y` and `nominal_text_height`). The
+    /// word contraction tests a baseline shift on these (#921): the loose
+    /// box's bottom sits a descent below the baseline, which differs between
+    /// sizes, so a superscript read as shifted further than it is. `None`
+    /// when unknown (a synthetic glyph); the box stands in then.
+    pub(crate) pen: Option<[f32; 3]>,
+    /// The glyph's font is a math face by its name (docling-parse's
+    /// `has_math_positioning_semantics`): a sub- or superscript in it next to
+    /// its base is attached, not a new word (#921).
+    pub(crate) math_font: bool,
 }
 
 impl Glyph {

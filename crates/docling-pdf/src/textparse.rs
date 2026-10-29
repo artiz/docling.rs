@@ -97,6 +97,10 @@ struct Font {
     ascent: f64,
     descent: f64,
     hash: u64,
+    /// Whether the font's docling-parse name marks a math face
+    /// ([`is_math_font_name`]) — for the word contraction's local
+    /// attachments (#921).
+    math: bool,
     /// Weight and slant read from the `/BaseFont` name (the heading
     /// hierarchy's style signal, #302).
     style: crate::font_style::FontStyle,
@@ -197,6 +201,18 @@ fn deref<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Object> {
 /// itself to the preceding run while the font barrier then cut it off from
 /// its own word (`fi nancial`); docling's `financial` needs the two
 /// resources to compare equal.
+/// docling-parse's `has_math_positioning_semantics`, the font-name half: a
+/// TeX math or symbol face (`cmmi`, `cmsy`, `cmex`, `cmr`, `cmbx`, `msam`,
+/// `msbm`) or any name saying `math`, `symbol` or `mtextra`.
+fn is_math_font_name(name: &[u8]) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [
+        "cmmi", "cmsy", "cmex", "cmr", "cmbx", "msam", "msbm", "math", "symbol", "mtextra",
+    ]
+    .iter()
+    .any(|t| lower.windows(t.len()).any(|w| w == t.as_bytes()))
+}
+
 fn sanitizer_font_name(doc: &Document, fdict: &Dictionary, two_byte: bool) -> Vec<u8> {
     let descriptor_font_name = |owner: &Dictionary| {
         owner
@@ -308,6 +324,7 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
     };
 
     let (ascent, descent) = font_ascent_descent(doc, fdict, two_byte);
+    let sanitizer_name = sanitizer_font_name(doc, fdict, two_byte);
 
     Font {
         two_byte,
@@ -319,7 +336,8 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         program_encoding,
         ascent,
         descent,
-        hash: hash_name(&sanitizer_font_name(doc, fdict, two_byte)),
+        hash: hash_name(&sanitizer_name),
+        math: is_math_font_name(&sanitizer_name),
         style: crate::font_style::parse_font_style(&String::from_utf8_lossy(
             &base_font_name(fdict).unwrap_or_else(|| name.to_vec()),
         )),
@@ -2180,6 +2198,12 @@ fn show_text(
                 Some(q),
             )
         };
+        // The pen's origin (rise included) and the font size's extent from
+        // it, as docling-parse maps them (`map_text_point(0, rise)` and
+        // `(0, rise + font_size)`).
+        let (ox, oy) = trm.apply(0.0, 0.0);
+        let (sx, sy) = trm.apply(0.0, 1.0);
+        let pen = Some([ox as f32, oy as f32, (sx - ox).hypot(sy - oy) as f32]);
         if let Some(s) = text {
             // A run may map one code to multiple chars (ligature/fraction); share box.
             for ch in s.chars() {
@@ -2196,6 +2220,8 @@ fn show_text(
                         lt: top as f32,
                         font: font.hash,
                         quad,
+                        pen,
+                        math_font: font.math,
                     });
                 }
             }
@@ -3657,6 +3683,23 @@ mod base14_fonts {
     /// wins over `/BaseFont`, so two dictionaries that share a `/BaseFont` but
     /// describe different programs are two fonts, and two that share the
     /// descriptor name are one whatever their `/BaseFont` says.
+    #[test]
+    fn math_faces_are_named_like_docling_parse_names_them() {
+        for name in [
+            "ABCDEF+CMR7",
+            "CMMI10",
+            "MSBM10",
+            "Cambria-Math",
+            "Symbol",
+            "MTExtra",
+        ] {
+            assert!(super::is_math_font_name(name.as_bytes()), "{name}");
+        }
+        for name in ["Helvetica", "ABCDEF+TimesNewRomanPSMT", "Arial-BoldMT"] {
+            assert!(!super::is_math_font_name(name.as_bytes()), "{name}");
+        }
+    }
+
     #[test]
     fn sanitizer_font_name_follows_docling_parse_precedence() {
         use lopdf::{dictionary, Document, Object};

@@ -1,4 +1,4 @@
-Transformer Block × 𝐿𝐿
+Transformer Block ×𝐿𝐿
 
 Feed-Forward Network
 
@@ -44,13 +44,13 @@ Shared Expert
 
 ...
 
-𝑁𝑁𝑟𝑟 -1 𝑁𝑁𝑟𝑟
+𝑁𝑁𝑟𝑟-1 𝑁𝑁𝑟𝑟
 
 3
 
 4
 
-Top- 𝐾𝐾𝑟𝑟
+Top-𝐾𝐾𝑟𝑟
 
 Input Hidden 𝐮𝐮𝑡𝑡
 
@@ -60,7 +60,7 @@ Cached During Inference
 
 Multi-Head Attention 𝐤𝐤𝑡𝑡𝑅𝑅
 
-{[𝐤𝐤𝑡𝑡,𝑖𝑖 𝐶𝐶 ; 𝐤𝐤𝑡𝑡𝑅𝑅]}
+{[𝐤𝐤𝑡𝑡,𝑖𝑖 𝐶𝐶 ; 𝐤𝐤𝑡𝑡𝑅𝑅 ]}
 
 {𝐪𝐪𝑡𝑡,𝑖𝑖 𝐶𝐶 } {𝐪𝐪𝑡𝑡,𝑖𝑖 𝑅𝑅 }
 

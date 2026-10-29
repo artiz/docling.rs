@@ -33,7 +33,7 @@ older, pypdfium2-era docling's and the pipeline was scored with OCR on.
 
 ## Current state
 
-**7 / 18 strict** against upstream's current groundtruth — total **393
+**7 / 18 strict** against upstream's current groundtruth — total **389
 diff lines** (`scripts/conformance/pdf_groundtruth.sh`: `--skip-ocr
 --compact-tables`, docling-parse renderer). The groundtruth was refreshed
 for #921 from docling's `tests/data/pdf/groundtruth` at upstream `dc4693f`
@@ -48,8 +48,9 @@ upstream's `test_e2e_conversion` writes it).
 Against it, the pre-#921 tree — docling-parse ≤ 6's word rule, every curly
 quote folded to `'` — scored **6 / 18, 815 lines**. The port of
 docling-parse 7's rule as the default `pdf_word_gap=adaptive`, its quote
-folding (`“ ”` → `"`), and pen-direction gaps for right-to-left text took
-that to 7 / 18 and 393. (On the stale pre-refresh groundtruth the old tree
+folding (`“ ”` → `"`), pen-direction gaps for right-to-left text, and its
+baseline test on the pens' origins and font sizes with math faces as local
+attachments took that to 7 / 18 and 389. (On the stale pre-refresh groundtruth the old tree
 read 10 / 18, 328 — a match to docling as it no longer is.) The two Korean
 image-only pages `skipped_1page` / `skipped_2pages` carry no text
 groundtruth and are not scored.
@@ -65,9 +66,9 @@ groundtruth and are not scored.
 | right_to_left_02 | 2 | one word's place at a line start (`ووف`) |
 | right_to_left_03 | 4 | a checkbox list item's marker order |
 | 2203.01017v2 | 9 | line-end hyphens docling fuses (`im-`/`balance`, `appear-`/`ances`; `column- and` is our #920 divergence), one picture placeholder's slot |
-| 2305.03393v1 | 10 | the ORCID superscripts: docling-parse 7 tests a word's baseline on pen origins and font size, we on the loose boxes, so `Lysak [0000-…]` keeps a space docling drops |
+| 2305.03393v1 | 8 | two `\_ \_` items and the spacing of underscores in figure file names (`PMC5406406 \_ 003 \_ 01.png`) |
 | normal_4pages | 12 | docling folds the page-number glyph into the heading cluster (`## 들어가며 1`) where we emit it as its own item, and the `※` footnotes order |
-| 2206.01062 | 14 | `mAP@ 0.5-0.95` (docling-parse 7 splits after `@`), `tildelow10%` (its glyph-name mapping; we read `~10%`) |
+| 2206.01062 | 12 | `mAP@ 0.5-0.95` (docling-parse 7 splits after `@`), `tildelow10%` (its glyph-name mapping; we read `~10%`) |
 | multi_page | 32 | docling-parse 7 maps the list bullet glyph to `∞` and docling keeps it as text (`- ∞ IBM MT/ST …`); we read a bullet and drop it as the marker |
 | table_misidentified_as_form | 70 | the form container's nested table / picture (docling#4064): docling nests them inside the form region and keeps the heading, we flatten the region |
 | table_mislabeled_as_picture | 81 | the survey over-detected as tables; checkbox glyphs (`☐`) and blank cells docling keeps |
