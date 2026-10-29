@@ -778,6 +778,92 @@ pub fn layout_cell_coverage(regions: &[Region], cells: &[TextCell]) -> f32 {
     }
 }
 
+/// Whether a run reads as a note call: a number or reference mark
+/// (`1`, `12`, `*`, `†`, `¹`), or a short bracketed note (`(Anm. 1)`, `[3]`).
+/// Geometry alone is not enough: a figure's labels come in every size, and
+/// moving a smaller word behind the larger one beside it scrambled the
+/// figure text (`The Law will will never perfect be`, the OTSL rows run
+/// together) — the PDF snapshots of three figures.
+fn looks_like_note_call(text: &str) -> bool {
+    let t = text.trim();
+    let n = t.chars().count();
+    if n == 0 || n > 16 {
+        return false;
+    }
+    let mark = |c: char| c.is_ascii_digit() || "*†‡§¶#,⁰¹²³⁴⁵⁶⁷⁸⁹".contains(c);
+    // `1,2` is two calls; a lone comma is punctuation.
+    (t.chars().all(mark) && t.chars().any(|c| c != ','))
+        || matches!(
+            (t.chars().next(), t.chars().last()),
+            (Some('('), Some(')')) | (Some('['), Some(']'))
+        )
+}
+
+/// Does `note` — a small run raised above its line (a footnote call, `(Anm. 1)`)
+/// — sit at the right end of `host`'s line?
+fn is_note_of(note: &TextCell, host: &TextCell) -> bool {
+    if !looks_like_note_call(&note.text) {
+        return false;
+    }
+    let (nt, nb) = (note.t.min(note.b), note.t.max(note.b));
+    let (ht, hb) = (host.t.min(host.b), host.t.max(host.b));
+    let (nh, hh) = ((nb - nt).max(1.0), (hb - ht).max(1.0));
+    nh <= 0.8 * hh
+        && nb.min(hb) - nt.max(ht) >= 0.5 * nh
+        && note.l >= host.r - 0.5 * hh
+        && note.l <= host.r + hh
+}
+
+/// Reading order of the orphan cells `sorted` by (top, left), with a raised
+/// note moved behind its host line (#923). The note's top edge is above the
+/// host's, so the plain sort emitted `(Anm. 1)` ahead of the line it ends
+/// (`…besteht.` is the end of the line starting `und die Belegschaft`). The
+/// flags mark the cells that were moved, for the same-line merge below.
+fn place_raised_notes(sorted: Vec<&TextCell>) -> (Vec<&TextCell>, Vec<bool>) {
+    let n = sorted.len();
+    let mut out: Vec<&TextCell> = Vec::with_capacity(n);
+    let mut flags: Vec<bool> = Vec::with_capacity(n);
+    let mut held: Vec<&TextCell> = Vec::new();
+    for (i, &c) in sorted.iter().enumerate() {
+        // Release a held note the scan has passed without finding its host.
+        let mut k = 0;
+        while k < held.len() {
+            if c.t >= held[k].t.max(held[k].b) {
+                out.push(held.remove(k));
+                flags.push(false);
+            } else {
+                k += 1;
+            }
+        }
+        // A cell with a host line ahead of it (starting within its own band)
+        // waits for that host.
+        let waits = sorted[i + 1..]
+            .iter()
+            .take_while(|h| h.t < c.t.max(c.b))
+            .any(|h| is_note_of(c, h));
+        if waits {
+            held.push(c);
+            continue;
+        }
+        out.push(c);
+        flags.push(false);
+        let mut k = 0;
+        while k < held.len() {
+            if is_note_of(held[k], c) {
+                out.push(held.remove(k));
+                flags.push(true);
+            } else {
+                k += 1;
+            }
+        }
+    }
+    for c in held {
+        out.push(c);
+        flags.push(false);
+    }
+    (out, flags)
+}
+
 /// Append `text` regions for cells the layout left uncovered ("orphan cells"),
 /// the way docling's `LayoutPostprocessor` does (`create_orphan_clusters`): any
 /// non-empty cell that no kept region covers (>50% of the cell's area) becomes a
@@ -821,12 +907,17 @@ pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
         return;
     }
     orphans.sort_by(|a, b| a.t.total_cmp(&b.t).then(a.l.total_cmp(&b.l)));
+    let (orphans, notes) = place_raised_notes(orphans);
     // Merge cells that sit on the same line and nearly touch into one region, so a
     // dropped multi-word line stays one block (docling's refinement merges these).
     let mut merged: Vec<Region> = Vec::new();
-    for c in orphans {
-        let h = (c.b - c.t).abs().max(1.0);
+    for (k, c) in orphans.into_iter().enumerate() {
+        let mut h = (c.b - c.t).abs().max(1.0);
         if let Some(last) = merged.last_mut() {
+            // A raised note is judged by its host line's height, not its own.
+            if notes[k] {
+                h = h.max((last.b - last.t).abs());
+            }
             let same_line = (last.t - c.t).abs() < h * 0.5;
             let touching = c.l <= last.r + h && c.l >= last.l - h;
             // Both tolerances scale with the cell's own height, so a run set
@@ -1604,7 +1695,23 @@ fn md_escape(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// [`clean_text_keep_wrap`] without the trailing soft hyphen: for text that is
+/// not a paragraph fragment (headings, captions, cells, code).
 fn clean_text(text: &str) -> String {
+    let mut out = clean_text_keep_wrap(text);
+    if out.ends_with('\u{ad}') {
+        out.pop();
+    }
+    out
+}
+
+/// [`clean_text`], except that a soft hyphen ending the text survives: it is a
+/// word split across a line break, and the paragraph merge
+/// ([`merge_continuations`]) needs it to fuse `Veröffent\u{ad}` + `lichung`
+/// into one word (#919). Stripped here, the fragment ended mid-word with
+/// nothing to say so, and the two halves were joined with a space.
+fn clean_text_keep_wrap(text: &str) -> String {
+    let wrap = text.trim_end().ends_with('\u{ad}');
     // Typographic-quote normalization follows docling-parse's sanitizer table
     // (`pdf_sanitators/constants.h`): every curly quote — single *and double* —
     // becomes the ASCII apostrophe `'`, and `‚` a comma. A `"` in docling's
@@ -1636,7 +1743,11 @@ fn clean_text(text: &str) -> String {
                                      // justified double spaces); preserve internal runs of spaces, only
                                      // normalizing line breaks/tabs and trimming the ends.
     let out = replaced.replace(['\n', '\r', '\t'], " ").trim().to_string();
-    fix_arabic_lam_alef(&out)
+    let mut out = fix_arabic_lam_alef(&out);
+    if wrap && !out.is_empty() {
+        out.push('\u{ad}');
+    }
+    out
 }
 
 /// pdfium decomposes the Arabic lam-alef ligature (لا / لإ / لأ / لآ) into its
@@ -1875,6 +1986,18 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
 /// wrappers never claim (docling walks regular clusters only); ties go to the
 /// first region, like docling's strict `>` best-overlap scan.
 pub fn region_texts_exclusive(regions: &[Region], cells: &[TextCell]) -> Vec<String> {
+    let mut texts = region_texts_keep_wrap(regions, cells);
+    for t in &mut texts {
+        if t.ends_with('\u{ad}') {
+            t.pop();
+        }
+    }
+    texts
+}
+
+/// [`region_texts_exclusive`] with a region's trailing soft hyphen kept
+/// (#919): the page assembler strips it and hands it to the paragraph it ends.
+fn region_texts_keep_wrap(regions: &[Region], cells: &[TextCell]) -> Vec<String> {
     let owned = assign_cells(regions, cells);
     // Non-claimers (tables/wrappers/pictures) keep the inclusive > 0.5 text:
     // docling fills a special cluster's cells from its contained children, and
@@ -1884,7 +2007,7 @@ pub fn region_texts_exclusive(regions: &[Region], cells: &[TextCell]) -> Vec<Str
         .zip(owned)
         .map(|(r, cs)| {
             if claims_cells(r) {
-                cells_text(cs.iter().map(|&i| &cells[i]).collect())
+                cells_text_keep_wrap(cs.iter().map(|&i| &cells[i]).collect())
             } else {
                 region_text(r, cells)
             }
@@ -2267,6 +2390,15 @@ pub fn fit_regions_to_cells(regions: &mut Vec<Region>, cells: &[TextCell]) {
 /// Join a prefiltered cell list into the region's text (docling's
 /// `sanitize_text` over the sanitizer's cell order).
 fn cells_text(inside: Vec<&TextCell>) -> String {
+    let mut t = cells_text_keep_wrap(inside);
+    if t.ends_with('\u{ad}') {
+        t.pop();
+    }
+    t
+}
+
+/// [`cells_text`] keeping a trailing soft hyphen (see [`clean_text_keep_wrap`]).
+fn cells_text_keep_wrap(inside: Vec<&TextCell>) -> String {
     // docling orders a cluster's cells by their docling-parse cell index
     // alone (`LayoutPostprocessor._sort_cells`: `sorted(cells, key=c.index)`)
     // — the sanitizer's output order, which our `cells` slice already is.
@@ -2331,7 +2463,11 @@ fn cells_text(inside: Vec<&TextCell>) -> String {
                 // ORCID splits off) is a literal character: it is kept and the
                 // lines join with the ordinary space.
                 let attached = prev.chars().rev().nth(1).is_some_and(char::is_alphanumeric);
-                if dashish && attached {
+                if dashish && attached && starts_with_conjunction(t) {
+                    // `Warte-` / `und Behaltefristen`: an elliptical compound
+                    // keeps its dash and the line break's space (#920).
+                    out.push(' ');
+                } else if dashish && attached {
                     if last_word_alnum(prev) && first_word_alnum(t) {
                         out.pop(); // wrapped word: fuse without the dash
                     }
@@ -2344,7 +2480,7 @@ fn cells_text(inside: Vec<&TextCell>) -> String {
         }
         out
     };
-    clean_text(&joined)
+    clean_text_keep_wrap(&joined)
 }
 
 /// Tighten the spaces pdfium leaves around tight punctuation in a code line
@@ -3299,7 +3435,13 @@ pub fn assemble_page(
         .chain(picture_children.iter().flatten())
         .cloned()
         .collect();
-    let mut region_texts: Vec<String> = region_texts_exclusive(&with_children, &page.cells);
+    let mut region_texts: Vec<String> = region_texts_keep_wrap(&with_children, &page.cells);
+    // A trailing soft hyphen marks a word split across the line break; only a
+    // plain paragraph hands it on to `merge_continuations` (#919).
+    let wraps: Vec<bool> = region_texts
+        .iter_mut()
+        .map(|t| t.ends_with('\u{ad}') && t.pop().is_some())
+        .collect();
     let mut kid_texts = region_texts.split_off(regions.len()).into_iter();
     let child_texts: Vec<Vec<String>> = picture_children
         .iter()
@@ -3688,6 +3830,11 @@ pub fn assemble_page(
                         href: hyperlink,
                     }
                 } else {
+                    // The wrap hyphen rides on the open paragraph (#919).
+                    let mut escaped = escaped;
+                    if wraps[i] {
+                        escaped.push('\u{ad}');
+                    }
                     Node::Paragraph { text: escaped }
                 };
                 nodes.push(located(loc, node))
@@ -3899,7 +4046,45 @@ fn reparagraph(node: &Node, text: String) -> Node {
     }
 }
 
+/// Whether `text` opens with a coordinating conjunction as a whole word
+/// (German, English, French, Dutch, Spanish): after a line-final `-` it means
+/// an elliptical compound, never the second half of a wrapped word.
+fn starts_with_conjunction(text: &str) -> bool {
+    let word: String = text
+        .chars()
+        .take_while(|c| c.is_alphabetic())
+        .collect::<String>()
+        .to_lowercase();
+    matches!(
+        word.as_str(),
+        "und" | "oder" | "bzw" | "sowie" | "and" | "or" | "et" | "ou" | "en" | "y"
+    )
+}
+
+/// Drop the soft hyphen an unmerged paragraph still ends with (see
+/// [`clean_text_keep_wrap`]): a word split nothing continued is just a word.
+fn strip_wrap_marks(nodes: &mut [Node]) {
+    for n in nodes {
+        let n = match n {
+            Node::Located { inner, .. } => inner.as_mut(),
+            other => other,
+        };
+        if let Node::Paragraph { text } = n {
+            if text.ends_with('\u{ad}') {
+                text.pop();
+            }
+        }
+    }
+}
+
 pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
+    merge_open_paragraphs(nodes);
+    strip_wrap_marks(nodes);
+}
+
+/// [`merge_continuations`] without the final wrap-mark strip: the streaming
+/// buffer still holds open paragraphs a later page may continue.
+fn merge_open_paragraphs(nodes: &mut Vec<Node>) {
     let mut i = 0;
     while i + 1 < nodes.len() {
         let Some(a) = as_paragraph(&nodes[i]) else {
@@ -3947,9 +4132,15 @@ pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
             // space, docling#3888 ("vocab-" + "ulary" -> "vocabulary");
             // docling's older serializer kept the artifact ("vocab- ulary").
             // Everything else joins with the space, as before.
+            // Exception (#920): a hard hyphen before a coordinating conjunction
+            // is the elliptical compound (`Warte- und Behaltefristen`), not a
+            // wrapped word -- no word is split as `Warte` + `und`. Kept with
+            // its space; docling fuses these (`Warteund`), a deliberate
+            // divergence (docs/MIGRATION.md).
+            let elliptical = !a.ends_with('\u{ad}') && starts_with_conjunction(&b);
             let merged = match a.strip_suffix('\u{ad}').or_else(|| a.strip_suffix('-')) {
-                Some(stem) => format!("{stem}{b}"),
-                None => format!("{a} {b}"),
+                Some(stem) if !elliptical => format!("{stem}{b}"),
+                _ => format!("{a} {b}"),
             };
             // Keep node i's provenance wrapper; docling's merged paragraph keeps
             // the first fragment's geometry as its primary location.
@@ -4012,22 +4203,28 @@ impl StreamAssembler {
     /// now-final prefix to emit (possibly empty).
     pub(crate) fn push(&mut self, mut nodes: Vec<Node>) -> Vec<Node> {
         self.pending.append(&mut nodes);
-        merge_continuations(&mut self.pending);
+        merge_open_paragraphs(&mut self.pending);
         let cut = hold_start(&self.pending);
         let tail = self.pending.split_off(cut);
-        std::mem::replace(&mut self.pending, tail)
+        let mut done = std::mem::replace(&mut self.pending, tail);
+        strip_wrap_marks(&mut done);
+        done
     }
 
     /// Flush whatever is left after the last page (the held tail is final once no
     /// more pages can follow).
-    pub(crate) fn finish(self) -> Vec<Node> {
+    pub(crate) fn finish(mut self) -> Vec<Node> {
+        strip_wrap_marks(&mut self.pending);
         self.pending
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{cells_text, clean_text, merge_overlapping_regulars, reclaim_heading_body_footers};
+    use super::{
+        cells_text, clean_text, is_note_of, looks_like_note_call, merge_overlapping_regulars,
+        reclaim_heading_body_footers,
+    };
 
     /// docling drops a picture covering > 90 % of the page (its labels then
     /// read out as text); a dominant-but-not-full figure and any other label
@@ -5675,5 +5872,41 @@ mod tests {
         );
         assert_eq!(super::strip_checkbox_glyph("  \u{2611}  Done"), "Done");
         assert_eq!(super::strip_checkbox_glyph("No box"), "No box");
+    }
+
+    #[test]
+    fn only_note_calls_move_behind_their_line() {
+        for t in ["(Anm. 1)", "[3]", "12", "*", "†", "¹²", "1,2"] {
+            assert!(looks_like_note_call(t), "{t}");
+        }
+        // Figure labels a size smaller than their neighbours stay put.
+        for t in [
+            "be",
+            "perfect",
+            "C",
+            "apply",
+            "RoPE",
+            "",
+            ",",
+            "(this is a long aside)",
+        ] {
+            assert!(!looks_like_note_call(t), "{t}");
+        }
+        let cell = |text: &str, l: f32, t: f32, r: f32, b: f32| TextCell {
+            text: text.into(),
+            l,
+            t,
+            r,
+            b,
+        };
+        let host = cell("und die Belegschaft besteht.", 100.0, 100.0, 300.0, 112.0);
+        assert!(is_note_of(
+            &cell("(Anm. 1)", 302.0, 98.0, 330.0, 106.0),
+            &host
+        ));
+        assert!(!is_note_of(
+            &cell("perfect", 302.0, 98.0, 330.0, 106.0),
+            &host
+        ));
     }
 }
