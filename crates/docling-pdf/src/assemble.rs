@@ -778,9 +778,33 @@ pub fn layout_cell_coverage(regions: &[Region], cells: &[TextCell]) -> f32 {
     }
 }
 
+/// Whether a run reads as a note call: a number or reference mark
+/// (`1`, `12`, `*`, `†`, `¹`), or a short bracketed note (`(Anm. 1)`, `[3]`).
+/// Geometry alone is not enough: a figure's labels come in every size, and
+/// moving a smaller word behind the larger one beside it scrambled the
+/// figure text (`The Law will will never perfect be`, the OTSL rows run
+/// together) — the PDF snapshots of three figures.
+fn looks_like_note_call(text: &str) -> bool {
+    let t = text.trim();
+    let n = t.chars().count();
+    if n == 0 || n > 16 {
+        return false;
+    }
+    let mark = |c: char| c.is_ascii_digit() || "*†‡§¶#,⁰¹²³⁴⁵⁶⁷⁸⁹".contains(c);
+    // `1,2` is two calls; a lone comma is punctuation.
+    (t.chars().all(mark) && t.chars().any(|c| c != ','))
+        || matches!(
+            (t.chars().next(), t.chars().last()),
+            (Some('('), Some(')')) | (Some('['), Some(']'))
+        )
+}
+
 /// Does `note` — a small run raised above its line (a footnote call, `(Anm. 1)`)
 /// — sit at the right end of `host`'s line?
 fn is_note_of(note: &TextCell, host: &TextCell) -> bool {
+    if !looks_like_note_call(&note.text) {
+        return false;
+    }
     let (nt, nb) = (note.t.min(note.b), note.t.max(note.b));
     let (ht, hb) = (host.t.min(host.b), host.t.max(host.b));
     let (nh, hh) = ((nb - nt).max(1.0), (hb - ht).max(1.0));
@@ -4197,7 +4221,10 @@ impl StreamAssembler {
 
 #[cfg(test)]
 mod tests {
-    use super::{cells_text, clean_text, merge_overlapping_regulars, reclaim_heading_body_footers};
+    use super::{
+        cells_text, clean_text, is_note_of, looks_like_note_call, merge_overlapping_regulars,
+        reclaim_heading_body_footers,
+    };
 
     /// docling drops a picture covering > 90 % of the page (its labels then
     /// read out as text); a dominant-but-not-full figure and any other label
@@ -5845,5 +5872,41 @@ mod tests {
         );
         assert_eq!(super::strip_checkbox_glyph("  \u{2611}  Done"), "Done");
         assert_eq!(super::strip_checkbox_glyph("No box"), "No box");
+    }
+
+    #[test]
+    fn only_note_calls_move_behind_their_line() {
+        for t in ["(Anm. 1)", "[3]", "12", "*", "†", "¹²", "1,2"] {
+            assert!(looks_like_note_call(t), "{t}");
+        }
+        // Figure labels a size smaller than their neighbours stay put.
+        for t in [
+            "be",
+            "perfect",
+            "C",
+            "apply",
+            "RoPE",
+            "",
+            ",",
+            "(this is a long aside)",
+        ] {
+            assert!(!looks_like_note_call(t), "{t}");
+        }
+        let cell = |text: &str, l: f32, t: f32, r: f32, b: f32| TextCell {
+            text: text.into(),
+            l,
+            t,
+            r,
+            b,
+        };
+        let host = cell("und die Belegschaft besteht.", 100.0, 100.0, 300.0, 112.0);
+        assert!(is_note_of(
+            &cell("(Anm. 1)", 302.0, 98.0, 330.0, 106.0),
+            &host
+        ));
+        assert!(!is_note_of(
+            &cell("perfect", 302.0, 98.0, 330.0, 106.0),
+            &host
+        ));
     }
 }

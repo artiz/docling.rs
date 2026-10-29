@@ -2232,8 +2232,11 @@ These are deliberate or unavoidable divergences, not bugs.
     a German opening quote `„` vanished while its closing `“` stayed); a soft
     hyphen ending a line fuses the wrapped word (`Veröffent­` + `lichung` →
     `Veröffentlichung`; it was stripped before the paragraph merge could see
-    it, leaving `Veröffent lichung`); a small raised run at the right end of a
-    line (`(Anm. 1)`) reads after that line, not ahead of it. **Divergence:** a
+    it, leaving `Veröffent lichung`); a small raised note call at the right
+    end of a line — a number or reference mark (`1`, `*`, `†`) or a short
+    bracketed note (`(Anm. 1)`, `[3]`) — reads after that line, not ahead of
+    it (any other smaller run, such as a figure label, keeps its place: moving
+    those scrambled figure text). **Divergence:** a
     line-final hard hyphen before a coordinating conjunction (`und`, `oder`,
     `bzw.`, `sowie`, `and`, `or`, `et`, `ou`, `en`, `y`) is an elliptical
     compound and keeps its dash and space (`Warte- und Behaltefristen`);
