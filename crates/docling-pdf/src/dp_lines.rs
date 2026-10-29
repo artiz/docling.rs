@@ -1148,7 +1148,14 @@ fn contract_runs(cells: &[Cell], gap: WordGap, page_h: f32) -> (Vec<TextCell>, V
     for run in &runs {
         let has_spaces = run.iter().any(|c| c.space);
         let tracked = tracked_gaps(run);
+        // A line that draws its word spaces as glyphs marks its boundaries
+        // itself; docling-parse 7 splits an unmarked gap there only above
+        // 0.35 (`min(0.35, 1.0)`). A fixed factor keeps that floor: its job
+        // is the space-less lines (#921), and below it a spaced line's
+        // loosely kerned pairs fall apart — EUR-Lex's `f|l` at 0.24 read
+        // `Verpf lichtungen` under 0.2.
         let threshold = match gap {
+            WordGap::Factor(f) if has_spaces => f.max(0.35),
             WordGap::Factor(f) => f,
             _ => (if has_spaces {
                 1.0
@@ -1374,6 +1381,33 @@ mod tests {
         let (lines, _) =
             line_and_word_cells_with(&und_dem_line(), 792.0, true, WordGap::Factor(0.5));
         assert_eq!(lines[0].text, "schaftunddemÖst");
+    }
+
+    #[test]
+    fn a_factor_keeps_docling_parse_s_floor_on_lines_with_space_glyphs() {
+        // `Verpf` + `lichtungen` 0.6 pt apart (0.24 of the flanking advances)
+        // on a line whose word spaces are glyphs: below the 0.35 floor
+        // docling-parse 7 keeps for such lines, so it is not a boundary even
+        // under a factor of 0.2. The same gap on a space-less line splits.
+        let mut g = Vec::new();
+        let mut x = 100.0f32;
+        let mut put = |g: &mut Vec<Glyph>, s: &str, x: &mut f32| {
+            for ch in s.chars() {
+                g.push(glyph(ch, *x, *x + 2.5));
+                *x += 2.5;
+            }
+        };
+        put(&mut g, "Die", &mut x);
+        g.push(glyph(' ', x, x + 2.5));
+        x += 2.5;
+        put(&mut g, "Verpf", &mut x);
+        x += 0.6;
+        put(&mut g, "lichtungen", &mut x);
+        let (lines, _) = line_and_word_cells_with(&g, 792.0, true, WordGap::Factor(0.2));
+        assert_eq!(lines[0].text, "Die Verpflichtungen");
+        let spaceless: Vec<Glyph> = g.into_iter().filter(|c| c.ch != ' ').collect();
+        let (lines, _) = line_and_word_cells_with(&spaceless, 792.0, true, WordGap::Factor(0.2));
+        assert_eq!(lines[0].text, "Die Verpf lichtungen");
     }
 
     #[test]

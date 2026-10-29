@@ -259,7 +259,9 @@
 //!                      (default, DOCLING_RS_PDF_WORD_GAP) = docling-parse >= 7's
 //!                      line-local threshold, what docling runs on; a factor F
 //!                      in (0, 4] splits gaps wider than F x the mean advance
-//!                      of the two flanking glyphs (0.15-0.23 for body text);
+//!                      of the two flanking glyphs on lines without space
+//!                      glyphs (0.1-0.23 for body text; 0.35 at least on
+//!                      lines with them);
 //!                      both keep letter-spaced (Sperrsatz) words whole;
 //!                      legacy = docling-parse <= 6's running-mean rule
 //!   --ocr-textline-orientation

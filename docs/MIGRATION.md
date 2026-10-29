@@ -2346,8 +2346,10 @@ These are deliberate or unavoidable divergences, not bugs.
     flanking it — measured along the pen, so right-to-left text drawn in
     visual order reads as docling-parse reads it — and a line-local 1-D
     two-cluster threshold (0.18–0.35, 0.25 when the gaps do not separate)
-    decides. A number `F` is a fixed threshold for that ratio (0.15–0.23
-    suits body text). `legacy` keeps docling-parse ≤ 6's rule, this port's
+    decides. A number `F` is a fixed threshold for that ratio on lines
+    without space glyphs (0.1–0.23 suits body text); a line that draws its
+    spaces keeps docling-parse 7's floor of 0.35, so a loosely kerned `f|l`
+    (0.24 in EUR-Lex notices) is no boundary. `legacy` keeps docling-parse ≤ 6's rule, this port's
     default until #921: a gap splits when it exceeds 0.33 × the running
     mean advance of the cell built so far in that contraction pass, and
     cells restart at every font change (`enforce_same_font`), so the
@@ -2373,7 +2375,10 @@ These are deliberate or unavoidable divergences, not bugs.
     between abutting letters — and one character repeated (`C C C C`, an
     OTSL figure's token row) is no word. On the five fixtures every
     letter-spaced word reads whole and all 45 cursor-move word gaps still
-    split, under `adaptive` and under each `F` tried in 0.15–0.23; on the
+    split, under `adaptive` and under every `F` from 0.1 to 0.23 (the
+    issue's reporter confirmed it on their side, and on 127 statute and
+    collective-agreement excerpts `adaptive` introduced no new glue and no
+    mid-word cut); on the
     81 PDFs of the test corpus the detection changes nothing else. On
     #921's 92-page document, leader dots aside, words match docling-parse
     7.24.1's 98.9 % under `adaptive` (98.1 % under `legacy`) and lines

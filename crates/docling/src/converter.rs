@@ -2315,7 +2315,8 @@ impl DocumentConverter {
     /// itself runs on: each gap over the mean advance of the two glyphs
     /// flanking it, against a line-local two-cluster threshold (clamped to
     /// 0.18–0.35). A number `f` in (0, 4] is a fixed threshold for that
-    /// ratio (0.15–0.23 suits most body text). Both keep letter-spaced
+    /// ratio on lines without space glyphs (0.1–0.23 suits most body text;
+    /// a line that draws its spaces keeps docling-parse's 0.35 floor). Both keep letter-spaced
     /// (Sperrsatz) words whole — equal cursor moves between letters are
     /// tracking, where docling-parse 7 cuts mid-word. `legacy` is
     /// docling-parse ≤ 6's rule: a gap separates words when it exceeds 0.33 ×

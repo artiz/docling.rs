@@ -12,7 +12,7 @@ copyright (§ 7 öUrhG, § 5 UrhG).
 | File | Document | Original | Page | Letter-spaced text |
 | --- | --- | --- | --- | --- |
 | `bgbl-at-2025-ii-6-p1.pdf` | BGBl. II Nr. 6/2025, Heimarbeitstarif (RIS, authentic edition) | <https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2025_II_6/BGBLA_2025_II_6.pdfsig>, SHA-256 `4aef661d…5766` | 1 | heading `Heimarbeitstarif` |
-| `bgbl-de-2026-i-300-p4.pdf` | BGBl. 2026 I Nr. 300, 23. Verordnung zur Änderung der Außenwirtschaftsverordnung | <https://www.recht.bund.de/bgbl/1/2026/300/regelungstext.pdf>, SHA-256 `c129a542…b837` | 4 | signature block `Der Bundeskanzler` / `Merz` / `Die Bundesministerin für Wirtschaft und Energie` / `Katherina Reiche` |
+| `bgbl-de-2026-i-300-p4.pdf` | BGBl. 2026 I Nr. 300, 23. Verordnung zur Änderung der Außenwirtschaftsverordnung | <https://www.recht.bund.de/bgbl/1/2026/300/regelungstext.pdf?__blob=publicationFile&v=1>, SHA-256 `c129a542…b837` | 4 | signature block `Der Bundeskanzler` / `Merz` / `Die Bundesministerin für Wirtschaft und Energie` / `Katherina Reiche` |
 | `ris-olg-wien-4r133-24v-p1.pdf` | OLG Wien 4 R 133/24v, 11 February 2025 (RIS Justiz) | <https://www.ris.bka.gv.at/Dokumente/Justiz/JJT_20250211_OLG0009_00400R00133_24V0000_000/JJT_20250211_OLG0009_00400R00133_24V0000_000.pdf>, SHA-256 `4fa14b5d…fdf1` | 1 | heading `Entscheidungsgründe:` |
 
 SHA-256 of the reduced files, in the table's order:
