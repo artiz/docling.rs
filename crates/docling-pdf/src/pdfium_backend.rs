@@ -6,7 +6,7 @@
 //! (docling's pypdfium2 chain) and for a file lopdf cannot read ([`native`]).
 //! The module keeps its historical name; every type in it is pdfium-free.
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 use crate::PdfError;
 #[cfg(feature = "ocr-prep")]
 use image::RgbImage;
@@ -74,7 +74,7 @@ pub struct PdfPage {
     /// draws it. `None` once resolved, and on every path that renders
     /// synchronously (scanned pages, the plugin and pdfium renderers,
     /// images, METS).
-    #[cfg(feature = "ml")]
+    #[cfg(feature = "render")]
     pub pending_image: Option<PendingImage>,
     /// Hyperlink annotations on the page (rect in top-left page coords + target
     /// URI), restricted to web/mail/tel schemes. Used only by strict Markdown.
@@ -111,7 +111,7 @@ impl PdfPage {
             image: RgbImage::new(0, 0),
             #[cfg(feature = "ocr-prep")]
             image_layout: None,
-            #[cfg(feature = "ml")]
+            #[cfg(feature = "render")]
             pending_image: None,
             links: Vec::new(),
             rotation: 0,
@@ -123,7 +123,7 @@ impl PdfPage {
     /// as [`Self::image`]; a no-op when nothing is pending. The ML pipeline
     /// calls it after layout for a page whose detections need the bitmap,
     /// before anything reads it.
-    #[cfg(feature = "ml")]
+    #[cfg(feature = "render")]
     pub fn resolve_image(&mut self) -> Result<(), PdfError> {
         if let Some(pending) = self.pending_image.take() {
             self.image = crate::timing::timed("render.wait", || pending.wait())?;
@@ -133,7 +133,7 @@ impl PdfPage {
 
     /// Whether [`Self::image`] is still a placeholder for a deferred 2x
     /// render ([`Self::resolve_image`] installs it).
-    #[cfg(feature = "ml")]
+    #[cfg(feature = "render")]
     pub fn image_pending(&self) -> bool {
         self.pending_image.is_some()
     }
@@ -142,7 +142,7 @@ impl PdfPage {
     /// helper skips its render if it has not begun it. The page stays
     /// pending — a later [`Self::resolve_image`] still gets the bitmap,
     /// rendering it then if it was skipped.
-    #[cfg(feature = "ml")]
+    #[cfg(feature = "render")]
     pub fn decline_image(&self) {
         if let Some(pending) = &self.pending_image {
             pending.decline();
@@ -229,13 +229,13 @@ pub struct LinkAnnot {
     pub uri: String,
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// A parsed PDF: per-page text cells and page images.
 pub struct PdfDocument {
     pub pages: Vec<PdfPage>,
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 impl PdfDocument {
     /// Parse a PDF from bytes, optionally decrypting with `password`.
     ///
@@ -254,7 +254,7 @@ impl PdfDocument {
     }
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// The document's text layer: the pure-Rust text parser (docling-parse's
 /// char geometry; the only text source since phase 4 of "Retiring pdfium" —
 /// on the whole corpus every page it reads no text from is one pdfium read
@@ -279,7 +279,7 @@ impl crate::textparse::PageTextParser {
     }
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// Number of pages in a PDF, without rendering any of them — used to decide
 /// whether a document is worth spinning up the parallel worker pool.
 pub fn page_count(bytes: &[u8], password: Option<&str>) -> Result<usize, PdfError> {
@@ -301,7 +301,7 @@ pub fn page_count(bytes: &[u8], password: Option<&str>) -> Result<usize, PdfErro
     })
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// Render + extract pages one at a time, handing each (owned) [`PdfPage`] to `f`.
 /// Only one page bitmap is resident at a time — a rendered page is ~5 MB, so a
 /// large PDF would otherwise hold gigabytes of bitmaps at once. `f` receives the
@@ -353,7 +353,7 @@ where
     )
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// When the 2x bitmap of a page with a text layer is rendered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BitmapRender {
@@ -375,7 +375,7 @@ pub enum BitmapRender {
     OnDemand,
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// [`for_each_page`] with the 2x bitmaps rendered as `bitmap` says.
 pub fn walk_pages<E, F>(
     bytes: &[u8],
@@ -512,7 +512,7 @@ where
 
 /// One rasterized page from [`render_pages`] (#243): the absolute 1-based page
 /// number in the source document, the pixel dimensions, and the PNG bytes.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 #[derive(Debug, Clone)]
 pub struct RenderedPage {
     pub page_no: usize,
@@ -531,7 +531,7 @@ pub struct RenderedPage {
 /// stay well under this cap; it only rejects the implausible, turning an abort
 /// into a clean error. Mirrors `decode_image_limited`'s guard on the
 /// standalone-image path. `DOCLING_RS_MAX_RENDER_PIXELS` overrides it.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 fn max_render_side() -> u32 {
     static M: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *M.get_or_init(|| docling_core::env::parse("DOCLING_RS_MAX_RENDER_PIXELS").unwrap_or(15_000))
@@ -540,7 +540,7 @@ fn max_render_side() -> u32 {
 /// Round float pixel dimensions to the `i32` pdfium wants, rejecting a page
 /// whose bitmap would exceed [`max_render_side`] on either side before either
 /// pdfium or `image` tries to allocate it.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 fn checked_render_dims(
     w_px: f64,
     h_px: f64,
@@ -558,7 +558,7 @@ fn checked_render_dims(
     Ok((w as i32, h as i32))
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// Rasterize a PDF's pages to PNG (#243) — the lean path behind serve's
 /// `to=images`: pdfium render only, no text extraction, no models, and only
 /// one page bitmap resident at a time (each is PNG-encoded and dropped before
@@ -688,7 +688,7 @@ pub fn render_pages(
     Ok(out)
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// The error for a page that needs a raster when the object model could not
 /// be read and neither the docling-parse renderer plugin nor pdfium is there.
 fn no_raster(index: i32) -> PdfError {
@@ -708,7 +708,7 @@ fn no_raster(index: i32) -> PdfError {
 /// pdfium's render of a page the raster declines *and* pdfium's page is open
 /// (`pdfium_page`; a build or machine without the library degrades to the
 /// Rust renderer, as [`bind_or_skip`] warned).
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 fn rust_bitmap(
     meta: Option<&crate::pdf_meta::PdfMeta>,
     renderer: Option<&crate::render::Renderer<'_>>,
@@ -733,7 +733,7 @@ fn rust_bitmap(
     })
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// Bind pdfium for a conversion, or decide it can run without it. pdfium has
 /// a job in two cases only: its own render was asked for
 /// (`DOCLING_RS_RENDERER=pdfium`, which only the `pdfium` feature offers), or
@@ -767,7 +767,7 @@ fn bind_or_skip(meta_ok: bool) -> Result<Option<native::Lib>, PdfError> {
 /// (present only when [`bind_or_skip`] opened the library) and the
 /// docling-parse renderer (absent when the plugin is not asked for or no
 /// raster is wanted).
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 #[derive(Clone, Copy)]
 struct PageSources<'a> {
     page: Option<&'a native::Page<'a>>,
@@ -790,18 +790,18 @@ struct PageSources<'a> {
 /// it again (#897). Cloning a page clones the handle; whichever copy
 /// resolves first gets the bitmap. A handle dropped while still queued, or
 /// declined in time, costs nothing — the render never happens.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 #[derive(Clone)]
 pub struct PendingImage(std::sync::Arc<std::sync::Mutex<Pending>>);
 
 /// The channel a sent job's bitmap comes back through.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 type Reply = std::sync::mpsc::Receiver<Result<RgbImage, PdfError>>;
 
 /// Where a [`PendingImage`] stands: the job and the helper to send it to,
 /// plus — once sent — the reply channel and the flag that lets the helper
 /// skip it.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 struct Pending {
     spec: RenderSpec,
     tx: std::sync::mpsc::Sender<RenderJob>,
@@ -817,11 +817,11 @@ struct Pending {
 /// Whether the last [`Verdicts::WINDOW`] pages that reached a verdict read
 /// their 2x bitmap — what [`BitmapRender::Adaptive`] decides a new page's
 /// render by (#897).
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 #[derive(Default)]
 struct Verdicts(std::sync::Mutex<std::collections::VecDeque<bool>>);
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 impl Verdicts {
     const WINDOW: usize = 8;
 
@@ -850,7 +850,7 @@ impl Verdicts {
     }
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 impl Pending {
     /// Send the job (again, after a skipped one) and keep its reply channel.
     /// The helper runs while any job sender lives — this one included — so a
@@ -870,7 +870,7 @@ impl Pending {
     }
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 impl PendingImage {
     fn lock(&self) -> std::sync::MutexGuard<'_, Pending> {
         self.0.lock().unwrap_or_else(|p| p.into_inner())
@@ -929,7 +929,7 @@ impl PendingImage {
     }
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 impl std::fmt::Debug for PendingImage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("PendingImage")
@@ -939,7 +939,7 @@ impl std::fmt::Debug for PendingImage {
 /// One deferred render: the 3x supersample of page `index` at `w` × `h`
 /// with the decode `hint`, box-downscaled to `dw` × `dh` — exactly the
 /// synchronous path's steps, on another thread.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 #[derive(Clone, Copy)]
 struct RenderSpec {
     index: i32,
@@ -950,7 +950,7 @@ struct RenderSpec {
     dh: u32,
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 struct RenderJob {
     spec: RenderSpec,
     /// Set when the page turned out not to read the bitmap (#897): the
@@ -971,14 +971,14 @@ struct RenderJob {
 /// resolved on demand asks after the walk is over, so the thread holds the
 /// object model and runs until the walk and every page's handle have let go
 /// of the job sender.
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 struct DeferredRender {
     tx: std::sync::mpsc::Sender<RenderJob>,
     mode: BitmapRender,
     stats: std::sync::Arc<Verdicts>,
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 impl DeferredRender {
     /// The helper for `meta`; `None` (render in place, as without one) when
     /// the thread cannot be spawned.
@@ -1056,7 +1056,7 @@ impl DeferredRender {
     }
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 fn extract_page(
     sources: PageSources<'_>,
     geom: crate::pdf_meta::PageGeom,
@@ -1293,7 +1293,7 @@ fn extract_page(
     Ok(page)
 }
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "render")]
 /// The supersample→target downscale via `fast_image_resize` (SIMD convolution;
 /// the same a=-0.5 Catmull-Rom kernel as `image::imageops::resize(...,
 /// CatmullRom)` and PIL BICUBIC — see the render comment above). Set
@@ -1701,7 +1701,7 @@ mod native {
 /// The `pdfium`-less build: pdfium never binds, so every entry point falls
 /// through to the pure-Rust stack, and a file the object model cannot read
 /// fails with [`no_raster`]'s hint.
-#[cfg(all(feature = "ml", not(feature = "pdfium")))]
+#[cfg(all(feature = "render", not(feature = "pdfium")))]
 mod native {
     use super::LinkAnnot;
     use crate::PdfError;
@@ -1775,7 +1775,7 @@ mod tests {
     /// #897: the adaptive schedule starts renders eagerly for the first
     /// pages, then while at least half of the last 8 verdicts read the
     /// bitmap; a declined page that turns out to read it counts as read.
-    #[cfg(feature = "ml")]
+    #[cfg(feature = "render")]
     #[test]
     fn adaptive_verdicts() {
         let v = super::Verdicts::default();
