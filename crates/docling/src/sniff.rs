@@ -80,6 +80,31 @@ pub(crate) fn detect_any(bytes: &[u8]) -> Option<InputFormat> {
     if bytes.starts_with(b"\xffWPC") {
         return Some(InputFormat::WordPerfect);
     }
+    // A Palm e-text: the database's type and creator at offset 60 (#216).
+    if crate::backend::looks_like_palmdoc(bytes) {
+        return Some(InputFormat::PalmDoc);
+    }
+    // Word for Macintosh's magic, ClarisWorks' `BOBO` (#216); MacWrite has
+    // no signature beyond a version word and comes by its extension.
+    if crate::backend::macwp::looks_like_mac_word(bytes)
+        || crate::backend::macwp::looks_like_clarisworks(bytes)
+    {
+        return Some(InputFormat::MacWp);
+    }
+    // Lotus Word Pro's `WordPro` prefix and `LWP7` header tag (#216).
+    if crate::backend::lwp::looks_like_lwp(bytes) {
+        return Some(InputFormat::Lwp);
+    }
+    // A Computer Graphics Metafile's BEGIN METAFILE element (#216).
+    if crate::backend::cgm::looks_like_binary_cgm(bytes)
+        || crate::backend::cgm::looks_like_clear_text_cgm(bytes)
+    {
+        return Some(InputFormat::Cgm);
+    }
+    // A saved T602 document opens with its code-page setting (#216).
+    if crate::backend::looks_like_t602(bytes) {
+        return Some(InputFormat::T602);
+    }
     text_kind(bytes)
 }
 
@@ -373,6 +398,7 @@ fn zip_kind(bytes: &[u8]) -> Option<InputFormat> {
     let mime = mimetype.trim();
     match mime {
         "application/epub+zip" => Some(InputFormat::Epub),
+        _ if crate::backend::hwp::is_hwpx_mime(mime) => Some(InputFormat::Hwp),
         _ if mime.starts_with("application/vnd.oasis.opendocument.text") => Some(InputFormat::Odt),
         _ if mime.starts_with("application/vnd.oasis.opendocument.spreadsheet") => {
             Some(InputFormat::Ods)
@@ -480,6 +506,9 @@ fn cfb_kind(bytes: &[u8]) -> Option<InputFormat> {
         Some(InputFormat::Ppt)
     } else if has("__properties_version1.0") {
         Some(InputFormat::Email)
+    } else if has("FileHeader") && has("DocInfo") {
+        // Hancom Hangul 5 (#216).
+        Some(InputFormat::Hwp)
     } else {
         None
     }
