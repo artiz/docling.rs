@@ -707,26 +707,19 @@ impl<'a> RunCell<'a> {
     }
 }
 
-/// Signed distance along `lhs`'s writing direction from its trailing edge
-/// to `rhs`'s leading edge (`forward_gap`, the geometric form).
+/// Signed distance along `lhs`'s writing direction from where its pen
+/// advance ends to where `rhs`'s starts (`forward_gap`, the
+/// `has_text_placement` form docling-parse takes for every rendered glyph).
+/// Our quads run in pen order — `r0 → r1` is the advance — so this is the
+/// trailing edge of `lhs` to the leading edge of `rhs` whatever the script:
+/// right-to-left text drawn in visual order still advances along `+u`, and
+/// flipping the axis for it (the geometric fallback) read every Arabic or
+/// Hebrew glyph pair as a step back of two advances, a new line each.
 fn forward_gap(lhs: &RunCell, rhs: &RunCell) -> f64 {
     let (l, r) = (lhs.cell, rhs.cell);
-    let (ux, uy) = if l.ltr {
-        (lhs.ux, lhs.uy)
-    } else {
-        (-lhs.ux, -lhs.uy)
-    };
-    let (tx, ty) = if l.ltr {
-        (0.5 * (l.rx1 + l.rx2), 0.5 * (l.ry1 + l.ry2))
-    } else {
-        (0.5 * (l.rx0 + l.rx3), 0.5 * (l.ry0 + l.ry3))
-    };
-    let (hx, hy) = if l.ltr {
-        (0.5 * (r.rx0 + r.rx3), 0.5 * (r.ry0 + r.ry3))
-    } else {
-        (0.5 * (r.rx1 + r.rx2), 0.5 * (r.ry1 + r.ry2))
-    };
-    (hx - tx) * ux + (hy - ty) * uy
+    let (tx, ty) = (0.5 * (l.rx1 + l.rx2), 0.5 * (l.ry1 + l.ry2));
+    let (hx, hy) = (0.5 * (r.rx0 + r.rx3), 0.5 * (r.ry0 + r.ry3));
+    (hx - tx) * lhs.ux + (hy - ty) * lhs.uy
 }
 
 /// Overlap, across the writing direction, of `lhs`'s trailing edge and
@@ -1371,6 +1364,41 @@ mod tests {
         let (lines, _) =
             line_and_word_cells_with(&und_dem_line(), 792.0, true, WordGap::Factor(0.5));
         assert_eq!(lines[0].text, "schaftunddemÖst");
+    }
+
+    #[test]
+    fn right_to_left_glyphs_in_visual_order_stay_one_line() {
+        // Arabic drawn in visual order (the pen moves left to right, as most
+        // producers store it): the gap runs along the pen, not against the
+        // script — reversed, every glyph pair read as a step back of two
+        // advances and each glyph became a line of its own.
+        let mut g = Vec::new();
+        let mut x = 100.0f32;
+        for (k, word) in [
+            "\u{0631}\u{0627}\u{0632}\u{0627}\u{0628}",
+            "\u{0631}\u{062f}",
+        ]
+        .iter()
+        .enumerate()
+        {
+            if k > 0 {
+                x += 3.0;
+            }
+            for ch in word.chars() {
+                g.push(glyph(ch, x, x + 5.0));
+                x += 5.0;
+            }
+        }
+        for gap in [WordGap::Adaptive, WordGap::Factor(0.2)] {
+            let (lines, words) = line_and_word_cells_with(&g, 792.0, true, gap);
+            assert_eq!(
+                lines.len(),
+                1,
+                "{gap:?}: {:?}",
+                lines.iter().map(|c| &c.text).collect::<Vec<_>>()
+            );
+            assert_eq!(words.len(), 2, "{gap:?}");
+        }
     }
 
     #[test]
