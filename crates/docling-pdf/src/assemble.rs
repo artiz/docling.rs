@@ -1713,22 +1713,16 @@ fn clean_text(text: &str) -> String {
 fn clean_text_keep_wrap(text: &str) -> String {
     let wrap = text.trim_end().ends_with('\u{ad}');
     // Typographic-quote normalization follows docling-parse's sanitizer table
-    // (`pdf_sanitators/constants.h`): every curly quote — single *and double* —
-    // becomes the ASCII apostrophe `'`, and `‚` a comma. A `"` in docling's
-    // output only ever comes from a literal `quotedbl` glyph, never from `“ ”`
-    // (2206's `'text in the wild"` pairs a curly open with a literal-quote
-    // close). This replaces an earlier Hangul-only special case that patched
-    // one symptom of mapping `“ ”` to `"`.
+    // (`pdf_sanitators/constants.h`): single curly quotes become the ASCII
+    // apostrophe `'`, double ones the ASCII `"` (docling-parse#349, 7.x —
+    // before it folded both to `'`, which docling's groundtruth carried until
+    // its docling-parse 7 refresh), and `‚` a comma.
     let replaced = text
         .replace("\u{2} ", "")
         .replace("\u{ad} ", "")
         .replace(['\u{2}', '\u{ad}'], "") // any stray wrap hyphens not at a join
-        .replace(
-            [
-                '\u{2018}', '\u{2019}', '\u{201b}', '\u{201c}', '\u{201d}', '\u{201e}', '\u{201f}',
-            ],
-            "'",
-        ) // ‘ ’ ‛ “ ” „ ‟ → '
+        .replace(['\u{2018}', '\u{2019}', '\u{201b}'], "'") // ‘ ’ ‛ → '
+        .replace(['\u{201c}', '\u{201d}', '\u{201e}', '\u{201f}'], "\"") // “ ” „ ‟ → "
         .replace('\u{201a}', ",") // ‚ → ,
         .replace(
             [
@@ -5484,11 +5478,11 @@ mod tests {
         assert_eq!(clean_text("end-to\u{2} end deep"), "end-toend deep");
         // A stray wrap hyphen (no following join) is dropped.
         assert_eq!(clean_text("word\u{2}"), "word");
-        // Typographic punctuation → ASCII: every curly quote becomes `'`
-        // (docling-parse's sanitizer table), a literal `"` stays.
+        // Typographic punctuation → ASCII (docling-parse's sanitizer table):
+        // single curly quotes become `'`, double ones `"` (docling-parse#349).
         assert_eq!(
-            clean_text("Graph\u{2019}s \u{201c}x\u{201d} \"y\""),
-            "Graph's 'x' \"y\""
+            clean_text("Graph\u{2019}s \u{201c}x\u{201d} \u{201e}y\u{201c}"),
+            "Graph's \"x\" \"y\""
         );
         assert_eq!(clean_text("a\u{2026}"), "a...");
         // The docling-parse sanitizer's internal spacing is preserved as

@@ -363,10 +363,10 @@ impl PyDocumentConverter {
     ///   `OcrOptions.scale`, #254); `None` reads the pipeline's own 2.0 px/pt
     ///   render (docling's default is 3 = 216 dpi).
     /// * `pdf_word_gap` — where a PDF's text layer splits words the file
-    ///   draws with a cursor move and no space glyph (#921): `"legacy"`
-    ///   (default, docling-parse ≤ 6; also `DOCLING_RS_PDF_WORD_GAP`) |
-    ///   `"adaptive"` (docling-parse ≥ 7's line-local threshold) | a factor
-    ///   such as `"0.25"` of the two flanking glyphs' mean advance, in
+    ///   draws with a cursor move and no space glyph (#921): `"adaptive"`
+    ///   (default, docling-parse ≥ 7's line-local threshold; also
+    ///   `DOCLING_RS_PDF_WORD_GAP`) | `"legacy"` (docling-parse ≤ 6) | a
+    ///   factor such as `"0.2"` of the two flanking glyphs' mean advance, in
     ///   (0, 4]. Anything else raises `ValueError`.
     /// * `ocr_textline_orientation` — RapidOCR's text-line orientation
     ///   handling (#666): oriented line crops, tall lines turned 90°,

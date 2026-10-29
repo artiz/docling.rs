@@ -306,10 +306,11 @@ class DocumentConverter:
       point), #254. Also accepted docling-shaped, via
       ``pipeline_options.ocr_options.mode`` / ``.scale``.
     * ``pdf_word_gap`` — where a PDF's text layer splits words the file draws
-      with a cursor move and no space glyph (#921): ``"legacy"`` (default,
-      docling-parse <= 6; also ``DOCLING_RS_PDF_WORD_GAP``) | ``"adaptive"``
-      (docling-parse >= 7's line-local threshold) | a factor such as ``0.25``
-      of the two flanking glyphs' mean advance, in (0, 4].
+      with a cursor move and no space glyph (#921): ``"adaptive"`` (default,
+      docling-parse >= 7's line-local threshold; also
+      ``DOCLING_RS_PDF_WORD_GAP``) | ``"legacy"`` (docling-parse <= 6) | a
+      factor such as ``0.2`` of the two flanking glyphs' mean advance, in
+      (0, 4].
     * ``ocr_textline_orientation`` — RapidOCR's text-line orientation
       handling (#666): detected lines cropped along their rotated rectangle,
       tall crops turned 90°, upside-down lines turned by the 0/180 classifier

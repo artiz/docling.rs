@@ -24,7 +24,7 @@ fn body_line(y: i32) -> String {
 
 /// #922: WinAnsi 0x84 (`„`) is in the 0x80–0x9F row the table lacked; the
 /// closing `“` (0x93) was kept, the opening mark vanished. docling's sanitizer
-/// maps both to `'` (`clean_text`).
+/// maps both to `"` (`clean_text`; `'` before docling-parse#349).
 #[test]
 fn low_opening_quote_survives() {
     let content = format!(
@@ -33,7 +33,7 @@ fn low_opening_quote_survives() {
     );
     let text = text_of(&pdf(&content));
     assert!(
-        text.contains("Teilen 'Gewinn oder Verlust' und 'sonstiges' Ergebnis"),
+        text.contains("Teilen \"Gewinn oder Verlust\" und \"sonstiges\" Ergebnis"),
         "{text:?}"
     );
 }

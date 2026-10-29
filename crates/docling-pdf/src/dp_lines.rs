@@ -425,9 +425,10 @@ fn build_cells(glyphs: &[Glyph], euclidean: bool) -> Vec<Cell> {
     cells
 }
 
-/// Build line cells from a page's glyph stream via the docling-parse contraction.
+/// Build line cells from a page's glyph stream under the process's word-gap
+/// rule (`DOCLING_RS_PDF_WORD_GAP`, #921).
 pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<TextCell> {
-    line_and_word_cells(glyphs, page_h, euclidean).0
+    line_and_word_cells_with(glyphs, page_h, euclidean, WordGap::from_env()).0
 }
 
 /// Build **word** cells from a page's glyph stream via docling-parse's
@@ -438,13 +439,16 @@ pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<
 /// `1군감염병`); real space glyphs are hard barriers and are erased afterwards.
 /// These are the per-word tokens TableFormer matches table-grid cells against.
 pub(crate) fn word_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<TextCell> {
-    line_and_word_cells(glyphs, page_h, euclidean).1
+    line_and_word_cells_with(glyphs, page_h, euclidean, WordGap::from_env()).1
 }
 
-/// Build the line cells **and** the word cells from one shared glyph build:
-/// the char cells are constructed once and contracted twice, under the line
-/// factors and the word factors respectively — exactly docling-parse's
-/// `create_line_cells` + `create_word_cells` pair.
+/// Build the line cells **and** the word cells from one shared glyph build
+/// under docling-parse ≤ 6's contraction ([`WordGap::Legacy`]): the char
+/// cells are constructed once and contracted twice, under the line factors
+/// and the word factors respectively — exactly docling-parse's
+/// `create_line_cells` + `create_word_cells` pair. The tests pin the legacy
+/// contraction through it; production goes through the process's rule.
+#[cfg(test)]
 pub(crate) fn line_and_word_cells(
     glyphs: &[Glyph],
     page_h: f32,
@@ -601,29 +605,33 @@ fn is_ligature(s: &str) -> bool {
 /// How a word boundary is decided where the PDF draws no space glyph — a
 /// word set apart only by moving the text cursor (#921).
 ///
-/// [`WordGap::Legacy`], the default, is the contraction above: the
-/// docling-parse ≤ 6 rule the PDF baselines are built on, where a gap splits
-/// two words when it exceeds 0.33 × the running mean advance of the cell
-/// accumulated so far — a cell that restarts at every font change, so the
-/// threshold drifts along a line (`und dem` in a second font resource read
-/// `unddem`: 1.955 pt against 0.33 × 5.925 pt, the mean of `und` alone).
+/// [`WordGap::Adaptive`], the default, and [`WordGap::Factor`] follow
+/// docling-parse ≥ 7's contractor (`cells.h::contract`, 2026-09, PR #351 —
+/// what docling ≥ 2.142 runs on, `docling-parse>=7.22`): glyphs are grouped
+/// into line runs by geometry alone (no font boundary), every gap between
+/// two visible glyphs is normalized by the mean advance of those two
+/// glyphs, and a normalized gap above the threshold starts a new word; an
+/// explicit space glyph is always a boundary. Line cells are the run's
+/// words joined by single spaces. Letter spacing is detected first
+/// ([`tracked_gaps`]) — our addition, where docling-parse cuts letter-spaced
+/// words mid-word.
 ///
-/// The two opt-in modes follow docling-parse ≥ 7's contractor
-/// (`cells.h::contract`, 2026-09, PR #351) instead: glyphs are grouped into
-/// line runs by geometry alone (no font boundary), every gap between two
-/// visible glyphs is normalized by the mean advance of those two glyphs,
-/// and a normalized gap above the threshold starts a new word; an explicit
-/// space glyph is always a boundary. Line cells are the run's words joined
-/// by single spaces.
+/// [`WordGap::Legacy`] is the contraction above: the docling-parse ≤ 6 rule
+/// this port started from, where a gap splits two words when it exceeds
+/// 0.33 × the running mean advance of the cell accumulated so far — a cell
+/// that restarts at every font change, so the threshold drifts along a line
+/// (`und dem` in a second font resource read `unddem`: 1.955 pt against
+/// 0.33 × 5.925 pt, the mean of `und` alone).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum WordGap {
-    #[default]
+    /// docling-parse ≤ 6's running-mean contraction.
     Legacy,
     /// A fixed normalized threshold for every line.
     Factor(f64),
     /// docling-parse ≥ 7's line-local threshold: a two-cluster k-means over
     /// the line's normalized gaps (character spacing vs word spacing), at
     /// least 0.18, capped at 0.35, 0.25 when the gaps do not separate.
+    #[default]
     Adaptive,
 }
 
@@ -636,8 +644,8 @@ impl WordGap {
     pub fn parse(s: &str) -> Result<Self, String> {
         let t = s.trim().to_ascii_lowercase();
         match t.as_str() {
-            "legacy" | "default" => Ok(WordGap::Legacy),
-            "adaptive" | "auto" => Ok(WordGap::Adaptive),
+            "legacy" => Ok(WordGap::Legacy),
+            "adaptive" | "auto" | "default" => Ok(WordGap::Adaptive),
             _ => match t.parse::<f64>() {
                 Ok(f) if f.is_finite() && f > 0.0 && f <= 4.0 => Ok(WordGap::Factor(f)),
                 _ => Err(format!(
@@ -648,17 +656,19 @@ impl WordGap {
         }
     }
 
-    /// `DOCLING_RS_PDF_WORD_GAP`, or [`WordGap::Legacy`] when it is unset
-    /// (an unreadable value warns once and keeps the default).
+    /// `DOCLING_RS_PDF_WORD_GAP`, or the default ([`WordGap::Adaptive`])
+    /// when it is unset (an unreadable value warns once and keeps the
+    /// default).
     pub fn from_env() -> Self {
         let Some(v) = docling_core::env::nonempty("DOCLING_RS_PDF_WORD_GAP") else {
-            return WordGap::Legacy;
+            return WordGap::default();
         };
         WordGap::parse(&v).unwrap_or_else(|e| {
             static WARNED: std::sync::Once = std::sync::Once::new();
-            WARNED
-                .call_once(|| eprintln!("docling-pdf: DOCLING_RS_PDF_WORD_GAP: {e}; using legacy"));
-            WordGap::Legacy
+            WARNED.call_once(|| {
+                eprintln!("docling-pdf: DOCLING_RS_PDF_WORD_GAP: {e}; using adaptive")
+            });
+            WordGap::default()
         })
     }
 }

@@ -208,9 +208,9 @@ pub struct ConvertOptions {
     pub ocr_mode: Option<String>,
     /// OCR input scale in px per PDF point (#254); unset = the 2.0 render.
     pub ocr_scale: Option<f32>,
-    /// The PDF text layer's word-gap rule (#921): `legacy` (default,
-    /// docling-parse ≤ 6) | `adaptive` (docling-parse ≥ 7's line-local
-    /// threshold) | a factor in (0, 4] of the flanking glyphs' mean advance.
+    /// The PDF text layer's word-gap rule (#921): `adaptive` (default,
+    /// docling-parse ≥ 7's line-local threshold) | `legacy` (docling-parse
+    /// ≤ 6) | a factor in (0, 4] of the flanking glyphs' mean advance.
     pub pdf_word_gap: Option<String>,
     /// RapidOCR's text-line orientation handling (#666): oriented crops, the
     /// 90° turn of tall lines and the 0/180 classifier. Default off

@@ -33,49 +33,56 @@ older, pypdfium2-era docling's and the pipeline was scored with OCR on.
 
 ## Current state
 
-**10 / 18 strict** · **11 / 18 whitespace-normalized** against upstream's
-current groundtruth (docling ≥ 2.123: docling-parse render, `do_ocr=False`,
-`compact_tables=True`; 18 fixtures — `table_misidentified_as_form`
-(docling#4064) joined the corpus with this refresh). Total 328 diff lines with
-the docling-parse renderer the baselines are measured with (374 before #528
-recovered redp5110's rotated table headers, 346 before #609 kept glyphs stacked
-at one x apart, 342 before #813 ported docling's caption matcher — 2203.01017v2
-19 → 17 and 2206.01062 14 → 10, the captions docling leaves loose now stay
-loose here too, and `right_to_left_03` reads exact; 330 before the text
-parser learnt the Adobe Glyph List's Latin names — 2203.01017v2's `/Lslash`
-reference author, 17 → 15); the default build's pure-Rust
-renderer scored 454 on the same files before that change ("The PDF stack"
-below). (The two Korean image-only pages `skipped_1page` /
-`skipped_2pages` carry no text groundtruth and are not scored.)
+**7 / 18 strict** against upstream's current groundtruth — total **393
+diff lines** (`scripts/conformance/pdf_groundtruth.sh`: `--skip-ocr
+--compact-tables`, docling-parse renderer). The groundtruth was refreshed
+for #921 from docling's `tests/data/pdf/groundtruth` at upstream `dc4693f`
+(2026-10-29; 12 of the 15 mirrored stems had changed): docling now runs on
+docling-parse ≥ 7.22 (`docling-slim` pins `docling-parse>=7.22.2`), whose
+word contraction (docling-parse#351) and quote folding (#349) changed the
+text of most files. That refreshed groundtruth *is* live docling: docling
+2.144.0 with docling-parse 7.24.1 reproduces it byte for byte on all 18
+files (`do_ocr=False`, `export_to_markdown(compact_tables=True)`, as
+upstream's `test_e2e_conversion` writes it).
+
+Against it, the pre-#921 tree — docling-parse ≤ 6's word rule, every curly
+quote folded to `'` — scored **6 / 18, 815 lines**. The port of
+docling-parse 7's rule as the default `pdf_word_gap=adaptive`, its quote
+folding (`“ ”` → `"`), and pen-direction gaps for right-to-left text took
+that to 7 / 18 and 393. (On the stale pre-refresh groundtruth the old tree
+read 10 / 18, 328 — a match to docling as it no longer is.) The two Korean
+image-only pages `skipped_1page` / `skipped_2pages` carry no text
+groundtruth and are not scored.
 
 | PDF | diff | dominant remaining blocker |
 |---|---:|---|
 | picture_classification | **exact** | — |
-| multi_page | **exact** | — |
 | 2305.03393v1-pg9 | **exact** | — (TableFormer table, cell-for-cell) |
-| right_to_left_01 | **exact** | — (RTL period attachment) |
-| right_to_left_02 | **exact** | — (kashida dedup + page-number layout) |
+| amt_handbook_sample | **exact** | — |
 | base14_fonts_rot90 / _rot180 / _rot270 | **exact** | — (`/Rotate` display-frame normalization, docling#4008; our own fixtures, groundtruth = the unrotated upstream file) |
 | code_and_formula | **exact** | — (flat legacy code, line-preserving `pretty` in strict) |
-| amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
-| right_to_left_03 | **exact** | — (bidi run order of a numbered heading) |
-| 2305.03393v1 | 4 | one author-block cluster (model-borderline) |
+| right_to_left_01 | 2 | docling-parse 7 cuts `أيضًا` before its tanween (`أيض ً`); we keep the word |
+| right_to_left_02 | 2 | one word's place at a line start (`ووف`) |
+| right_to_left_03 | 4 | a checkbox list item's marker order |
+| 2203.01017v2 | 9 | line-end hyphens docling fuses (`im-`/`balance`, `appear-`/`ances`; `column- and` is our #920 divergence), one picture placeholder's slot |
+| 2305.03393v1 | 10 | the ORCID superscripts: docling-parse 7 tests a word's baseline on pen origins and font size, we on the loose boxes, so `Lysak [0000-…]` keeps a space docling drops |
 | normal_4pages | 12 | docling folds the page-number glyph into the heading cluster (`## 들어가며 1`) where we emit it as its own item, and the `※` footnotes order |
-| 2203.01017v2 | 15 | the `c. Structure predicted by TableFormer:` item's slot under Figure 1, accent spacing in the references (`Herv´e D´ejean`) |
-| 2206.01062 | 10 | author-block cluster splits (model-borderline), Table 5's merged first column |
-| table_misidentified_as_form | 48 | the form container's nested table / picture (docling#4064): docling nests them inside the form region and keeps the heading, we flatten the region |
-| table_mislabeled_as_picture | 85 | the survey over-detected as tables; docling keeps a cell's leading indentation (`\|   They work in parallel…`) |
-| redp5110_sampled | 152 | TOC: docling's cell matching puts the dot leaders into the page-number column (`. . . . . . . vii`), ours keeps them with the title (`. vii`); cover-page ordering |
+| 2206.01062 | 14 | `mAP@ 0.5-0.95` (docling-parse 7 splits after `@`), `tildelow10%` (its glyph-name mapping; we read `~10%`) |
+| multi_page | 32 | docling-parse 7 maps the list bullet glyph to `∞` and docling keeps it as text (`- ∞ IBM MT/ST …`); we read a bullet and drop it as the marker |
+| table_misidentified_as_form | 70 | the form container's nested table / picture (docling#4064): docling nests them inside the form region and keeps the heading, we flatten the region |
+| table_mislabeled_as_picture | 81 | the survey over-detected as tables; checkbox glyphs (`☐`) and blank cells docling keeps |
+| redp5110_sampled | 157 | TOC dot leaders docling keeps as `. . . . . .` in the page column; monospace code docling-parse 7 spaces around punctuation (`EMPLOYEES .`, `( SESSION_USER , 'MGR' )`); `/SM590000` glyph names |
 
-Measured on the current tree with `scripts/conformance/pdf_groundtruth.sh`
-(`--skip-ocr --compact-tables`, docling-parse renderer). Two ports landed with
-this refresh because the new groundtruth surfaced them: docling's
-`ListItemMarkerProcessor` (a leading `-`/bullet/`N.`/`a)` marker is split off
-the item text — 2305's OTSL list reads `- "C" cell`, not `- - "C" cell`; a
-compound `3.a.` marker rides in the text, `- 3.a. If all…`), and
-`--compact-tables` on the streaming Markdown path (it reached only
-`--no-stream` before). Against the previous, pypdfium2-era groundtruth this
-tree scored 9/17 strict.
+Earlier refreshes, for the record: against the docling ≥ 2.123
+groundtruth (docling-parse ≤ 6) this tree went 374 → 346 (#609) → 342
+(#813, docling's caption matcher) → 330 (the Adobe Glyph List's Latin
+names) → 328; against the pypdfium2-era groundtruth before that it scored
+9/17 strict. Two ports landed with the 2.123 refresh because that
+groundtruth surfaced them: docling's `ListItemMarkerProcessor` (a leading
+`-`/bullet/`N.`/`a)` marker is split off the item text — 2305's OTSL list
+reads `- "C" cell`, not `- - "C" cell`; a compound `3.a.` marker rides in
+the text, `- 3.a. If all…`), and `--compact-tables` on the streaming
+Markdown path (it reached only `--no-stream` before).
 
 ## The PDF stack: what the models see, and what renders it
 

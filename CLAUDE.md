@@ -215,10 +215,10 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   `DOCLING_RS_OCR_ORIENTATION` (auto default; `off` disables content-based
   un-rotation of raster-rotated scans, #225 — probed on the detector's boxes
   with a confidence margin since #571), `DOCLING_RS_PDF_WORD_GAP` (#921;
-  `legacy` default = docling-parse ≤ 6's running-mean word gap the
-  baselines pin | `adaptive` = docling-parse ≥ 7's line-local threshold |
-  a factor of the flanking glyphs' mean advance — `pdf_word_gap` on every
-  surface), `DOCLING_CHUNK_TOKENIZER`,
+  `adaptive` default = docling-parse ≥ 7's line-local threshold, what
+  docling runs on and the baselines pin, plus Sperrsatz detection |
+  `legacy` = docling-parse ≤ 6's running-mean word gap | a factor of the
+  flanking glyphs' mean advance — `pdf_word_gap` on every surface), `DOCLING_CHUNK_TOKENIZER`,
   `DOCLING_RS_DEBUG` (re-enables quiet pipeline diagnostics, e.g. the
   int8→fp32 layout-retry notice), `DOCLING_RS_MAX_XML_DEPTH` (512; XML
   element nesting any input/part may reach — roxmltree recurses per level),

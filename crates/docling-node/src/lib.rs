@@ -121,10 +121,10 @@ pub struct ConverterOptions {
     /// default is 3 = 216 dpi).
     pub ocr_scale: Option<f64>,
     /// Where a PDF's text layer splits words drawn without a space glyph
-    /// (#921): `"legacy"` (default, docling-parse ≤ 6; also
-    /// `DOCLING_RS_PDF_WORD_GAP`) | `"adaptive"` (docling-parse ≥ 7's
-    /// line-local threshold) | a factor such as `"0.25"` of the two
-    /// flanking glyphs' mean advance, in (0, 4].
+    /// (#921): `"adaptive"` (default, docling-parse ≥ 7's line-local
+    /// threshold; also `DOCLING_RS_PDF_WORD_GAP`) | `"legacy"`
+    /// (docling-parse ≤ 6) | a factor such as `"0.2"` of the two flanking
+    /// glyphs' mean advance, in (0, 4].
     pub pdf_word_gap: Option<String>,
     /// RapidOCR's text-line orientation handling (#666): oriented line
     /// crops, tall lines turned 90°, upside-down lines turned by the 0/180

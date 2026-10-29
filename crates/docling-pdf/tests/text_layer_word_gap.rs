@@ -1,4 +1,4 @@
-//! The text layer's opt-in word-gap rules (#921, `pdf_word_gap`) on
+//! The text layer's docling-parse 7 word-gap rules (#921, `pdf_word_gap`) on
 //! letter-spaced text: synthetic one-page PDFs (`Tc` sets the tracking, `TJ`
 //! numbers the cursor-move word gaps, no space glyphs) and the reporter's
 //! public-domain fixtures in `tests/data/word_gap/`. Pure Rust, no models.

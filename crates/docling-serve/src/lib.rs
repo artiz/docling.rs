@@ -85,8 +85,8 @@
 //!   `OcrOptions.scale`, #254); unset reads the pipeline's own 2.0 px/pt
 //!   render, docling's default is 3 (216 dpi)
 //! - `pdf_word_gap` — where a PDF's text layer splits words drawn without
-//!   a space glyph (#921): `legacy` (default, docling-parse ≤ 6) |
-//!   `adaptive` (docling-parse ≥ 7's line-local threshold) | a factor in
+//!   a space glyph (#921): `adaptive` (default, docling-parse ≥ 7's
+//!   line-local threshold) | `legacy` (docling-parse ≤ 6) | a factor in
 //!   (0, 4] of the two flanking glyphs' mean advance
 //! - `ocr_textline_orientation` — RapidOCR's text-line orientation
 //!   handling (#666): oriented line crops, tall lines turned 90°, the 0/180

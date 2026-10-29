@@ -2,17 +2,15 @@
 
 <!-- image -->
 
-Communication
+Communication DISPATCH(F)△
 
 <!-- image -->
 
 <!-- image -->
 
-Time
-
-➔
-
 <!-- image -->
+
+Time ➔
 
 <!-- image -->
 

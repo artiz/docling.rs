@@ -1304,8 +1304,8 @@ impl PageTextParser {
     }
 
     /// The word-gap rule the line and word cells are built with (#921);
-    /// `None` keeps the environment's (`DOCLING_RS_PDF_WORD_GAP`, else the
-    /// legacy rule).
+    /// `None` keeps the environment's (`DOCLING_RS_PDF_WORD_GAP`, else
+    /// `adaptive`).
     pub fn set_word_gap(&mut self, gap: Option<crate::dp_lines::WordGap>) {
         if let Some(g) = gap {
             self.word_gap = g;
@@ -3628,17 +3628,29 @@ mod base14_fonts {
         );
     }
 
-    /// The font barrier itself is untouched: two *different* faces (regular
-    /// and bold Helvetica, which docling-parse names apart) set flush against
-    /// each other stay separate line cells, as `enforce_same_font` demands.
+    /// Under `legacy` the font barrier itself is untouched: two *different*
+    /// faces (regular and bold Helvetica, which docling-parse names apart) set
+    /// flush against each other stay separate line cells, as
+    /// `enforce_same_font` demands. docling-parse 7 dropped the barrier — its
+    /// line runs follow geometry alone — so under the default `adaptive` the
+    /// flush pair is one line and one word.
     #[test]
-    fn different_faces_still_keep_the_font_barrier() {
+    fn different_faces_keep_the_font_barrier_only_under_legacy() {
         let f1 = b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>";
         let f2 = b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Bold/Encoding/WinAnsiEncoding>>";
         let content = b"BT 72 720 Td /F2 12 Tf (Total:) Tj /F1 12 Tf (42) Tj ET\n";
-        let cs = cells(&pdf_with_fonts(&[f1, f2], content));
-        let texts: Vec<&str> = cs.iter().map(|c| c.text.as_str()).collect();
-        assert_eq!(texts, ["Total:", "42"], "{cs:?}");
+        let pdf = pdf_with_fonts(&[f1, f2], content);
+        let lines = |gap| {
+            let mut p = super::PageTextParser::open(&pdf).expect("opens");
+            p.set_word_gap(Some(gap));
+            p.cells(0)
+                .prose
+                .into_iter()
+                .map(|c| c.text)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(lines(crate::dp_lines::WordGap::Legacy), ["Total:", "42"]);
+        assert_eq!(lines(crate::dp_lines::WordGap::Adaptive), ["Total:42"]);
     }
 
     /// The identity follows docling-parse's precedence: a `/FontDescriptor/FontName`

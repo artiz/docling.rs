@@ -1,7 +1,5 @@
 3
 
-2
-
 4
 
 2
@@ -14,63 +12,49 @@ E
 
 1
 
-C
-
-1
-
 3
+
+C
 
 4
 
 C
 
-U
-
-C L L
-
-L
-
-U
-
-C
-
-D
+1
 
 C
 
 U
 
+C L L L 2
+
 U
 
-L
+C
 
-L
+U
 
-L
+U
+
+L L L
 
 X X X
 
 X X X
 
-C
+L L L
 
-C
-
-L
-
-L
-
-L
+C C D
 
 U
+
+C C C
 
 X
 
 C C
 
 U
-
-C C C
 
 C C C
 

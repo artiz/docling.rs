@@ -2434,7 +2434,7 @@ pub struct Pipeline {
     /// Picture OCR scale (#666). See [`Pipeline::picture_ocr_scale`].
     picture_ocr_scale: Option<f32>,
     /// The text layer's word-gap rule (#921); `None` = the environment's
-    /// (`DOCLING_RS_PDF_WORD_GAP`), else the legacy contraction.
+    /// (`DOCLING_RS_PDF_WORD_GAP`), else [`WordGap::Adaptive`].
     word_gap: Option<WordGap>,
     /// RapidOCR's line orientation handling (#666). See
     /// [`Pipeline::ocr_textline_orientation`].
@@ -2833,11 +2833,11 @@ impl Pipeline {
     }
 
     /// How the text layer splits words where the PDF draws no space glyph
-    /// (#921): [`WordGap::Legacy`] (docling-parse ≤ 6's running-mean rule,
-    /// the baselines), a fixed [`WordGap::Factor`] of the two flanking
-    /// glyphs' mean advance, or docling-parse ≥ 7's line-local
-    /// [`WordGap::Adaptive`] threshold. `None` keeps
-    /// `DOCLING_RS_PDF_WORD_GAP`, else the legacy rule.
+    /// (#921): docling-parse ≥ 7's line-local [`WordGap::Adaptive`]
+    /// threshold (the default), a fixed [`WordGap::Factor`] of the two
+    /// flanking glyphs' mean advance, or [`WordGap::Legacy`] (docling-parse
+    /// ≤ 6's running-mean rule). `None` keeps `DOCLING_RS_PDF_WORD_GAP`,
+    /// else the default.
     pub fn set_word_gap(&mut self, gap: Option<WordGap>) {
         self.word_gap = gap;
     }
