@@ -2,8 +2,8 @@
 #916 | skipped | feature request, queued for the next run (additive features in scope) | 2026-10-28T23:00Z
 #917 | skipped | feature request, queued for the next run (additive features in scope) | 2026-10-28T23:00Z
 #918 | fixed | claude/issue-918-ris-amp | 2026-10-29T00:40Z
-#919 | claimed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:10Z
-#920 | claimed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:10Z
-#921 | claimed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:10Z
-#922 | claimed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:10Z
-#923 | claimed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:10Z
+#919 | fixed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:55Z
+#920 | fixed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:55Z
+#921 | skipped | word gap is docling-parse's avg-char-width*0.33 threshold (dp_lines.rs port); changing it moves every PDF baseline, needs models + fixture (gist unreachable) to validate | 2026-10-29T03:55Z
+#922 | fixed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:55Z
+#923 | fixed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:55Z
