@@ -129,6 +129,22 @@ impl PageConfidence {
     }
 }
 
+/// One OCR-recognized cell with the recognition confidence the pipeline
+/// computed for it (#915): the mean emitted-character probability of the
+/// line or word crop, the figure the page `ocr_score` averages. A docling
+/// extension — docling's report stops at the page — so it lives beside the
+/// report, never in the document JSON (docling-core's schema has no field for
+/// it). Boxes are page points, top-left origin, like the pipeline's cells.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OcrCellConfidence {
+    pub text: String,
+    pub l: f32,
+    pub t: f32,
+    pub r: f32,
+    pub b: f32,
+    pub confidence: f32,
+}
+
 /// The document-level report (docling's `ConfidenceReport`): the four scores
 /// aggregated across pages, plus the per-page breakdown. Page keys are the
 /// **real 1-based page numbers** — the same numbering as the JSON export's
@@ -138,12 +154,48 @@ impl PageConfidence {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConfidenceReport {
     pub pages: BTreeMap<usize, PageConfidence>,
+    /// Per-cell OCR confidences by 1-based page number (#915); empty for
+    /// pages read from a text layer. Not part of [`ConfidenceReport::to_json`]
+    /// (docling's wire shape) — read it with [`ConfidenceReport::ocr_cells`].
+    ocr_cells: BTreeMap<usize, Vec<OcrCellConfidence>>,
 }
 
 impl ConfidenceReport {
     /// Build from per-page scores keyed by 1-based page number.
     pub fn from_pages(pages: BTreeMap<usize, PageConfidence>) -> Self {
-        Self { pages }
+        Self {
+            pages,
+            ocr_cells: BTreeMap::new(),
+        }
+    }
+
+    /// Attach the per-cell OCR confidences of a page (1-based). Empty lists
+    /// are not stored.
+    pub fn with_ocr_cells(mut self, page_no: usize, cells: Vec<OcrCellConfidence>) -> Self {
+        if !cells.is_empty() {
+            self.ocr_cells.insert(page_no, cells);
+        }
+        self
+    }
+
+    /// The OCR cells of a page with their recognition confidence, in the
+    /// order the pipeline produced them; empty when the page was not OCR'd.
+    pub fn ocr_cells(&self, page_no: usize) -> &[OcrCellConfidence] {
+        self.ocr_cells.get(&page_no).map_or(&[], Vec::as_slice)
+    }
+
+    /// The cells of every page whose confidence is below `threshold`,
+    /// as `(page_no, cell)`.
+    pub fn low_confidence_cells(
+        &self,
+        threshold: f32,
+    ) -> impl Iterator<Item = (usize, &OcrCellConfidence)> {
+        self.ocr_cells.iter().flat_map(move |(n, cells)| {
+            cells
+                .iter()
+                .filter(move |c| c.confidence < threshold)
+                .map(move |c| (*n, c))
+        })
     }
 
     fn field(&self, get: impl Fn(&PageConfidence) -> Option<f64>) -> Vec<Option<f64>> {
@@ -223,6 +275,28 @@ impl ConfidenceReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ocr_cells_are_kept_beside_the_scores() {
+        let cell = |t: &str, c: f32| OcrCellConfidence {
+            text: t.into(),
+            l: 0.0,
+            t: 0.0,
+            r: 1.0,
+            b: 1.0,
+            confidence: c,
+        };
+        let report = ConfidenceReport::from_pages(BTreeMap::new())
+            .with_ocr_cells(2, vec![cell("ok", 0.99), cell("smudge", 0.31)])
+            .with_ocr_cells(3, Vec::new());
+        assert_eq!(report.ocr_cells(2).len(), 2);
+        assert!(report.ocr_cells(1).is_empty() && report.ocr_cells(3).is_empty());
+        let low: Vec<_> = report.low_confidence_cells(0.5).collect();
+        assert_eq!(low.len(), 1);
+        assert_eq!((low[0].0, low[0].1.text.as_str()), (2, "smudge"));
+        // docling's wire shape is untouched.
+        assert!(!report.to_json().to_string().contains("smudge"));
+    }
 
     #[test]
     fn grades_follow_docling_thresholds() {
