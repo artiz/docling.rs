@@ -1391,7 +1391,7 @@ mod tests {
         // under a factor of 0.2. The same gap on a space-less line splits.
         let mut g = Vec::new();
         let mut x = 100.0f32;
-        let mut put = |g: &mut Vec<Glyph>, s: &str, x: &mut f32| {
+        let put = |g: &mut Vec<Glyph>, s: &str, x: &mut f32| {
             for ch in s.chars() {
                 g.push(glyph(ch, *x, *x + 2.5));
                 *x += 2.5;
