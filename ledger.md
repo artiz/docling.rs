@@ -7,3 +7,4 @@
 #921 | skipped | word gap is docling-parse's avg-char-width*0.33 threshold (dp_lines.rs port); changing it moves every PDF baseline, needs models + fixture (gist unreachable) to validate | 2026-10-29T03:55Z
 #922 | fixed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:55Z
 #923 | fixed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:55Z
+#934 | claimed | claude/issue-934-stream-length-provenance | 2026-10-30T06:50Z
