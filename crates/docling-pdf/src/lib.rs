@@ -711,6 +711,21 @@ pub struct ImageOutput {
 }
 
 #[cfg(feature = "ml")]
+/// Whether a page's text layer is too thin to be its text (#936): the
+/// non-blank cells cover under 2 % of the page — a page number or a running
+/// header beside text drawn as outlines. A digital page's body text covers far
+/// more, so it never pays for the orientation probe.
+fn sparse_text_layer(page: &PdfPage) -> bool {
+    let covered: f32 = page
+        .cells
+        .iter()
+        .filter(|c| !c.text.trim().is_empty())
+        .map(|c| (c.r - c.l).max(0.0) * (c.b - c.t).max(0.0))
+        .sum();
+    covered < 0.02 * page.width * page.height
+}
+
+#[cfg(feature = "ml")]
 /// The layout regions of a page with a text layer that no programmatic text
 /// touches — docling's "clusters without any visible programmatic text"
 /// (`_find_pdf_aware_layout_ocr_rects`: any text cell intersecting the
@@ -1392,8 +1407,20 @@ impl Worker {
     fn normalize_orientation(&mut self, n: usize, page: &mut PdfPage) -> Result<(), PdfError> {
         let scanned =
             page.cells.is_empty() && page.word_cells.is_empty() && page.code_cells.is_empty();
-        if self.no_ocr || self.skip_ocr || !scanned || page.image.width() <= 1 || !orient::enabled()
-        {
+        if self.no_ocr || self.skip_ocr || !orient::enabled() {
+            return Ok(());
+        }
+        // A sideways page drawn as vector outlines keeps a small upright text
+        // layer (a page number, a running header, #936): the layer is too thin
+        // to be the page's text, so the raster is probed like a scan's. The
+        // render may still be deferred for a page that needed no bitmap.
+        if !scanned {
+            if !sparse_text_layer(page) {
+                return Ok(());
+            }
+            page.resolve_image()?;
+        }
+        if page.image.width() <= 1 {
             return Ok(());
         }
         // The probe reads text through the OCR model; without one (missing —

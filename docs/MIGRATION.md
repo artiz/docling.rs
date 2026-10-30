@@ -2186,7 +2186,11 @@ These are deliberate or unavoidable divergences, not bugs.
     footer dropped empty. Now every text, furniture or table region no
     programmatic text touches is OCR'd, as docling's
     `_find_pdf_aware_layout_ocr_rects` does for "clusters without any
-    visible programmatic text" (the page renders on demand for it). Its
+    visible programmatic text" (the page renders on demand for it). A page
+    whose text layer is that thin (under 2 % of the page) is also probed
+    for a sideways raster like a scan (#936) — a landscape table turned
+    90° and outlined, beside an upright page number, is un-rotated before
+    layout and OCR instead of read as noise. Its
     other two triggers — clusters over a bitmap, and clusters whose text
     layer leaves a non-rule shape unexplained (an outlined glyph next to
     real text, docling#4209) — are not ported: the first is the bare-picture

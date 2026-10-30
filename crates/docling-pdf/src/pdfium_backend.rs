@@ -207,6 +207,22 @@ impl PdfPage {
             };
             (l.l, l.t, l.r, l.b) = (nl, nt, nr, nb);
         }
+        // The text layer of a page with only a sparse one (a page number
+        // beside outlined text, #936) follows the raster the same way; a
+        // scan has none.
+        for c in self
+            .cells
+            .iter_mut()
+            .chain(&mut self.word_cells)
+            .chain(&mut self.code_cells)
+        {
+            let (nl, nt, nr, nb) = match deg {
+                90 => (c.t, width - c.r, c.b, width - c.l),
+                180 => (width - c.r, height - c.b, width - c.l, height - c.t),
+                _ => (height - c.b, c.l, height - c.t, c.r),
+            };
+            (c.l, c.t, c.r, c.b) = (nl, nt, nr, nb);
+        }
         // Checkbox squares likewise (a scan has none; kept consistent).
         for c in &mut self.checkboxes {
             let (nl, nt, nr, nb) = match deg {
