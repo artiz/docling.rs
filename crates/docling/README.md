@@ -423,6 +423,25 @@ curl -F file=@deck.pptx -F password=1234 localhost:5001/v1/convert
 ```
 
 
+## Repaired PDF input
+
+The PDF reader repairs what it can — a stream whose `/Length` overstates or
+understates its data is read from its `endstream` boundary — and says
+nothing about it. A caller that must refuse repaired sources asks first
+(#934); the check reads the original bytes and does not convert:
+
+```rust
+use docling::{pdf_repairs, PdfRepair};
+
+let bytes = std::fs::read("in.pdf")?;
+for repair in pdf_repairs(&bytes) {
+    if let PdfRepair::StreamLength { object, declared, recovered, .. } = repair {
+        eprintln!("object {object:?}: /Length {declared:?}, recovered {recovered:?}");
+    }
+}
+```
+
+
 ## Pluggable backends
 
 Add an input format, or read a built-in one your way, without forking (#680):

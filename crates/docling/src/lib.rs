@@ -107,8 +107,8 @@ pub use docling_pdf::{
 pub use docling_pdf::{
     convert_text_layer_pages as pdf_text_layer_pages,
     convert_text_layer_pages_opts as pdf_text_layer_pages_opts,
-    convert_text_layer_pages_with as pdf_text_layer_pages_with, TextOptions as PdfTextOptions,
-    WordGap as PdfWordGap,
+    convert_text_layer_pages_with as pdf_text_layer_pages_with, pdf_repairs, PdfRepair,
+    TextOptions as PdfTextOptions, WordGap as PdfWordGap,
 };
 
 /// Re-execute under an absolute `argv[0]` so ONNX Runtime finds its GPU
