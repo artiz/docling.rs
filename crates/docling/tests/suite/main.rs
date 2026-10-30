@@ -60,6 +60,7 @@ mod progress;
 mod redact;
 mod scanned;
 mod security_doc;
+mod sideways_outlines;
 mod svg;
 mod tesseract;
 mod textline_orientation;
