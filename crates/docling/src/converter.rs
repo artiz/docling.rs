@@ -313,6 +313,9 @@ pub struct DocumentConverter {
     /// Keep a PDF's typographic punctuation as drawn (#921); `None` = the
     /// environment's default. See [`Self::pdf_keep_typography`].
     pdf_keep_typography: Option<bool>,
+    /// Report the PDF reader's repairs on the result (#934); `None` = the
+    /// environment's default. See [`Self::pdf_report_repairs`].
+    pdf_report_repairs: Option<bool>,
     /// RapidOCR's line orientation handling (#666); `None` = the
     /// environment's default. See [`Self::ocr_textline_orientation`].
     ocr_textline_orientation: Option<bool>,
@@ -621,6 +624,7 @@ impl Default for DocumentConverter {
             ocr_scale: None,
             pdf_word_gap: None,
             pdf_keep_typography: None,
+            pdf_report_repairs: None,
             ocr_textline_orientation: None,
             images_scale: None,
             generate_page_images: false,
@@ -2345,6 +2349,31 @@ impl DocumentConverter {
         self
     }
 
+    /// Report what the PDF reader repaired to read the input (#934): the
+    /// result's [`pdf_repairs`](crate::ConversionResult::pdf_repairs) lists
+    /// every stream whose declared `/Length` does not end at its
+    /// `endstream` (with the declared and the recovered length) and a
+    /// padded cross-reference table — empty for a well-formed file — so a
+    /// caller can refuse recovered input. Off by default (also
+    /// `DOCLING_RS_PDF_REPORT_REPAIRS`): the reader repairs silently, and
+    /// the check re-reads the file (one linear pass plus one parse). The
+    /// conversion itself is unchanged either way. PDF input on the standard
+    /// and the text-layer pipelines; `docling_pdf::pdf_repairs` is the same
+    /// check without a conversion.
+    pub fn pdf_report_repairs(mut self, report: bool) -> Self {
+        self.pdf_report_repairs = Some(report);
+        self
+    }
+
+    /// Whether this converter reports the PDF reader's repairs (#934) —
+    /// [`Self::pdf_report_repairs`], else `DOCLING_RS_PDF_REPORT_REPAIRS`.
+    /// For callers that stream (no `ConversionResult` to carry them) and
+    /// run `pdf_repairs` themselves.
+    pub fn reports_pdf_repairs(&self) -> bool {
+        self.pdf_report_repairs
+            .unwrap_or_else(|| docling_core::env::flag("DOCLING_RS_PDF_REPORT_REPAIRS"))
+    }
+
     /// The text-layer settings of a text-layer-only conversion (#921).
     #[cfg(all(feature = "pdf-text", not(feature = "pdf")))]
     fn pdf_text_options(&self) -> docling_pdf::TextOptions {
@@ -3323,6 +3352,13 @@ impl DocumentConverter {
         // reads it — after the backend, before the export-side settings.
         let redaction = self.redact(&mut document)?;
         self.finish_document(&mut document);
+        // Read off the input bytes, not the converted model (#934): the
+        // reader's repairs leave no trace in what it loaded.
+        #[cfg(any(feature = "pdf", feature = "pdf-text"))]
+        let pdf_repairs = (source.format == InputFormat::Pdf && self.reports_pdf_repairs())
+            .then(|| docling_pdf::pdf_repairs(&source.bytes));
+        #[cfg(not(any(feature = "pdf", feature = "pdf-text")))]
+        let pdf_repairs = None;
 
         // What the reader read around (#912: an HTML page past the depth
         // cap, flattened) is a problem the conversion survived — reported
@@ -3339,6 +3375,7 @@ impl DocumentConverter {
             input_name: source.name.clone(),
             format: source.format,
             redaction,
+            pdf_repairs,
             errors,
         })
     }

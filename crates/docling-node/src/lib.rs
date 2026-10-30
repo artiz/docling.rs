@@ -131,6 +131,11 @@ pub struct ConverterOptions {
     /// docling-parse's sanitizer does (the default; also
     /// `DOCLING_RS_PDF_KEEP_TYPOGRAPHY`).
     pub pdf_keep_typography: Option<bool>,
+    /// Report what the PDF reader repaired to read the input (#934) on the
+    /// result's `pdfRepairs` — a stream whose `/Length` misses its
+    /// `endstream`, a padded xref. Off by default (also
+    /// `DOCLING_RS_PDF_REPORT_REPAIRS`); the conversion is unchanged.
+    pub pdf_report_repairs: Option<bool>,
     /// RapidOCR's text-line orientation handling (#666): oriented line
     /// crops, tall lines turned 90°, upside-down lines turned by the 0/180
     /// classifier (`.models/ocr_textline_ori.onnx`). Unset = off unless
@@ -485,6 +490,8 @@ pub struct ConvertOptions {
     /// Keep a PDF's typographic punctuation as drawn (#921). See
     /// [`ConverterOptions`].
     pub pdf_keep_typography: Option<bool>,
+    /// Report the PDF reader's repairs (#934). See [`ConverterOptions`].
+    pub pdf_report_repairs: Option<bool>,
     /// RapidOCR's text-line orientation handling (#666). See
     /// [`ConverterOptions`].
     pub ocr_textline_orientation: Option<bool>,
@@ -666,6 +673,57 @@ pub struct ConvertResult {
     /// What the PII pass redacted (#621) when `redactPii` was on: counts
     /// per label (`{ EMAIL: 2, PHONE: 1 }`); absent otherwise.
     pub redaction: Option<std::collections::HashMap<String, u32>>,
+    /// What the PDF reader repaired to read the input (#934) when
+    /// `pdfReportRepairs` was on and the input is a PDF — `[]` for a
+    /// well-formed file; absent otherwise.
+    pub pdf_repairs: Option<Vec<PdfRepairItem>>,
+}
+
+/// One repair the PDF reader made to read the input (#934).
+#[napi(object)]
+pub struct PdfRepairItem {
+    /// `"stream_length"` (a stream whose declared `/Length` does not end at
+    /// its `endstream`) | `"xref_entries_padded"`.
+    pub kind: String,
+    /// The stream's `[object number, generation]`.
+    pub object: Option<Vec<u32>>,
+    /// Byte offset of the object's `N G obj` header.
+    pub offset: Option<i64>,
+    /// The declared `/Length`; absent when missing or unresolvable.
+    pub declared: Option<i64>,
+    /// The recovered length; absent when the stream had no unambiguous end
+    /// and was dropped.
+    pub recovered: Option<i64>,
+}
+
+fn pdf_repair_items(repairs: Vec<docling::PdfRepair>) -> Vec<PdfRepairItem> {
+    repairs
+        .into_iter()
+        .map(|r| match r {
+            docling::PdfRepair::StreamLength {
+                object,
+                offset,
+                declared,
+                recovered,
+            } => PdfRepairItem {
+                kind: "stream_length".into(),
+                object: Some(vec![object.0, u32::from(object.1)]),
+                offset: Some(offset as i64),
+                declared,
+                recovered: recovered.map(|n| n as i64),
+            },
+            other => PdfRepairItem {
+                kind: match other {
+                    docling::PdfRepair::XrefEntriesPadded => "xref_entries_padded".into(),
+                    _ => "other".into(),
+                },
+                object: None,
+                offset: None,
+                declared: None,
+                recovered: None,
+            },
+        })
+        .collect()
 }
 
 /// docling's `ErrorItem`: one recorded problem of a conversion that still
@@ -794,6 +852,7 @@ pub struct RawResult {
     images: Vec<(String, Vec<u8>)>,
     errors: Vec<docling::ErrorItem>,
     redaction: Option<docling::RedactionReport>,
+    pdf_repairs: Option<Vec<docling::PdfRepair>>,
 }
 
 impl RawResult {
@@ -807,6 +866,7 @@ impl RawResult {
             redaction: self
                 .redaction
                 .map(|r| r.counts.into_iter().map(|(k, v)| (k, v as u32)).collect()),
+            pdf_repairs: self.pdf_repairs.map(pdf_repair_items),
             images: self
                 .images
                 .into_iter()
@@ -990,6 +1050,7 @@ fn render_doc(
         images,
         errors,
         redaction,
+        pdf_repairs: None,
     }
 }
 
@@ -1048,15 +1109,18 @@ fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult>
     let result = converter.convert(source).map_err(convert_err)?;
     let format = result.format.as_str().to_string();
     let status = status_str(result.status);
-    Ok(render_doc(
-        result.document,
-        cfg,
-        result.input_name,
-        format,
-        status,
-        result.errors,
-        result.redaction,
-    ))
+    Ok(RawResult {
+        pdf_repairs: result.pdf_repairs,
+        ..render_doc(
+            result.document,
+            cfg,
+            result.input_name,
+            format,
+            status,
+            result.errors,
+            result.redaction,
+        )
+    })
 }
 
 /// Convert every document inside a ZIP archive (#557), each through
@@ -1951,20 +2015,27 @@ fn run_pipeline(
     doc.strict_markdown = strict;
     doc.page_break_placeholder = cfg.page_break_placeholder.clone();
     let redaction = converter.redact(&mut doc).map_err(convert_err)?;
+    // The warm pipeline bypasses `convert` (#934): read off the input bytes.
+    let pdf_repairs = (source.format == docling::InputFormat::Pdf
+        && converter.reports_pdf_repairs())
+    .then(|| docling::pdf_repairs(&source.bytes));
     let status = if errors.is_empty() {
         "success"
     } else {
         "partial_success"
     };
-    Ok(render_doc(
-        doc,
-        cfg,
-        source.name,
-        source.format.as_str().to_string(),
-        status.to_string(),
-        errors,
-        redaction,
-    ))
+    Ok(RawResult {
+        pdf_repairs,
+        ..render_doc(
+            doc,
+            cfg,
+            source.name,
+            source.format.as_str().to_string(),
+            status.to_string(),
+            errors,
+            redaction,
+        )
+    })
 }
 
 /// The streaming producer body: convert through the warm pipeline and push

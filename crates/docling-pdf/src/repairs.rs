@@ -12,38 +12,13 @@
 //! So this reads the *original* bytes once more, on demand, with lopdf's own
 //! stream grammar — `dict space "stream" space0 eol`, then exactly `/Length`
 //! bytes, an optional EOL and `endstream` — and reports every stream that
-//! fails it, with the declared and the recovered length. Nothing here runs
-//! during a conversion: the output of every converter is untouched.
+//! fails it, with the declared and the recovered length. A conversion runs
+//! it only when asked (`pdf_report_repairs`, off by default), and the
+//! document it produces is the same either way.
 
 use std::collections::HashMap;
 
-/// One repair the reader makes (or has to give up on) to read the file.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum PdfRepair {
-    /// lopdf rejects the file, and it loads once the classic cross-reference
-    /// table's 19-byte entries (a bare LF where the spec wants a two-byte
-    /// EOL) are padded to 20 — the reader's fallback for parsers that refuse
-    /// them (lopdf 0.45 itself reads such entries as they are; then no
-    /// repair is taken and none is reported).
-    XrefEntriesPadded,
-    /// A stream whose declared `/Length` does not end at its `endstream`.
-    StreamLength {
-        /// The stream's object number and generation.
-        object: (u32, u16),
-        /// Byte offset of the object's `N G obj` header in the input.
-        offset: usize,
-        /// The declared length: the integer in the dictionary, or the one an
-        /// indirect `/Length N G R` points at. `None` when it is missing,
-        /// negative or not an integer, or the reference does not resolve.
-        declared: Option<i64>,
-        /// The length the reader recovers: the bytes up to the EOL before the
-        /// one `endstream` followed by `endobj` (lopdf's rule, and what pdfium
-        /// trusts). `None` when there is no such boundary or more than one —
-        /// the stream is then dropped, not read.
-        recovered: Option<usize>,
-    },
-}
+pub use docling_core::PdfRepair;
 
 /// Every repair reading `bytes` takes (#934), in file order; empty for a
 /// well-formed file. The input as given — encrypted files included, whose

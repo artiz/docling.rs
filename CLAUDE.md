@@ -221,6 +221,10 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   flanking glyphs' mean advance — `pdf_word_gap` on every surface),
   `DOCLING_RS_PDF_KEEP_TYPOGRAPHY` (#921; off — on keeps `„ “ ‚ ‘`, dashes and
   `…` as drawn instead of docling-parse's ASCII folding, `pdf_keep_typography`),
+  `DOCLING_RS_PDF_REPORT_REPAIRS` (#934; off — on, a PDF conversion reports
+  what the reader repaired to read it, `pdf_report_repairs` /
+  `ConversionResult::pdf_repairs`; `docling_pdf::pdf_repairs` is the same
+  check without a conversion),
   `DOCLING_CHUNK_TOKENIZER`,
   `DOCLING_RS_DEBUG` (re-enables quiet pipeline diagnostics, e.g. the
   int8→fp32 layout-retry notice), `DOCLING_RS_MAX_XML_DEPTH` (512; XML

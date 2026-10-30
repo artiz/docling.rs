@@ -131,6 +131,7 @@ paths:
         - { $ref: "#/components/parameters/ocr_scale" }
         - { $ref: "#/components/parameters/pdf_word_gap" }
         - { $ref: "#/components/parameters/pdf_keep_typography" }
+        - { $ref: "#/components/parameters/pdf_report_repairs" }
         - { $ref: "#/components/parameters/ocr_textline_orientation" }
         - { $ref: "#/components/parameters/ocr_engine" }
         - { $ref: "#/components/parameters/images_scale" }
@@ -230,6 +231,7 @@ paths:
                 ocr_scale: { $ref: "#/components/schemas/OcrScale" }
                 pdf_word_gap: { $ref: "#/components/schemas/PdfWordGap" }
                 pdf_keep_typography: { $ref: "#/components/schemas/PdfKeepTypography" }
+                pdf_report_repairs: { $ref: "#/components/schemas/PdfReportRepairs" }
                 ocr_textline_orientation: { type: boolean }
                 ocr_engine: { $ref: "#/components/schemas/OcrEngine" }
                 images_scale: { $ref: "#/components/schemas/ImagesScale" }
@@ -751,6 +753,18 @@ components:
         wider than F times the mean advance of the two flanking glyphs; both
         keep letter-spaced words whole. `legacy` is docling-parse <= 6's
         running-mean rule. Anything else is a 400.
+    PdfReportRepairs:
+      type: boolean
+      default: false
+      description: >-
+        Report what the PDF reader repaired to read the input (#934) — a
+        stream whose `/Length` does not end at its `endstream` (declared and
+        recovered length), a padded cross-reference table — as a JSON list
+        of `{"kind": "stream_length", "object": [n, gen], "offset",
+        "declared", "recovered"}` / `{"kind": "xref_entries_padded"}`
+        objects: the `X-Docling-Pdf-Repairs` header on a single response,
+        `pdf_repairs` on a batch / async item; `[]` for a well-formed file.
+        The conversion itself is unchanged (`DOCLING_RS_PDF_REPORT_REPAIRS`).
     PdfKeepTypography:
       type: boolean
       default: false
@@ -1219,6 +1233,7 @@ components:
         ocr_scale: { $ref: "#/components/schemas/OcrScale" }
         pdf_word_gap: { $ref: "#/components/schemas/PdfWordGap" }
         pdf_keep_typography: { $ref: "#/components/schemas/PdfKeepTypography" }
+        pdf_report_repairs: { $ref: "#/components/schemas/PdfReportRepairs" }
         ocr_textline_orientation:
           type: boolean
           default: false
@@ -1728,6 +1743,8 @@ components:
       { name: pdf_word_gap, in: query, schema: { $ref: "#/components/schemas/PdfWordGap" } }
     pdf_keep_typography:
       { name: pdf_keep_typography, in: query, schema: { $ref: "#/components/schemas/PdfKeepTypography" } }
+    pdf_report_repairs:
+      { name: pdf_report_repairs, in: query, schema: { $ref: "#/components/schemas/PdfReportRepairs" } }
     ocr_textline_orientation:
       { name: ocr_textline_orientation, in: query, schema: { type: boolean } }
     ocr_engine:

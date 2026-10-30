@@ -88,6 +88,9 @@
 //!   a space glyph (#921): `adaptive` (default, docling-parse ≥ 7's
 //!   line-local threshold) | `legacy` (docling-parse ≤ 6) | a factor in
 //!   (0, 4] of the two flanking glyphs' mean advance
+//! - `pdf_report_repairs` — report what the PDF reader repaired to read the
+//!   input (#934): `X-Docling-Pdf-Repairs` on a single response, a
+//!   `pdf_repairs` list on a batch / async item; off by default
 //! - `pdf_keep_typography` — keep a PDF's typographic punctuation (`„ “`,
 //!   `‚ ‘`, dashes, `…`) as drawn instead of folding it to ASCII (#921)
 //! - `ocr_textline_orientation` — RapidOCR's text-line orientation
@@ -1649,6 +1652,7 @@ async fn job_result(
                 disposition: stored.disposition.clone(),
                 confidence: stored.confidence.clone(),
                 redaction: stored.redaction.clone(),
+                pdf_repairs: stored.pdf_repairs.clone(),
                 body: stored.body.clone(),
             }
             .into_response(),
@@ -1667,6 +1671,9 @@ struct StoredResponse {
     confidence: Option<header::HeaderValue>,
     /// The `X-Docling-Redaction` counts (#621), when the PII pass ran.
     redaction: Option<header::HeaderValue>,
+    /// The `X-Docling-Pdf-Repairs` list (#934), when the request asked
+    /// `pdf_report_repairs` and the input is a PDF.
+    pdf_repairs: Option<header::HeaderValue>,
     body: Vec<u8>,
     /// The problems the conversion survived (#497) — a non-empty list is a
     /// `partial_success`, announced in `X-Docling-Status` / `X-Docling-Errors`
@@ -1682,6 +1689,7 @@ impl StoredResponse {
                 document: DoclingDocument::new(""),
                 errors: self.errors,
                 redaction: None,
+                pdf_repairs: None,
             };
             response.headers_mut().insert(
                 "x-docling-status",
@@ -1703,6 +1711,9 @@ impl StoredResponse {
         }
         if let Some(v) = self.redaction {
             response.headers_mut().insert("x-docling-redaction", v);
+        }
+        if let Some(v) = self.pdf_repairs {
+            response.headers_mut().insert("x-docling-pdf-repairs", v);
         }
         response
     }
@@ -1760,6 +1771,7 @@ fn run_conversion(
                 disposition: None,
                 confidence: None,
                 redaction: None,
+                pdf_repairs: None,
                 body: serde_json::to_vec_pretty(&json!({ "pages": pages }))
                     .expect("page JSON serializes"),
             });
@@ -1768,6 +1780,7 @@ fn run_conversion(
         let converted = convert_document(state, source, options)?;
         let mut stored = render_stored(state, to, image_mode, &name, &converted.document, options)?;
         stored.redaction = converted.redaction_header();
+        stored.pdf_repairs = converted.pdf_repairs_header();
         stored.errors = converted.errors;
         return Ok(stored);
     }
@@ -1820,6 +1833,7 @@ fn run_conversion(
         disposition: None,
         confidence: None,
         redaction: None,
+        pdf_repairs: None,
         body: serde_json::to_vec_pretty(&json!({ "results": items }))
             .expect("batch JSON serializes"),
     })
@@ -1922,6 +1936,7 @@ fn run_conversion_to_target(
         disposition: None,
         confidence: None,
         redaction: None,
+        pdf_repairs: None,
         // Upstream's RemoteTargetResult is the bare kind ("no content, the
         // result has been pushed to a remote target"); the credential-free
         // target display and per-item outcomes ride along as extra keys.
@@ -1988,6 +2003,7 @@ fn run_conversion_to_zip(
         disposition: Some(format!("attachment; filename=\"{file_name}\"")),
         confidence: None,
         redaction: None,
+        pdf_repairs: None,
         body: docling::dclx::zip_bytes(entry_refs),
     })
 }
@@ -2072,6 +2088,7 @@ fn run_conversion_to_put(
         disposition: None,
         confidence: None,
         redaction: None,
+        pdf_repairs: None,
         // The echoed target drops the query string: pre-signed URLs carry
         // their signature there, and the ack may transit logs and proxies.
         body: serde_json::to_vec_pretty(&json!({
@@ -2271,6 +2288,7 @@ fn render_stored(
             disposition: None,
             confidence,
             redaction: None,
+            pdf_repairs: None,
             body: markdown_string(state, document, image_mode, options).into_bytes(),
         },
         "json" => {
@@ -2291,6 +2309,7 @@ fn render_stored(
                 disposition: None,
                 confidence,
                 redaction: None,
+                pdf_repairs: None,
                 body,
             }
         }
@@ -2311,6 +2330,7 @@ fn render_stored(
                 disposition: None,
                 confidence,
                 redaction: None,
+                pdf_repairs: None,
                 body: serde_json::to_vec(&records).expect("chunk records serialize"),
             }
         }
@@ -2320,6 +2340,7 @@ fn render_stored(
             disposition: Some(format!("attachment; filename=\"{name}.dclx\"")),
             confidence,
             redaction: None,
+            pdf_repairs: None,
             body: docling::dclx::to_dclx_bytes(document),
         },
         // #317: a text body like Markdown (no download disposition).
@@ -2329,6 +2350,7 @@ fn render_stored(
             disposition: None,
             confidence,
             redaction: None,
+            pdf_repairs: None,
             body: document.export_to_latex().into_bytes(),
         },
         // #613: docling's `--to text`, a text body like Markdown.
@@ -2338,6 +2360,7 @@ fn render_stored(
             disposition: None,
             confidence,
             redaction: None,
+            pdf_repairs: None,
             body: text_string(state, document, options).into_bytes(),
         },
         // #614: docling's `--to vtt`, a text body like Markdown.
@@ -2347,6 +2370,7 @@ fn render_stored(
             disposition: None,
             confidence,
             redaction: None,
+            pdf_repairs: None,
             body: document.export_to_vtt().into_bytes(),
         },
         // #515: Pandoc's AST, for `pandoc -f json`; pictures follow
@@ -2357,6 +2381,7 @@ fn render_stored(
             disposition: None,
             confidence,
             redaction: None,
+            pdf_repairs: None,
             body: pandoc_string(document, image_mode, options).into_bytes(),
         },
         // #492: docling-core's HTML serializer; pictures follow `images`
@@ -2367,6 +2392,7 @@ fn render_stored(
             disposition: None,
             confidence,
             redaction: None,
+            pdf_repairs: None,
             body: html_string(document, image_mode).into_bytes(),
         },
         _ => unreachable!("validated above"),
@@ -2383,6 +2409,9 @@ fn mark_partial(item: &mut serde_json::Value, converted: &Converted) {
     // The PII pass's counts (#621) ride along the same way.
     if let Some(report) = &converted.redaction {
         item["redaction"] = report.counts_json();
+    }
+    if let Some(repairs) = &converted.pdf_repairs {
+        item["pdf_repairs"] = json!(repairs);
     }
 }
 
@@ -2589,6 +2618,7 @@ fn text_batch(
         disposition: None,
         confidence: None,
         redaction: None,
+        pdf_repairs: None,
         body: body.into_bytes(),
     }
 }
@@ -2988,9 +3018,19 @@ struct Converted {
     /// `X-Docling-Redaction` on a single response, `redaction` on a batch /
     /// async item. Never the mapping.
     redaction: Option<docling_core::RedactionReport>,
+    /// What the PDF reader repaired to read the input (#934), when the
+    /// request asked `pdf_report_repairs` — `X-Docling-Pdf-Repairs` on a
+    /// single response, `pdf_repairs` on a batch / async item.
+    pdf_repairs: Option<Vec<docling::PdfRepair>>,
 }
 
 impl Converted {
+    /// The `X-Docling-Pdf-Repairs` value: the list as JSON.
+    fn pdf_repairs_header(&self) -> Option<header::HeaderValue> {
+        let repairs = self.pdf_repairs.as_ref()?;
+        header::HeaderValue::from_str(&serde_json::to_string(repairs).ok()?).ok()
+    }
+
     /// The `X-Docling-Redaction` value: the counts as JSON.
     fn redaction_header(&self) -> Option<header::HeaderValue> {
         let report = self.redaction.as_ref()?;
@@ -3119,6 +3159,7 @@ fn convert_document_inner(
                     document,
                     errors: result.errors,
                     redaction,
+                    pdf_repairs: None,
                 })
             });
     }
@@ -3190,6 +3231,7 @@ fn convert_document_inner(
                                 .collect(),
                             document: c.document,
                             redaction: None,
+                            pdf_repairs: None,
                         }
                     }),
                 _ => pipeline
@@ -3198,6 +3240,7 @@ fn convert_document_inner(
                         document,
                         errors: Vec::new(),
                         redaction: None,
+                        pdf_repairs: None,
                     }),
             };
             pipeline.set_progress(None);
@@ -3222,6 +3265,10 @@ fn convert_document_inner(
             converted.redaction = finish
                 .redact(&mut converted.document)
                 .map_err(|e| conversion_api_error(&e))?;
+            // …and the repair report (#934), read off the input bytes.
+            converted.pdf_repairs = (source.format == InputFormat::Pdf
+                && finish.reports_pdf_repairs())
+            .then(|| docling::pdf_repairs(&source.bytes));
             Ok(converted)
         }
         _ => {
@@ -3232,6 +3279,7 @@ fn convert_document_inner(
                     document: r.document,
                     errors: r.errors,
                     redaction: r.redaction,
+                    pdf_repairs: r.pdf_repairs,
                 })
                 .map_err(|e| conversion_api_error(&e))
         }
@@ -3373,7 +3421,10 @@ fn request_converter(
 /// single pipeline conversion only) the confidence summary header —
 /// computable only after conversion, which is exactly when the PDF/image
 /// branch sends its single chunk.
-type Chunk = (String, Option<header::HeaderValue>);
+/// A piece of a streamed Markdown body and the response headers it brings —
+/// only a single document's first chunk carries any (`X-Docling-Confidence`,
+/// `X-Docling-Pdf-Repairs`), since the headers go out with it.
+type Chunk = (String, Vec<(&'static str, header::HeaderValue)>);
 
 /// The streaming worker's side of the channel, keeping the end of what it
 /// sent so the batch separator adds only the blank line the text lacks.
@@ -3432,7 +3483,7 @@ async fn stream_markdown(
             tail: String::new(),
         };
         for (i, item) in sources.into_iter().enumerate() {
-            if i > 0 && !tx.send(Ok((batch_separator(&tx.tail), None))) {
+            if i > 0 && !tx.send(Ok((batch_separator(&tx.tail), Vec::new()))) {
                 return;
             }
             let source = match item {
@@ -3441,7 +3492,7 @@ async fn stream_markdown(
                 // batch, its line.
                 Err((name, e)) if batch => {
                     let line = batch_error_text(&name, &api_error_message(e));
-                    if !tx.send(Ok((line, None))) {
+                    if !tx.send(Ok((line, Vec::new()))) {
                         return;
                     }
                     continue;
@@ -3471,10 +3522,10 @@ async fn stream_markdown(
         )
             .into_response()),
         Some(Err(e)) => Err(e),
-        Some(Ok((first_chunk, confidence))) => {
+        Some(Ok((first_chunk, headers))) => {
             use tokio_stream::StreamExt;
             let rest = tokio_stream::wrappers::ReceiverStream::new(rx);
-            let stream = tokio_stream::once(Ok((first_chunk, None)))
+            let stream = tokio_stream::once(Ok((first_chunk, Vec::new())))
                 .chain(rest)
                 .map(|item| {
                     item.map(|(text, _)| text.into_bytes()).map_err(|e| {
@@ -3489,8 +3540,8 @@ async fn stream_markdown(
                 Body::from_stream(stream),
             )
                 .into_response();
-            if let Some(value) = confidence {
-                response.headers_mut().insert("x-docling-confidence", value);
+            for (name, value) in headers {
+                response.headers_mut().insert(name, value);
             }
             Ok(response)
         }
@@ -3514,7 +3565,10 @@ fn stream_one(
     // truncated body after.
     let fail = |tx: &mut ChunkSender, e: ApiError| -> bool {
         if batch {
-            tx.send(Ok((batch_error_text(&name, &api_error_message(e)), None)))
+            tx.send(Ok((
+                batch_error_text(&name, &api_error_message(e)),
+                Vec::new(),
+            )))
         } else {
             tx.send(Err(e));
             false
@@ -3540,6 +3594,7 @@ fn stream_one(
                 for e in &converted.errors {
                     eprintln!("docling-serve: partial document: {}", e.describe());
                 }
+                let repairs = converted.pdf_repairs_header();
                 let mut doc = converted.document;
                 doc.strict_markdown = options.convert.strict.unwrap_or(st.cfg.strict);
                 doc.page_break_placeholder = options.convert.page_break_placeholder.clone();
@@ -3550,9 +3605,17 @@ fn stream_one(
                             .0
                     }
                 };
-                // The confidence header is one document's: none for a batch.
-                let confidence = if batch { None } else { confidence_header(&doc) };
-                tx.send(Ok((md, confidence)))
+                // The headers are one document's: none for a batch.
+                let mut headers = Vec::new();
+                if !batch {
+                    if let Some(v) = confidence_header(&doc) {
+                        headers.push(("x-docling-confidence", v));
+                    }
+                    if let Some(v) = repairs {
+                        headers.push(("x-docling-pdf-repairs", v));
+                    }
+                }
+                tx.send(Ok((md, headers)))
             }
             Err(e) => fail(tx, e),
         };
@@ -3571,7 +3634,7 @@ fn stream_one(
             for chunk in stream {
                 match chunk {
                     Ok(s) => {
-                        if !tx.send(Ok((s, None))) {
+                        if !tx.send(Ok((s, Vec::new()))) {
                             return false;
                         }
                     }

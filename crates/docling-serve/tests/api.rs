@@ -2731,3 +2731,95 @@ async fn text_layer_only_auto_converts_a_digital_pdf() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+/// A one-page PDF whose content stream declares `extra` bytes more than it
+/// holds (#934's overstated `/Length`; the reader recovers it).
+fn pdf_with_stream_length_off_by(extra: usize) -> Vec<u8> {
+    let content = b"BT /F1 12 Tf 20 100 Td (Repaired stream text) Tj ET\n";
+    let objects: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R \
+           /Resources << /Font << /F1 5 0 R >> >> >>"
+            .to_vec(),
+        [
+            format!("<< /Length {} >>\nstream\n", content.len() + extra).as_bytes(),
+            content,
+            b"endstream",
+        ]
+        .concat(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+    ];
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, body) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+        out.extend_from_slice(body);
+        out.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = out.len();
+    out.extend_from_slice(
+        format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+    );
+    for o in offsets {
+        out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        )
+        .as_bytes(),
+    );
+    out
+}
+
+/// `pdf_report_repairs` (#934): off by default; on, the single response
+/// carries the reader's repairs in `X-Docling-Pdf-Repairs` and a batch item
+/// in `pdf_repairs` — the document itself is the same either way.
+#[tokio::test]
+async fn pdf_report_repairs_reports_a_recovered_stream() {
+    let pdf = pdf_with_stream_length_off_by(7);
+    let app = app();
+    let convert = |fields: Vec<(&'static str, &'static str)>, app: axum::Router| {
+        let (ct, body) = multipart("t.pdf", &pdf, &fields);
+        async move { app.oneshot(convert_request(&ct, body, "")).await.unwrap() }
+    };
+    let plain = convert(vec![("to", "md"), ("text_layer_only", "true")], app.clone()).await;
+    assert_eq!(plain.status(), StatusCode::OK);
+    assert!(plain.headers().get("x-docling-pdf-repairs").is_none());
+    let plain = body_string(plain).await;
+    assert!(plain.contains("Repaired stream text"), "{plain}");
+
+    let fields = vec![
+        ("to", "md"),
+        ("text_layer_only", "true"),
+        ("pdf_report_repairs", "true"),
+    ];
+    let reported = convert(fields, app.clone()).await;
+    assert_eq!(reported.status(), StatusCode::OK);
+    let header: serde_json::Value = serde_json::from_str(
+        reported.headers()["x-docling-pdf-repairs"]
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(header[0]["kind"], "stream_length");
+    assert_eq!(header[0]["object"], serde_json::json!([4, 0]));
+    assert_eq!(body_string(reported).await, plain);
+
+    // A well-formed file: the header says so with an empty list.
+    let good = pdf_with_stream_length_off_by(0);
+    let (ct, body) = multipart(
+        "t.pdf",
+        &good,
+        &[
+            ("to", "md"),
+            ("text_layer_only", "true"),
+            ("pdf_report_repairs", "true"),
+        ],
+    );
+    let response = app.oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.headers()["x-docling-pdf-repairs"], "[]");
+}

@@ -2563,9 +2563,15 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   fallback. The reader repairs silently (lopdf 0.45 recovers such a stream
   from its unambiguous `endstream … endobj` boundary and overwrites
   `/Length` with the recovered size, so the loaded object cannot show it);
-  this re-reads the original bytes with lopdf's stream grammar, on demand —
-  conversions neither run it nor change, and an admission caller can refuse
-  repaired input before converting. No false positive on the 98 PDFs of the
+  this re-reads the original bytes with lopdf's stream grammar, on demand,
+  and an admission caller can refuse repaired input before converting. The
+  option `pdf_report_repairs` (off by default; `--pdf-report-repairs`,
+  serve `pdf_report_repairs` → `X-Docling-Pdf-Repairs` / a batch item's
+  `pdf_repairs`, Python `pdf_report_repairs=True` → `result.pdf_repairs`,
+  Node `pdfReportRepairs` → `pdfRepairs`, `DOCLING_RS_PDF_REPORT_REPAIRS`)
+  runs the same check during a PDF conversion and puts the list on the
+  result (`ConversionResult::pdf_repairs`); the document is the same either
+  way. No false positive on the 98 PDFs of the
   test corpus; on each repaired stream the recovered length equals what
   lopdf loads. docling has no counterpart.
 - **`RenderedPage::omissions`** (#916) — `render_pages` reports, per page, the

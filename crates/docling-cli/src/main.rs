@@ -19,7 +19,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--track-changes accept|reject|all] [--extract-diagrams mermaid|none] [--no-outline-level-headings] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--progress|--no-progress] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--pdf-word-gap adaptive|legacy|F] [--pdf-keep-typography] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] [--archive-merge|--no-archive-merge] <input-file> | - | URL | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--track-changes accept|reject|all] [--extract-diagrams mermaid|none] [--no-outline-level-headings] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--progress|--no-progress] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--pdf-word-gap adaptive|legacy|F] [--pdf-keep-typography] [--pdf-report-repairs] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] [--archive-merge|--no-archive-merge] <input-file> | - | URL | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -269,6 +269,10 @@
 //!                      curly quotes, en/em dashes, ellipsis — instead of
 //!                      folding it to ASCII the way docling-parse's sanitizer
 //!                      does (#921; DOCLING_RS_PDF_KEEP_TYPOGRAPHY)
+//!   --pdf-report-repairs
+//!                      print what the PDF reader repaired to read the input
+//!                      (a stream whose /Length misses its endstream, a padded
+//!                      xref) to stderr, one `repaired:` line each (#934)
 //!   --ocr-textline-orientation
 //!                      RapidOCR's line orientation handling (#666): crop each
 //!                      detected line along its rotated rectangle, turn tall
@@ -655,6 +659,9 @@ PDF / IMAGE PIPELINE
   --pdf-keep-typography   keep the PDF text layer's typographic punctuation as
                           drawn („ “ ‚ ‘, dashes, …) instead of folding it to
                           ASCII as docling does
+  --pdf-report-repairs    print what the PDF reader repaired to read the input
+                          (a stream /Length that misses its endstream, a padded
+                          xref) to stderr; off by default
   --ocr-textline-orientation
                           RapidOCR's line orientation: oriented crops, 90° turn of
                           tall lines, 0/180 classifier (off by default)
@@ -1007,6 +1014,7 @@ fn main() -> ExitCode {
             "--ocr-textline-orientation" => opts.ocr_textline_orientation = Some(true),
             // Keep the PDF text layer's typographic punctuation as drawn (#921).
             "--pdf-keep-typography" => opts.pdf_keep_typography = Some(true),
+            "--pdf-report-repairs" => opts.pdf_report_repairs = Some(true),
             "--picture-description" => opts.do_picture_description = Some(true),
             "--picture-description-endpoint" => opts.picture_description_endpoint = args.next(),
             "--picture-description-model" => opts.picture_description_model = args.next(),
@@ -1844,6 +1852,13 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    // `--pdf-report-repairs` (#934): read off the input bytes before the
+    // conversion, so the streamed Markdown path reports them too.
+    if is_pdf && converter.reports_pdf_repairs() {
+        for repair in docling::pdf_repairs(&source.bytes) {
+            eprintln!("repaired: {repair}");
+        }
+    }
 
     // Stream Markdown by default: print each chunk as the converter produces it
     // (page by page for PDF). Referenced images stream too (#80): each page's
@@ -2890,6 +2905,13 @@ fn batch_convert_one(
     }
     let started = std::time::Instant::now();
     let mut written: Vec<std::path::PathBuf> = Vec::new();
+    // `--pdf-report-repairs` (#934): off the input bytes — the batch's warm
+    // pipeline bypasses `convert`, whose result would carry them.
+    if source.format == InputFormat::Pdf && converter.reports_pdf_repairs() {
+        for repair in docling::pdf_repairs(&source.bytes) {
+            eprintln!("{label}: repaired: {repair}");
+        }
+    }
     // `images` is rasterization, not conversion (#243): it runs on its own,
     // PDF-only like the serve endpoint (a non-PDF file fails its item, not
     // the batch), and the document formats, if any, follow from one

@@ -215,6 +215,11 @@ pub struct ConvertOptions {
     /// Keep a PDF's typographic punctuation (`„ “ ‚ ‘`, dashes, `…`) as drawn
     /// instead of folding it to ASCII (#921). Default off — docling folds.
     pub pdf_keep_typography: Option<bool>,
+    /// Report what the PDF reader repaired to read the input (#934) on the
+    /// result's `pdf_repairs` — a stream whose `/Length` does not end at its
+    /// `endstream`, a padded xref. Default off
+    /// (`DOCLING_RS_PDF_REPORT_REPAIRS`).
+    pub pdf_report_repairs: Option<bool>,
     /// RapidOCR's text-line orientation handling (#666): oriented crops, the
     /// 90° turn of tall lines and the 0/180 classifier. Default off
     /// (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION`).
@@ -645,6 +650,7 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("ocr_scale"),
     row("pdf_word_gap"),
     row("pdf_keep_typography"),
+    row("pdf_report_repairs"),
     row("ocr_textline_orientation"),
     row("images_scale"),
     OptionInfo {
@@ -1412,6 +1418,9 @@ impl ConvertOptions {
         }
         if let Some(v) = self.pdf_keep_typography {
             c = c.pdf_keep_typography(v);
+        }
+        if let Some(v) = self.pdf_report_repairs {
+            c = c.pdf_report_repairs(v);
         }
         if let Some(v) = self.ocr_textline_orientation {
             c = c.ocr_textline_orientation(v);

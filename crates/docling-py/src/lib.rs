@@ -116,6 +116,11 @@ struct PyNativeResult {
     /// kept outside the document JSON just as Python docling does.
     #[pyo3(get)]
     confidence_json: Option<String>,
+    /// What the PDF reader repaired to read the input (#934), as a JSON
+    /// list of `{"kind": …}` objects, when `pdf_report_repairs` was on and
+    /// the input is a PDF; `None` otherwise.
+    #[pyo3(get)]
+    pdf_repairs_json: Option<String>,
 }
 
 /// The `metadata` object of `doc`'s JSON (#679), when its output mode
@@ -127,6 +132,10 @@ fn metadata_json(doc: &docling::DoclingDocument) -> Option<String> {
 
 fn confidence_json(doc: &docling::DoclingDocument) -> Option<String> {
     doc.confidence.as_ref().map(|r| r.to_json().to_string())
+}
+
+fn pdf_repairs_json(repairs: Option<Vec<docling::PdfRepair>>) -> Option<String> {
+    repairs.map(|r| serde_json::to_string(&r).expect("repairs serialize"))
 }
 
 fn redaction_counts(
@@ -375,6 +384,10 @@ impl PyDocumentConverter {
     ///   drawn (#921): `„ “ ‚ ‘`, en/em dashes, `…`. `None` folds it to ASCII
     ///   like docling-parse's sanitizer unless `DOCLING_RS_PDF_KEEP_TYPOGRAPHY`
     ///   is set.
+    /// * `pdf_report_repairs` — report what the PDF reader repaired to read
+    ///   the input (#934) on the result's `pdf_repairs_json`: streams whose
+    ///   `/Length` misses their `endstream`, a padded xref. `None` = off
+    ///   unless `DOCLING_RS_PDF_REPORT_REPAIRS` is set.
     /// * `ocr_textline_orientation` — RapidOCR's text-line orientation
     ///   handling (#666): oriented line crops, tall lines turned 90°,
     ///   upside-down lines turned by the 0/180 classifier
@@ -510,6 +523,7 @@ impl PyDocumentConverter {
         ocr_scale = None,
         pdf_word_gap = None,
         pdf_keep_typography = None,
+        pdf_report_repairs = None,
         ocr_textline_orientation = None,
         ocr_engine = None,
         allowed_formats = None,
@@ -591,6 +605,7 @@ impl PyDocumentConverter {
         ocr_scale: Option<f32>,
         pdf_word_gap: Option<String>,
         pdf_keep_typography: Option<bool>,
+        pdf_report_repairs: Option<bool>,
         ocr_textline_orientation: Option<bool>,
         ocr_engine: Option<String>,
         allowed_formats: Option<Vec<String>>,
@@ -671,6 +686,7 @@ impl PyDocumentConverter {
             ocr_scale,
             pdf_word_gap,
             pdf_keep_typography,
+            pdf_report_repairs,
             ocr_textline_orientation,
             images_scale,
             page_images: Some(generate_page_images),
@@ -1185,6 +1201,12 @@ impl PyDocumentConverter {
                     document_json: c.document.export_to_json(),
                     errors: error_tuples(errors),
                     redaction: redaction_counts(redaction),
+                    // The warm pipeline bypasses `convert` (#934).
+                    pdf_repairs_json: pdf_repairs_json(
+                        converter
+                            .reports_pdf_repairs()
+                            .then(|| docling::pdf_repairs(&src.bytes)),
+                    ),
                 })
             });
         }
@@ -1300,6 +1322,7 @@ fn native_result(r: docling::ConversionResult) -> PyNativeResult {
         document_json,
         errors: error_tuples(r.errors),
         redaction: redaction_counts(r.redaction),
+        pdf_repairs_json: pdf_repairs_json(r.pdf_repairs),
     }
 }
 

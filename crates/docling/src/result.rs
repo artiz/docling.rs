@@ -109,4 +109,9 @@ pub struct ConversionResult {
     /// [`DocumentConverter::redact_pii`](crate::DocumentConverter::redact_pii)
     /// ran: counts per label, and the mapping only when asked for.
     pub redaction: Option<docling_core::RedactionReport>,
+    /// What the PDF reader repaired to read the input (#934), when
+    /// [`DocumentConverter::pdf_report_repairs`](crate::DocumentConverter::pdf_report_repairs)
+    /// asked: empty for a well-formed file. `None` when not asked, for
+    /// non-PDF input and on the VLM pipeline.
+    pub pdf_repairs: Option<Vec<docling_core::PdfRepair>>,
 }
