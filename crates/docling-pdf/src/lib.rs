@@ -72,6 +72,10 @@ pub mod scanned;
 // no feature gate: the wasm/pdf-text path needs them like the native one.
 pub mod info;
 pub mod pdf_meta;
+// What the reader repaired to read a file (#934) — typed provenance, on
+// demand; pure Rust like `pdf_meta`.
+pub mod repairs;
+pub use repairs::{pdf_repairs, PdfRepair};
 #[cfg(feature = "render")]
 pub mod raster;
 #[cfg(feature = "render")]

@@ -1134,7 +1134,7 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 /// Rewrite a classic cross-reference table's entries to the spec's 20 bytes,
 /// or `None` when the file's shape makes that unsafe (see [`load_document`]).
-fn pad_short_xref_entries(bytes: &[u8]) -> Result<Vec<u8>, &'static str> {
+pub(crate) fn pad_short_xref_entries(bytes: &[u8]) -> Result<Vec<u8>, &'static str> {
     // Exactly one xref section, and it must start after every object, so that
     // growing it shifts nothing the table's offsets refer to.
     let is_boundary = |i: usize| i == 0 || matches!(bytes[i - 1], b'\n' | b'\r');

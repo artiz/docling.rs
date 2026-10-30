@@ -213,7 +213,11 @@ class ConversionResult:
     ``"frontmatter"`` and the file carries any, else ``None``.
     ``.confidence`` is the PDF/image pipeline's :class:`ConfidenceReport`,
     keyed by the real 1-based page number; conversions without scores carry
-    an empty report."""
+    an empty report. ``.pdf_repairs`` (#934) is what the PDF reader repaired
+    to read the input — ``[{"kind": "stream_length", "object": [4, 0],
+    "offset": 202, "declared": 5, "recovered": 3}]``, ``[]`` for a
+    well-formed file — when the converter was built with
+    ``pdf_report_repairs=True`` and the input is a PDF, else ``None``."""
 
     def __init__(
         self,
@@ -224,6 +228,7 @@ class ConversionResult:
         redaction: Optional[Dict[str, int]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         confidence: Optional[ConfidenceReport] = None,
+        pdf_repairs: Optional[List[Dict[str, Any]]] = None,
     ):
         self.status = ConversionStatus(status)
         self.document = document
@@ -232,6 +237,7 @@ class ConversionResult:
         self.redaction = dict(redaction) if redaction is not None else None
         self.metadata = dict(metadata) if metadata is not None else None
         self.confidence = confidence if confidence is not None else ConfidenceReport()
+        self.pdf_repairs = list(pdf_repairs) if pdf_repairs is not None else None
 
 
 # Imported here because datamodel re-exports ConversionResult from this module.
@@ -315,6 +321,10 @@ class DocumentConverter:
       (#921): ``„ “ ‚ ‘``, en/em dashes, ``…``. ``None`` folds it to ASCII
       like docling-parse's sanitizer unless ``DOCLING_RS_PDF_KEEP_TYPOGRAPHY``
       is set.
+    * ``pdf_report_repairs`` — report what the PDF reader repaired to read the
+      input (#934) on ``result.pdf_repairs``: streams whose ``/Length`` misses
+      their ``endstream``, a padded xref. ``None`` = off unless
+      ``DOCLING_RS_PDF_REPORT_REPAIRS`` is set. The conversion is unchanged.
     * ``ocr_textline_orientation`` — RapidOCR's text-line orientation
       handling (#666): detected lines cropped along their rotated rectangle,
       tall crops turned 90°, upside-down lines turned by the 0/180 classifier
@@ -532,6 +542,7 @@ class DocumentConverter:
         ocr_scale: Optional[float] = None,
         pdf_word_gap: Optional[Union[str, float]] = None,
         pdf_keep_typography: Optional[bool] = None,
+        pdf_report_repairs: Optional[bool] = None,
         ocr_textline_orientation: Optional[bool] = None,
         ocr_engine: Optional[str] = None,
         skip_empty_cells: bool = False,
@@ -801,6 +812,7 @@ class DocumentConverter:
             ocr_scale=ocr_scale,
             pdf_word_gap=None if pdf_word_gap is None else str(pdf_word_gap),
             pdf_keep_typography=pdf_keep_typography,
+            pdf_report_repairs=pdf_report_repairs,
             ocr_textline_orientation=ocr_textline_orientation,
             ocr_engine=ocr_engine,
             skip_empty_cells=skip_empty_cells,
@@ -1357,6 +1369,7 @@ def _wrap(native) -> ConversionResult:
     errors = [ErrorItem(*item) for item in getattr(native, "errors", ())]
     metadata_json = getattr(native, "metadata_json", None)
     confidence_json = getattr(native, "confidence_json", None)
+    pdf_repairs_json = getattr(native, "pdf_repairs_json", None)
     return ConversionResult(
         native.status,
         native.input_name,
@@ -1369,4 +1382,5 @@ def _wrap(native) -> ConversionResult:
             if confidence_json
             else ConfidenceReport()
         ),
+        json.loads(pdf_repairs_json) if pdf_repairs_json is not None else None,
     )

@@ -46,6 +46,7 @@ mod odf_upstream;
 mod options_inventory;
 mod page_breaks;
 mod pandoc;
+mod pdf_repairs;
 mod picture_alt_text;
 mod picture_ocr;
 mod plain_text;

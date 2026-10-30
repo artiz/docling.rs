@@ -68,6 +68,7 @@ column.
 | `password` | string | the password of an encrypted PDF or Office document — .docx/.xlsx/.pptx/.doc/.xls/.ppt (#611, #625); `pdf_password`, docling's name, is read too |
 | `ocr_engine`, `ocr_lang`, `ocr_mode`, `ocr_scale`, `images_scale`, `page_images` | — | OCR engine (`ppocr` \| `tesseract`, #460) and language; which regions feed the OCR (#254); OCR / picture-crop scale in px per PDF point; keep page renders in the JSON (#520) |
 | `pdf_word_gap` | string | Where a PDF's text layer splits words drawn without a space glyph (#921): `adaptive` (default, docling-parse ≥ 7's line-local threshold) \| `legacy` (docling-parse ≤ 6) \| a factor in (0, 4] of the two flanking glyphs' mean advance |
+| `pdf_report_repairs` | bool | Report what the PDF reader repaired to read the input (#934). Accepted for parity, but the C ABI returns the document only, so the report is not exposed here — read it through the library (`ConversionResult::pdf_repairs`, `pdf_repairs`), the CLI, serve, Python or Node |
 | `pdf_keep_typography` | bool | Keep a PDF's typographic punctuation as drawn (#921) — `„ “ ‚ ‘`, en/em dashes, `…` — instead of folding it to ASCII like docling-parse's sanitizer (the default) |
 | `ocr_textline_orientation` | bool | RapidOCR's text-line orientation handling (#666): oriented line crops, tall lines turned 90°, the 0/180 classifier |
 | `do_picture_classification`, `do_code_enrichment`, `do_formula_enrichment` | bool | Enrichment models (#423) |
