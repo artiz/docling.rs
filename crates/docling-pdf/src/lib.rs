@@ -731,6 +731,12 @@ fn sparse_text_layer(page: &PdfPage) -> bool {
 }
 
 #[cfg(feature = "ml")]
+/// The detector's longer-side cap for the orientation probe of a page that
+/// has a text layer (#945): the pre-#570 budget, enough for the few wide
+/// lines the probe scores.
+const PROBE_DET_MAX_SIDE: u32 = 960;
+
+#[cfg(feature = "ml")]
 /// [`sparse_text_layer`]'s word cap: a page number plus a running header of
 /// a few words, not a caption.
 const SPARSE_LAYER_WORDS: usize = 12;
@@ -1439,13 +1445,26 @@ impl Worker {
             return Ok(());
         }
         // The text detector's lines are the probe's crops (#571). Detected on
-        // the page image as rendered; an upright page keeps them for the OCR
+        // the page image as rendered; an upright scan keeps them for the OCR
         // pass (`pending_det`) when that pass reads the same bitmap, so the
         // detector runs once per page as before — a rotated page detects
-        // again on the un-rotated image, alongside layout.
+        // again on the un-rotated image, alongside layout. A page with a
+        // (thin) text layer only needs the probe's few wide lines and its
+        // OCR pass detects on region crops (#931), so it pays the pre-#570
+        // 960 px budget here instead of the full one (#945).
         let boxes: Vec<ocr_det::DetBox> = match self.det_model() {
-            Some(det) => timing::timed("orient.det", || det.detect(&page.image)).unwrap_or_else(|e| {
-                debug_log!("docling-pdf: page {}: text detection failed ({e}); probing projection strips", n + 1);
+            Some(det) => timing::timed("orient.det", || {
+                if scanned {
+                    det.detect(&page.image)
+                } else {
+                    det.detect_capped(&page.image, PROBE_DET_MAX_SIDE)
+                }
+            })
+            .unwrap_or_else(|e| {
+                debug_log!(
+                    "docling-pdf: page {}: text detection failed ({e}); probing projection strips",
+                    n + 1
+                );
                 Vec::new()
             }),
             None => Vec::new(),
@@ -1464,7 +1483,10 @@ impl Worker {
                 n + 1
             );
             page.unrotate(deg);
-        } else if !boxes.is_empty() && ocr_scale.is_none_or(|s| (s - page.scale).abs() <= 1e-3) {
+        } else if scanned
+            && !boxes.is_empty()
+            && ocr_scale.is_none_or(|s| (s - page.scale).abs() <= 1e-3)
+        {
             self.pending_det.insert(n, Ok(boxes));
         }
         Ok(())
@@ -2070,15 +2092,33 @@ impl Worker {
                 // for the page that needs it.
                 page.resolve_image()?;
                 let (img, scl) = ocr_input(&mut ocr_view, &page.image, page.scale, ocr_scale);
+                // Detected on the empty regions' crops, not the page (#945):
+                // the page at the 2000 px budget cost ~2.3 s and ~250 MB per
+                // such page for a caption's worth of lines; a crop reads at
+                // full render resolution for a fraction of it. A margin of
+                // half a line keeps the DB net's context at the edges.
+                let rects: Vec<(u32, u32, u32, u32)> = empty
+                    .iter()
+                    .map(|r| {
+                        let m = (0.5 * (r.b - r.t)).clamp(4.0, 24.0) * scl;
+                        (
+                            ((r.l * scl - m).max(0.0)) as u32,
+                            ((r.t * scl - m).max(0.0)) as u32,
+                            (r.r * scl + m).ceil() as u32,
+                            (r.b * scl + m).ceil() as u32,
+                        )
+                    })
+                    .collect();
                 let detected = match self.det_model() {
-                    Some(det) => timing::timed("ocr.det", || det.detect(img)).unwrap_or_else(|e| {
-                        docling_core::debug_log!(
-                            "docling-pdf: page {}: text detection failed ({e}); keeping the \
-                             region-scoped OCR only",
-                            n + 1
-                        );
-                        Vec::new()
-                    }),
+                    Some(det) => timing::timed("ocr.det", || det.detect_regions(img, &rects))
+                        .unwrap_or_else(|e| {
+                            docling_core::debug_log!(
+                                "docling-pdf: page {}: text detection failed ({e}); keeping the \
+                                 region-scoped OCR only",
+                                n + 1
+                            );
+                            Vec::new()
+                        }),
                     None => Vec::new(),
                 };
                 let det_lines =

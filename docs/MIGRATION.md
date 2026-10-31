@@ -2047,11 +2047,20 @@ These are deliberate or unavoidable divergences, not bugs.
      recognized and placed as orphan text — docling's behavior for text its
      layout model gives no cluster (diagram labels, stamps, margin notes).
      Lines inside a kept picture/table stay silent children, as upstream. The
-     detector input is capped at 960 px on the longer side by default
-     (PaddleOCR's own default; RapidOCR's uncapped rule via
-     `DOCLING_RS_OCR_DET_MAX_SIDE=0`) — ~⅓ of the detection time for
-     noise-level output differences. The browser pipeline runs the same
-     detector through onnxruntime-web when `ocr_det.onnx` is available.
+     detector input is capped at RapidOCR's 2000 px on the longer side
+     since #570 (`DOCLING_RS_OCR_DET_MAX_SIDE`; 960 — PaddleOCR's default and
+     the pre-#570 budget — is ~⅓ of the detection time for −0.02 FUNSD
+     recall; `0` = RapidOCR's uncapped rule). That budget is a scanned
+     page's; the two places a page *with* a text layer runs the detector pay
+     less (#945): the layout regions its text layer leaves empty (#931) are
+     detected on their own crops at render resolution — a caption-sized
+     crop instead of the whole page — and the sideways-outline orientation
+     probe (#936) runs at the 960 px cap. The detector session also runs
+     without ONNX Runtime's memory arena: it runs once per page over the
+     largest input of any OCR model, and the arena kept that peak per page
+     worker for the process's lifetime (+250 MB per worker on a scan).
+     The browser pipeline runs the same detector through onnxruntime-web
+     when `ocr_det.onnx` is available.
    - **Tables** — **TableFormer** (image encoder + autoregressive OTSL structure
      decoder + cell-bbox decoder, ported to ONNX), on a cv2-exact preprocessed
      crop. Reproduces docling's padded GitHub tables — `2305-pg9` is cell-for-cell
@@ -2186,7 +2195,8 @@ These are deliberate or unavoidable divergences, not bugs.
     footer dropped empty. Now every text, furniture or table region no
     programmatic text touches is OCR'd, as docling's
     `_find_pdf_aware_layout_ocr_rects` does for "clusters without any
-    visible programmatic text" (the page renders on demand for it). A page
+    visible programmatic text" (the page renders on demand for it; the text
+    detector runs on those regions' crops, not the page, #945). A page
     whose text layer is that thin (under 2 % of the page and at most 12
     words — a page number, a running header; a figure page's caption is
     more and skips the probe, which costs a full-page text detection) is

@@ -107,7 +107,7 @@ pub const DEFAULT_MAX_SIDE: u32 = 2000;
 /// side — [`DEFAULT_MAX_SIDE`] unless set, `0` = uncapped (RapidOCR's rule).
 /// The DB net is the costliest OCR stage on a scanned page and its cost is
 /// linear in input pixels; a tighter cap trades small-print recall for time.
-fn max_side_cap() -> u32 {
+pub(crate) fn max_side_cap() -> u32 {
     static CAP: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *CAP.get_or_init(|| {
         docling_core::env::parse::<u32>("DOCLING_RS_OCR_DET_MAX_SIDE").unwrap_or(DEFAULT_MAX_SIDE)
@@ -142,7 +142,33 @@ pub fn det_input_size_capped(w: u32, h: u32, max_side: u32) -> Option<(u32, u32)
 /// (RapidOCR feeds a cv2 image), normalized `(x/255 − 0.5)/0.5`. Returns the
 /// tensor and its `(width, height)`.
 pub fn prep_det_input(img: &RgbImage) -> Option<(Vec<f32>, u32, u32)> {
-    let (w, h) = det_input_size(img.width(), img.height())?;
+    let size = det_input_size(img.width(), img.height())?;
+    Some(prep_det_input_to(img, size))
+}
+
+/// The network input size for a *crop* of a page — a layout region the text
+/// layer leaves empty (#931), detected on its own instead of on the whole
+/// page (#945): the crop at its own pixels (a 2 px/pt render already shows
+/// body text 16–20 px tall, the DB net's range — RapidOCR's shorter-side
+/// upscale to 736 is for whole pages and would blow a one-line crop up to
+/// the 2000 px cap), each side rounded up to a multiple of 32 (min 32), the
+/// longer side scaled down to `max_side` (0 = no cap) when it exceeds it.
+pub fn det_crop_size(w: u32, h: u32, max_side: u32) -> Option<(u32, u32)> {
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let (mut fw, mut fh) = (w as f32, h as f32);
+    if max_side > 0 && fw.max(fh) > max_side as f32 {
+        let f = max_side as f32 / fw.max(fh);
+        fw *= f;
+        fh *= f;
+    }
+    let up32 = |v: f32| ((v / 32.0).ceil() as u32).max(1) * 32;
+    Some((up32(fw), up32(fh)))
+}
+
+/// [`prep_det_input`] at an explicit `(width, height)`.
+pub fn prep_det_input_to(img: &RgbImage, (w, h): (u32, u32)) -> (Vec<f32>, u32, u32) {
     let resized = if (w, h) == img.dimensions() {
         img.clone()
     } else {
@@ -156,7 +182,22 @@ pub fn prep_det_input(img: &RgbImage) -> Option<(Vec<f32>, u32, u32)> {
         data[n + i] = px[1] as f32 / 127.5 - 1.0;
         data[2 * n + i] = px[0] as f32 / 127.5 - 1.0;
     }
-    Some((data, w, h))
+    (data, w, h)
+}
+
+/// Translate boxes detected on a crop at `(dx, dy)` back onto the page.
+pub fn offset_boxes(mut boxes: Vec<DetBox>, dx: f32, dy: f32) -> Vec<DetBox> {
+    for b in &mut boxes {
+        b.l += dx;
+        b.r += dx;
+        b.t += dy;
+        b.b += dy;
+        for (x, y) in &mut b.quad {
+            *x += dx;
+            *y += dy;
+        }
+    }
+    boxes
 }
 
 /// Bilinear resize (cv2's default `INTER_LINEAR`) — `fast_image_resize`'s SIMD
@@ -604,7 +645,10 @@ pub use session::DetModel;
 
 #[cfg(feature = "ml")]
 mod session {
-    use super::{db_boxes, prep_det_input, DetBox};
+    use super::{
+        db_boxes, det_crop_size, det_input_size, det_input_size_capped, max_side_cap, offset_boxes,
+        prep_det_input_to, sort_boxes, DetBox,
+    };
     use image::RgbImage;
     use ort::session::Session;
     use ort::value::Tensor;
@@ -635,7 +679,10 @@ mod session {
                 .map_err(|e| format!("ocr-det: builder: {e}"))?
                 .with_intra_threads(intra.max(1))
                 .map_err(|e| format!("ocr-det: intra_threads: {e}"))?;
-            let builder = docling_onnx::apply(builder).map_err(|e| format!("ocr-det: {e}"))?;
+            // Once per page over the largest input any OCR model sees: no
+            // arena, so the ~250 MB of activations free after each run
+            // instead of staying with every worker (#945).
+            let builder = docling_onnx::apply_lean(builder).map_err(|e| format!("ocr-det: {e}"))?;
             let session = docling_onnx::commit(builder, &path, "det")
                 .map_err(|e| format!("ocr-det: load {path}: {e}"))?;
             Ok(Self { session })
@@ -643,10 +690,67 @@ mod session {
 
         /// Detect text lines on `img`; boxes in `img` pixels, reading order.
         pub fn detect(&mut self, img: &RgbImage) -> Result<Vec<DetBox>, String> {
-            let Some((data, w, h)) = crate::timing::timed("ocr.det.prep", || prep_det_input(img))
-            else {
-                return Ok(Vec::new());
-            };
+            match det_input_size(img.width(), img.height()) {
+                Some(size) => self.detect_at(img, size),
+                None => Ok(Vec::new()),
+            }
+        }
+
+        /// [`detect`](Self::detect) under an explicit longer-side cap
+        /// (`0` = none) instead of `DOCLING_RS_OCR_DET_MAX_SIDE`'s — the
+        /// orientation probe of a page that has a text layer (#936) reads a
+        /// few wide lines and does not keep the boxes, so it pays the
+        /// pre-#570 960 px budget, not the full one (#945).
+        pub fn detect_capped(
+            &mut self,
+            img: &RgbImage,
+            max_side: u32,
+        ) -> Result<Vec<DetBox>, String> {
+            match det_input_size_capped(img.width(), img.height(), max_side) {
+                Some(size) => self.detect_at(img, size),
+                None => Ok(Vec::new()),
+            }
+        }
+
+        /// Detect text lines inside the given `(l, t, r, b)` pixel rectangles
+        /// of `img` — each cropped and run on its own at [`det_crop_size`] —
+        /// and return their boxes in `img` pixels, reading order (#945). For
+        /// the layout regions a page's text layer leaves empty (#931): a
+        /// caption-sized crop costs a small fraction of the whole page at
+        /// the 2000 px budget and reads it at full render resolution.
+        /// Rectangles are clamped to the image; empty ones are skipped.
+        pub fn detect_regions(
+            &mut self,
+            img: &RgbImage,
+            rects: &[(u32, u32, u32, u32)],
+        ) -> Result<Vec<DetBox>, String> {
+            let (iw, ih) = img.dimensions();
+            let cap = max_side_cap();
+            let mut all = Vec::new();
+            for &(l, t, r, b) in rects {
+                let (r, b) = (r.min(iw), b.min(ih));
+                if r <= l || b <= t {
+                    continue;
+                }
+                let Some(size) = det_crop_size(r - l, b - t, cap) else {
+                    continue;
+                };
+                let crop = image::imageops::crop_imm(img, l, t, r - l, b - t).to_image();
+                all.extend(offset_boxes(
+                    self.detect_at(&crop, size)?,
+                    l as f32,
+                    t as f32,
+                ));
+            }
+            sort_boxes(&mut all);
+            Ok(all)
+        }
+
+        /// One detector run over `img` resized to `size`; boxes in `img`
+        /// pixels.
+        fn detect_at(&mut self, img: &RgbImage, size: (u32, u32)) -> Result<Vec<DetBox>, String> {
+            let (data, w, h) =
+                crate::timing::timed("ocr.det.prep", || prep_det_input_to(img, size));
             let input = Tensor::from_array(([1usize, 3, h as usize, w as usize], data))
                 .map_err(|e| format!("ocr-det: input: {e}"))?;
             let name = self.session.inputs()[0].name().to_string();
@@ -692,6 +796,22 @@ mod tests {
         assert_eq!(det_input_size_capped(445, 884, 1500), Some((736, 1472)));
         assert_eq!(det_input_size_capped(445, 884, 960), Some((480, 960)));
         assert_eq!(det_input_size_capped(1224, 1584, 0), Some((1216, 1600)));
+    }
+
+    /// #945: a region crop is detected at its own pixels — no shorter-side
+    /// upscale — rounded up to the net's 32-px grid, and only scaled down
+    /// when it exceeds the cap; boxes come back in page pixels.
+    #[test]
+    fn crops_keep_their_pixels_and_boxes_return_to_the_page() {
+        assert_eq!(det_crop_size(300, 60, 2000), Some((320, 64)));
+        assert_eq!(det_crop_size(1, 1, 2000), Some((32, 32)));
+        assert_eq!(det_crop_size(4000, 1000, 2000), Some((2016, 512)));
+        assert_eq!(det_crop_size(4000, 1000, 0), Some((4000, 1024)));
+        assert_eq!(det_crop_size(0, 10, 2000), None);
+        let moved = offset_boxes(vec![DetBox::rect(1.0, 2.0, 11.0, 7.0, 0.9)], 100.0, 50.0);
+        assert_eq!(moved[0].l, 101.0);
+        assert_eq!(moved[0].b, 57.0);
+        assert_eq!(moved[0].quad[2], (111.0, 57.0));
     }
 
     #[test]
