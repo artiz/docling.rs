@@ -711,19 +711,29 @@ pub struct ImageOutput {
 }
 
 #[cfg(feature = "ml")]
-/// Whether a page's text layer is too thin to be its text (#936): the
-/// non-blank cells cover under 2 % of the page — a page number or a running
-/// header beside text drawn as outlines. A digital page's body text covers far
-/// more, so it never pays for the orientation probe.
+/// Whether a page's text layer is furniture rather than its text (#936): a
+/// page number, a running header — at most [`SPARSE_LAYER_WORDS`] non-blank
+/// words covering under 2 % of the page — beside text drawn as outlines. A
+/// digital page's body text covers far more, so it never pays for the
+/// orientation probe. The area test alone was not enough: a figure page with
+/// a one-line caption (1–2 % covered, 20–30 words — three of the sixteen
+/// pages of `2203.01017v2.pdf`) passed it and paid the full-page text
+/// detector on every such page, +44 % on the document; the word cap keeps
+/// the probe for the layer a sideways outline page keeps (the reporter's
+/// `Page 1`: 2 words, 0.05 %).
 fn sparse_text_layer(page: &PdfPage) -> bool {
-    let covered: f32 = page
-        .cells
-        .iter()
-        .filter(|c| !c.text.trim().is_empty())
-        .map(|c| (c.r - c.l).max(0.0) * (c.b - c.t).max(0.0))
-        .sum();
-    covered < 0.02 * page.width * page.height
+    let (mut covered, mut words) = (0.0f32, 0usize);
+    for c in page.cells.iter().filter(|c| !c.text.trim().is_empty()) {
+        covered += (c.r - c.l).max(0.0) * (c.b - c.t).max(0.0);
+        words += c.text.split_whitespace().count();
+    }
+    words <= SPARSE_LAYER_WORDS && covered < 0.02 * page.width * page.height
 }
+
+#[cfg(feature = "ml")]
+/// [`sparse_text_layer`]'s word cap: a page number plus a running header of
+/// a few words, not a caption.
+const SPARSE_LAYER_WORDS: usize = 12;
 
 #[cfg(feature = "ml")]
 /// The layout regions of a page with a text layer that no programmatic text
