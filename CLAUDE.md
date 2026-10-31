@@ -131,6 +131,10 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   and no text outside the regions), `DOCLING_RS_OCR_DET_MAX_SIDE` (cap on the
   detector input's longer side; default 2000 = RapidOCR's `max_side_len`,
   #570; `0` = uncapped, 960 = the pre-#570 PaddleOCR budget),
+  `DOCLING_RS_OCR_DET_BUDGET` (#945; `auto` default — a scanned page's
+  detector input is budgeted to its own text size, `ocr_det::scan_budget`:
+  the 25th-percentile projection line height kept at 12 px, the full cap
+  for small print (FUNSD), never under 960 | `full` = always the cap),
   `DOCLING_RS_OCR_LINES` (#570; `det` default | `projection` = the strips alone),
   `DOCLING_RS_OCR_TEXT_SCORE` (#570; RapidOCR's `text_score`, 0.5 — lines under
   it are dropped; `0` keeps all), `DOCLING_RS_PICTURE_OCR_MIN_SIDE` (#645; 32 —

@@ -1427,7 +1427,7 @@ impl Worker {
                             page.scale,
                             page_ocr_scale(ocr_scale, page.width, page.height, page.scale),
                         );
-                        (n, timing::timed("ocr.det", || det.detect(img)))
+                        (n, timing::timed("ocr.det", || det.detect_scan(img)))
                     })
                     .collect::<Vec<_>>()
             });
@@ -1490,7 +1490,7 @@ impl Worker {
             .with_det(|det| {
                 timing::timed("orient.det", || {
                     if scanned {
-                        det.detect(image)
+                        det.detect_scan(image)
                     } else {
                         det.detect_capped(image, PROBE_DET_MAX_SIDE)
                     }
@@ -2018,7 +2018,7 @@ impl Worker {
                 match self.pending_det.remove(&n) {
                     Some(result) => result,
                     None => self
-                        .with_det(|det| timing::timed("ocr.det", || det.detect(img)))
+                        .with_det(|det| timing::timed("ocr.det", || det.detect_scan(img)))
                         .unwrap_or(Ok(Vec::new())),
                 }
                 .unwrap_or_else(|e| {
