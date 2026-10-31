@@ -11,3 +11,4 @@
 #936 | fixed | claude/issue-936-sideways-outlines | 2026-10-30T19:50Z
 #938 | fixed | claude/issue-938-bounded-repairs | 2026-10-31T03:13Z
 #942 | skipped | release-asset provenance/licence manifest request (mutable models-v1 release, upstream revisions unverifiable offline); needs maintainer design, not a code bug | 2026-10-31T07:00Z
+#945 | skipped | OCR detector perf tuning; acceptance needs .models + docling-parse shim (absent here) to measure FUNSD recall, snapshots and time/memory; cannot validate | 2026-10-31T12:00Z
