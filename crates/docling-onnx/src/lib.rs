@@ -1383,6 +1383,21 @@ pub fn commit_uncached(
 /// as does an unwritable directory (the model then loads the ordinary way).
 /// Every failure on the cached path falls back to the ordinary load, so a
 /// stale or truncated entry costs one rebuild, never a wrong answer.
+///
+/// An entry is a pair: `<stem>-<hash>.onnx`, the graph, and
+/// `<stem>-<hash>.data`, its initializers above 1 KiB
+/// (`session.optimized_model_external_initializers_file_name`). ORT keeps a
+/// model's *external* initializers external when it serializes the
+/// optimized graph — the TableFormer decoders and bbox head read their
+/// weights from `decoder_kv.onnx.data` / `bbox.onnx.data` — and writes the
+/// original relative `location`, so a graph-only entry pointed at a sidecar
+/// that was never in the cache directory: every load failed, removed the
+/// entry and rebuilt it, ~5 s of optimization per TableFormer session per
+/// process, forever (`graph cache entry … unusable (External data path does
+/// not exist …); rebuilding`). Writing the initializers to the entry's own
+/// sidecar makes it self-contained; a model with inline weights gets the
+/// same pair. Entries from before this (graph only, weights inline) still
+/// load as they are.
 pub fn commit(builder: SessionBuilder, model_path: &str, variant: &str) -> Result<Session, String> {
     let builder = with_profile(builder, Path::new(model_path))?;
     // Every `commit_from_file` below runs under the GPU creation lock (#452);
@@ -1409,24 +1424,45 @@ pub fn commit(builder: SessionBuilder, model_path: &str, variant: &str) -> Resul
                     cache.display()
                 );
                 let _ = std::fs::remove_file(&cache);
+                let _ = std::fs::remove_file(cache.with_extension("data"));
             }
         }
     }
-    // Miss: build normally, asking ORT to serialize the optimized graph next
-    // to the final name, then publish it atomically. Two workers racing here
-    // both write their own temp file; whichever renames first wins, the other
-    // overwrites with identical content.
+    // Miss: build normally, asking ORT to serialize the optimized graph — and
+    // its initializers, to a sidecar named relative to it — into a private
+    // temp directory under their final names, then publish both atomically,
+    // the sidecar first so a reader never sees a graph whose weights are not
+    // there yet. Two workers racing here both write their own directory;
+    // whichever renames first wins, the other overwrites with identical
+    // content.
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let tmp = cache.with_extension(format!(
+    let Some(name) = cache.file_name().map(|n| n.to_os_string()) else {
+        return plain(builder);
+    };
+    let data_name = Path::new(&name).with_extension("data");
+    let tmp_dir = cache.with_extension(format!(
         "{}.{}.tmp",
         std::process::id(),
         SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
-    let built = builder
-        .clone()
-        .with_optimized_model_path(&tmp)
-        .map_err(|e| e.to_string())
-        .and_then(plain);
+    if std::fs::create_dir_all(&tmp_dir).is_err() {
+        return plain(builder);
+    }
+    let tmp = tmp_dir.join(&name);
+    let tmp_data = tmp_dir.join(&data_name);
+    let built = match builder.clone().with_optimized_model_path(&tmp) {
+        Ok(b) => b
+            .with_config_entry(
+                "session.optimized_model_external_initializers_file_name",
+                data_name.to_string_lossy(),
+            )
+            .map_err(|e| e.to_string())
+            .and_then(plain),
+        Err(e) => Err(e.to_string()),
+    };
+    let discard = || {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    };
     match built {
         Ok(session) => {
             // ORT serializes the optimized graph as a side effect of session
@@ -1437,16 +1473,21 @@ pub fn commit(builder: SessionBuilder, model_path: &str, variant: &str) -> Resul
             // rebuild — a ~50 s cold start for the TableFormer graphs, seen
             // exactly once after a disk-full episode. So check the protobuf
             // skeleton first: every top-level field's declared length must end
-            // within the file (a truncation cuts inside the graph field).
+            // within the file (a truncation cuts inside the graph field). A
+            // sidecar cut short fails the load instead, which removes the pair.
             if !onnx_file_complete(&tmp) {
                 docling_core::debug_log!(
                     "docling-onnx: graph cache write of {} incomplete (disk full?); not kept",
                     cache.display()
                 );
-                let _ = std::fs::remove_file(&tmp);
-            } else if std::fs::rename(&tmp, &cache).is_err() {
-                let _ = std::fs::remove_file(&tmp);
+                discard();
+            } else if (tmp_data.is_file()
+                && std::fs::rename(&tmp_data, cache.with_extension("data")).is_err())
+                || std::fs::rename(&tmp, &cache).is_err()
+            {
+                discard();
             } else {
+                let _ = std::fs::remove_dir(&tmp_dir);
                 docling_core::debug_log!("docling-onnx: graph cache wrote {}", cache.display());
             }
             Ok(session)
@@ -1454,7 +1495,7 @@ pub fn commit(builder: SessionBuilder, model_path: &str, variant: &str) -> Resul
         Err(_) => {
             // Serialization itself may be what failed (read-only dir, disk
             // full): load without it before giving up.
-            let _ = std::fs::remove_file(&tmp);
+            discard();
             plain(builder)
         }
     }
@@ -1540,6 +1581,31 @@ fn graph_cache_path(model_path: &str, variant: &str) -> Option<PathBuf> {
     if let Ok(m) = meta.modified() {
         if let Ok(d) = m.duration_since(std::time::UNIX_EPOCH) {
             d.as_nanos().hash(&mut h);
+        }
+    }
+    // The external-data sidecars beside the model (`decoder_kv.onnx.data`,
+    // read by `decoder_kv.onnx` *and* `decoder_kv_layers.onnx`): their
+    // weights end up in the entry's own sidecar, so a re-exported `.data`
+    // under an unchanged graph must miss too. Which sidecar a graph reads is
+    // inside its protobuf; keying on every `.data` in the directory instead
+    // over-invalidates by one rebuild and parses nothing.
+    if let Some(dir) = canonical.parent() {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut sidecars: Vec<_> = entries
+                .flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "data"))
+                .filter_map(|e| {
+                    let m = e.metadata().ok()?;
+                    let mtime = m
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map_or(0, |d| d.as_nanos());
+                    Some((e.file_name(), m.len(), mtime))
+                })
+                .collect();
+            sidecars.sort();
+            sidecars.hash(&mut h);
         }
     }
     variant.hash(&mut h);
