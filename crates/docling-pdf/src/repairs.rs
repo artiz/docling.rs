@@ -24,17 +24,138 @@ pub use docling_core::PdfRepair;
 /// well-formed file. The input as given — encrypted files included, whose
 /// lengths are those of the encrypted bytes. Cost: one linear pass over the
 /// file and one lopdf load (a second when the xref needs its repair).
+///
+/// Unbounded and infallible: a file lopdf cannot load is scanned anyway, and
+/// an empty list cannot tell "well-formed" from "not inspected". A caller
+/// that must bound the decoding or see a failure uses [`try_pdf_repairs`].
 pub fn pdf_repairs(bytes: &[u8]) -> Vec<PdfRepair> {
     let mut repairs = Vec::new();
-    // The one load: a file lopdf reads as it is, or — the reader's xref
-    // repair — once its 19-byte entries are padded.
-    let doc = lopdf::Document::load_mem(bytes).ok().or_else(|| {
-        let fixed = crate::textparse::pad_short_xref_entries(bytes).ok()?;
-        let doc = lopdf::Document::load_mem(&fixed).ok()?;
-        repairs.push(PdfRepair::XrefEntriesPadded);
-        Some(doc)
-    });
+    let doc = load(bytes, &mut repairs, None).ok();
+    scan_repairs(bytes, &scan_objects(bytes), doc.as_ref(), repairs)
+}
+
+/// Why [`try_pdf_repairs`] could not inspect a file (#938).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RepairInspectError {
+    /// A stream the load must decode (a cross-reference stream) would
+    /// inflate past the caller's `max_decompressed_size`; the repairs of a
+    /// file whose structure is not fully read cannot be called complete.
+    LimitExceeded {
+        /// The bound that was exceeded, in bytes.
+        limit: usize,
+    },
+    /// The load returned a document, but without an object stream — it
+    /// inflates past the bound, or is damaged — and so without the objects in
+    /// it, an indirect `/Length` among them: the list would not be complete.
+    ObjectStreamSkipped {
+        /// The object stream's number and generation.
+        object: (u32, u16),
+    },
+    /// lopdf cannot load the file, even with the reader's xref repair.
+    Unreadable,
+}
+
+impl std::fmt::Display for RepairInspectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LimitExceeded { limit } => {
+                write!(f, "a stream decodes past the {limit}-byte limit")
+            }
+            Self::ObjectStreamSkipped { object: (num, gen) } => {
+                write!(f, "object stream {num} {gen} was not read within the limit")
+            }
+            Self::Unreadable => f.write_str("the PDF cannot be loaded"),
+        }
+    }
+}
+
+impl std::error::Error for RepairInspectError {}
+
+/// [`pdf_repairs`] with a caller-supplied bound on what one stream may decode
+/// to (#938), and a failure channel: `Ok` is a *complete* repair list — empty
+/// for a well-formed file — never a partial one.
+///
+/// `max_decompressed_size` caps every stream the load decodes (lopdf's
+/// `LoadOptions::max_decompressed_size`: object streams, cross-reference
+/// streams); `None` is unbounded, as in [`pdf_repairs`]. lopdf's lenient load
+/// *skips* an oversized object stream and returns the document without its
+/// objects, while its strict load stops at the first malformed stream — which
+/// is exactly the repair this reports — so neither alone is usable. The load
+/// here stays lenient and every `/Type /ObjStm` of the result is decoded once
+/// more under the bound, so an omission is an [`Err`] instead of a silent gap
+/// (an indirect `/Length` living in the skipped stream would otherwise read
+/// as unresolved).
+pub fn try_pdf_repairs(
+    bytes: &[u8],
+    max_decompressed_size: Option<usize>,
+) -> Result<Vec<PdfRepair>, RepairInspectError> {
+    let mut repairs = Vec::new();
+    let doc = load(bytes, &mut repairs, max_decompressed_size)?;
     let objects = scan_objects(bytes);
+    if max_decompressed_size.is_some() {
+        // A bounded load that skips an object stream drops the stream object
+        // itself from the document (lopdf's reader), so a `/Type /ObjStm` the
+        // raw scan sees but the document lacks is a stream the bound — or
+        // damage — kept unread. lopdf's strict load cannot say which: it stops
+        // at the first malformed stream, a repair this reports, before it
+        // reaches the oversized one.
+        if let Some(o) = objects
+            .iter()
+            .find(|o| o.objstm && !doc.objects.contains_key(&o.id))
+        {
+            return Err(RepairInspectError::ObjectStreamSkipped { object: o.id });
+        }
+    }
+    Ok(scan_repairs(bytes, &objects, Some(&doc), repairs))
+}
+
+/// The one load: a file lopdf reads as it is, or — the reader's xref repair —
+/// once its 19-byte entries are padded.
+fn load(
+    bytes: &[u8],
+    repairs: &mut Vec<PdfRepair>,
+    limit: Option<usize>,
+) -> Result<lopdf::Document, RepairInspectError> {
+    let options = lopdf::LoadOptions {
+        max_decompressed_size: limit,
+        ..lopdf::LoadOptions::default()
+    };
+    let over = |e: &lopdf::Error| {
+        matches!(
+            e,
+            lopdf::Error::Decompress(lopdf::DecompressError::MemoryLimitExceeded { .. })
+        )
+    };
+    let err = match lopdf::Document::load_mem_with_options(bytes, options.clone()) {
+        Ok(doc) => return Ok(doc),
+        Err(err) => err,
+    };
+    if let (Some(limit), true) = (limit, over(&err)) {
+        return Err(RepairInspectError::LimitExceeded { limit });
+    }
+    let fixed = crate::textparse::pad_short_xref_entries(bytes)
+        .map_err(|_| RepairInspectError::Unreadable)?;
+    match lopdf::Document::load_mem_with_options(&fixed, options) {
+        Ok(doc) => {
+            repairs.push(PdfRepair::XrefEntriesPadded);
+            Ok(doc)
+        }
+        Err(e) => Err(match (limit, over(&e)) {
+            (Some(limit), true) => RepairInspectError::LimitExceeded { limit },
+            _ => RepairInspectError::Unreadable,
+        }),
+    }
+}
+
+/// The stream-length repairs found by one raw scan of `bytes`, after
+/// `repairs` (the load's own).
+fn scan_repairs(
+    bytes: &[u8],
+    objects: &[RawObject],
+    doc: Option<&lopdf::Document>,
+    mut repairs: Vec<PdfRepair>,
+) -> Vec<PdfRepair> {
     let integers: HashMap<(u32, u16), i64> = objects
         .iter()
         .filter_map(|o| Some((o.id, o.integer?)))
@@ -46,9 +167,9 @@ pub fn pdf_repairs(bytes: &[u8]) -> Vec<PdfRepair> {
         if let Some(&n) = integers.get(&id) {
             return Some(n);
         }
-        doc.as_ref()?.get_object(id).ok()?.as_i64().ok()
+        doc?.get_object(id).ok()?.as_i64().ok()
     };
-    for o in &objects {
+    for o in objects {
         let Some(stream) = &o.stream else { continue };
         let declared = match stream.length {
             Some(LengthValue::Direct(n)) => Some(n),
@@ -159,6 +280,8 @@ struct RawObject {
     /// The object's value when it is a bare integer — an indirect length.
     integer: Option<i64>,
     stream: Option<StreamInfo>,
+    /// A stream dictionary with `/Type /ObjStm`.
+    objstm: bool,
 }
 
 /// Every `N G obj` in the file, front to back, skipping stream data so that
@@ -186,9 +309,10 @@ fn scan_objects(bytes: &[u8]) -> Vec<RawObject> {
             offset,
             integer: None,
             stream: None,
+            objstm: false,
         };
         if bytes[body..].starts_with(b"<<") {
-            let Some((dict_end, length)) = dictionary(bytes, body) else {
+            let Some((dict_end, length, objstm)) = dictionary(bytes, body) else {
                 objects.push(object);
                 continue;
             };
@@ -223,6 +347,7 @@ fn scan_objects(bytes: &[u8]) -> Vec<RawObject> {
                     _ => find(&bytes[data..], b"endstream").map_or(bytes.len(), |r| data + r),
                 };
                 object.stream = Some(StreamInfo { length, data });
+                object.objstm = objstm;
             } else {
                 at = dict_end;
             }
@@ -283,10 +408,11 @@ fn header_before(bytes: &[u8], kw: usize) -> Option<((u32, u16), usize)> {
 /// and its top-level `/Length` value. Strings, hex strings, comments and
 /// nested dictionaries are skipped, so `>>` or `/Length` inside them do not
 /// count; `/Length1`–`/Length3` (font programs) are other keys.
-fn dictionary(bytes: &[u8], start: usize) -> Option<(usize, Option<LengthValue>)> {
+fn dictionary(bytes: &[u8], start: usize) -> Option<(usize, Option<LengthValue>, bool)> {
     let mut depth = 0usize;
     let mut i = start;
     let mut length = None;
+    let mut objstm = false;
     while i < bytes.len() {
         match bytes[i] {
             b'<' if bytes.get(i + 1) == Some(&b'<') => {
@@ -297,7 +423,7 @@ fn dictionary(bytes: &[u8], start: usize) -> Option<(usize, Option<LengthValue>)
                 depth -= 1;
                 i += 2;
                 if depth == 0 {
-                    return Some((i, length));
+                    return Some((i, length, objstm));
                 }
             }
             b'<' => {
@@ -321,6 +447,10 @@ fn dictionary(bytes: &[u8], start: usize) -> Option<(usize, Option<LengthValue>)
                         .count();
                 if depth == 1 && &bytes[i + 1..name_end] == b"Length" {
                     length = length_value(bytes, name_end);
+                }
+                if depth == 1 && &bytes[i + 1..name_end] == b"Type" {
+                    let at = skip_space(bytes, name_end);
+                    objstm = bytes[at..].starts_with(b"/ObjStm");
                 }
                 i = name_end;
             }
@@ -549,5 +679,90 @@ mod tests {
                 ..
             }]
         ));
+    }
+
+    /// #938's fixture: `pdf(…)` plus object 5 / 6 — a 4 KiB object stream
+    /// holding object 10 (`7`), listed in a classic xref (lopdf's writer
+    /// omits ObjStm, so the file is written by hand).
+    fn pdf_with_object_stream(declared: &str) -> Vec<u8> {
+        let mut data = b"10 0 7 ".to_vec();
+        data.resize(4096, b' ');
+        let mut stream = lopdf::Stream::new(lopdf::Dictionary::new(), data);
+        stream.compress().unwrap();
+        let mut objstm = format!(
+            "<< /Type /ObjStm /N 1 /First 5 /Filter /FlateDecode /Length {} >>\nstream\n",
+            stream.content.len()
+        )
+        .into_bytes();
+        objstm.extend_from_slice(&stream.content);
+        objstm.extend_from_slice(b"\nendstream");
+        let bodies: Vec<Vec<u8>> = vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Contents 4 0 R >>".to_vec(),
+            format!("<< /Length {declared} >>\nstream\nq Q\nendstream").into_bytes(),
+            b"4".to_vec(),
+            objstm,
+        ];
+        let mut bytes = b"%PDF-1.5\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in bodies.iter().enumerate() {
+            offsets.push(bytes.len());
+            bytes.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+            bytes.extend_from_slice(body);
+            bytes.extend_from_slice(b"\nendobj\n");
+        }
+        let xref = bytes.len();
+        let n = bodies.len() + 1;
+        bytes.extend_from_slice(format!("xref\n0 {n}\n0000000000 65535 f \n").as_bytes());
+        for offset in &offsets {
+            bytes.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        bytes.extend_from_slice(
+            format!("trailer\n<< /Root 1 0 R /Size {n} >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        );
+        bytes
+    }
+
+    #[test]
+    fn a_bounded_inspection_still_reports_the_repair() {
+        // Strict parsing would reject this file before any provenance; the
+        // bounded load stays lenient (#938).
+        let bytes = pdf("5", &[]);
+        assert_eq!(
+            try_pdf_repairs(&bytes, Some(256)).unwrap(),
+            pdf_repairs(&bytes)
+        );
+        assert!(!try_pdf_repairs(&bytes, Some(256)).unwrap().is_empty());
+        assert_eq!(try_pdf_repairs(&pdf("4", &[]), Some(256)).unwrap(), []);
+    }
+
+    #[test]
+    fn an_oversized_object_stream_is_an_error_not_a_silent_gap() {
+        let bytes = pdf_with_object_stream("5");
+        // Unbounded and generously bounded: the repair, complete.
+        for limit in [None, Some(1 << 20)] {
+            assert!(matches!(
+                &try_pdf_repairs(&bytes, limit).unwrap()[..],
+                [PdfRepair::StreamLength { object: (4, 0), .. }]
+            ));
+        }
+        // 256 < 4096 decoded: lopdf's lenient load drops object 10 and
+        // returns Ok; the inspection must not call that complete.
+        assert_eq!(
+            try_pdf_repairs(&bytes, Some(256)),
+            Err(RepairInspectError::ObjectStreamSkipped { object: (6, 0) })
+        );
+        // The convenience form keeps its unbounded, infallible shape.
+        assert_eq!(pdf_repairs(&bytes).len(), 1);
+    }
+
+    #[test]
+    fn an_unreadable_file_is_an_error() {
+        assert_eq!(
+            try_pdf_repairs(b"not a pdf", None),
+            Err(RepairInspectError::Unreadable)
+        );
+        assert_eq!(pdf_repairs(b"not a pdf"), []);
     }
 }

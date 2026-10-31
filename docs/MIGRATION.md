@@ -2577,7 +2577,13 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   result (`ConversionResult::pdf_repairs`); the document is the same either
   way. No false positive on the 98 PDFs of the
   test corpus; on each repaired stream the recovered length equals what
-  lopdf loads. docling has no counterpart.
+  lopdf loads. `docling_pdf::try_pdf_repairs(bytes, max_decompressed_size)`
+  (#938) is the bounded, fallible form for an admission guard that caps what
+  one stream may inflate to: the load stays lenient (strict parsing would
+  reject the very repaired input this reports), an object stream the bound
+  makes lopdf skip is `RepairInspectError::ObjectStreamSkipped` rather than a
+  silent gap, and an unloadable file is `Unreadable` — `Ok` is a complete
+  list, empty for a well-formed file. docling has no counterpart.
 - **`RenderedPage::omissions`** (#916) — `render_pages` reports, per page, the
   images the pure-Rust renderer drew as a placeholder block or left out
   (`docling_pdf::Omission { object, rect, reason }`: `JPEG not decoded

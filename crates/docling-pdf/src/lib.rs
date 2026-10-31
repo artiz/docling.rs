@@ -75,7 +75,7 @@ pub mod pdf_meta;
 // What the reader repaired to read a file (#934) — typed provenance, on
 // demand; pure Rust like `pdf_meta`.
 pub mod repairs;
-pub use repairs::{pdf_repairs, PdfRepair};
+pub use repairs::{pdf_repairs, try_pdf_repairs, PdfRepair, RepairInspectError};
 #[cfg(feature = "render")]
 pub mod raster;
 #[cfg(feature = "render")]
