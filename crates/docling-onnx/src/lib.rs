@@ -881,17 +881,6 @@ pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     memory_opts(builder)
 }
 
-/// [`apply`] for a session that runs once per page over a large input and
-/// then idles — the OCR text detector (#945): its DB-net activations at the
-/// 2000 px input are ~250 MB per run, and the CPU arena keeps that peak
-/// slab for the process's lifetime, per page worker; without it the
-/// activations free after each run, at a cost measured in the noise for a
-/// once-per-page model (the arena pays off for the recognizer's many small
-/// batches and the TableFormer decoder's steps, which keep theirs).
-pub fn apply_lean(builder: SessionBuilder) -> Result<SessionBuilder, String> {
-    without_arena(apply(builder)?)
-}
-
 /// [`apply`] without the execution providers: the session runs on the CPU
 /// whatever `DOCLING_RS_EP` chose, keeping the CPU memory options. For a
 /// model one provider cannot run while the others it can — the TableFormer
@@ -915,15 +904,6 @@ fn memory_opts(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     if !docling_core::env::flag("DOCLING_RS_NO_ARENA") {
         return Ok(builder);
     }
-    without_arena(builder)
-}
-
-/// The CPU execution provider registered with its memory arena disabled and
-/// initializers kept out of arena allocations — what `DOCLING_RS_NO_ARENA`
-/// does for every session ([`memory_opts`]) and [`apply_lean`] for one.
-/// Registering the CPU provider twice is harmless (it is the implicit last
-/// provider anyway).
-fn without_arena(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     use ort::ep::{cpu::CPU, ExecutionProvider as _};
     let cpu = CPU::default().with_arena_allocator(false);
     let mut builder = builder

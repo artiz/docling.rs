@@ -2055,11 +2055,10 @@ These are deliberate or unavoidable divergences, not bugs.
      less (#945): the layout regions its text layer leaves empty (#931) are
      detected on their own crops at render resolution — a caption-sized
      crop instead of the whole page — and the sideways-outline orientation
-     probe (#936) runs at the 960 px cap. The detector session also runs
-     without ONNX Runtime's memory arena: it runs once per page over the
-     largest input of any OCR model, and the arena kept that peak per page
-     worker for the process's lifetime (+250 MB per worker on a scan).
-     The browser pipeline runs the same detector through onnxruntime-web
+     probe (#936) runs at the 960 px cap; and the page workers share one
+     detector session (as they share TableFormer), so its ~250 MB arena —
+     the largest input of any OCR model, grown once per worker — is held
+     once per process. The browser pipeline runs the same detector through onnxruntime-web
      when `ocr_det.onnx` is available.
    - **Tables** — **TableFormer** (image encoder + autoregressive OTSL structure
      decoder + cell-bbox decoder, ported to ONNX), on a cv2-exact preprocessed
