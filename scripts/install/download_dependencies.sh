@@ -71,6 +71,20 @@
 #     Hugging Face, matching the RAG_EMBED_ONNX_PATH/RAG_EMBED_TOKENIZER
 #     defaults)
 #
+# Also fetches the release's attribution records beside the files (#942):
+#   .models/MODELS_NOTICE.md     (docs/MODELS_NOTICE.md — the third-party notice)
+#   .models/models.json          (the digest-bound manifest: every asset's
+#     sha256, its artifact — an ONNX graph with its .onnx.data sidecar is one
+#     — the upstream repository and revision the bytes come from, how they
+#     were produced, the SPDX licence; scripts/ci/models_manifest.sh builds it
+#     from scripts/install/models_catalog.json)
+#   .models/LICENSE-<SPDX>.txt   (the licence texts the manifest names)
+# so a redistributed .models/ carries its attribution. Upstream revisions of
+# the exports at this writing (the catalog is authoritative):
+# docling-layout-heron 8f39ad3c0b4c58e9c2d2c84a38465abf757272d8, docling-models
+# (TableFormer) 2199320848bb9a8a519d22e4b528185a4f9a6f64, CodeFormulaV2
+# ecedbe111d15c2dc60bfd4a823cbe80127b58af4.
+#
 # Also fetches the INT8-quantized CPU models when the release hosts them (see
 # docs/PDF_CONFORMANCE.md — ~2.4x faster layout inference at unchanged conformance):
 #   .models/layout_heron_int8.onnx
@@ -464,6 +478,13 @@ if [ "$WITH_FONTS" = true ]; then
     rm -rf "$FONTS_TMP"
   fi
 fi
+# The attribution records (#942), first so a run that stops early still
+# leaves the notice beside what it fetched; a tag that predates them has none.
+for record in MODELS_NOTICE.md models.json LICENSE-Apache-2.0.txt \
+  LICENSE-CDLA-Permissive-2.0.txt LICENSE-MIT.txt LICENSE-BSD-3-Clause.txt \
+  LICENSE-pdfium-binaries.txt; do
+  fetch_optional "$BASE_URL/$record" ".models/$record"
+done
 fetch "$BASE_URL/layout_heron.onnx" .models/layout_heron.onnx
 fetch "$BASE_URL/ocr_rec.onnx" .models/ocr_rec.onnx
 fetch "$BASE_URL/ppocr_keys_v1.txt" .models/ppocr_keys_v1.txt

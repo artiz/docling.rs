@@ -109,6 +109,25 @@ _OPTIONAL = {
     "chunk_tokenizer.json": "models/chunk/tokenizer.json",
 }
 
+# The release's attribution records (#942), kept beside the models so a
+# redistributed cache carries them: the third-party notice, the digest-bound
+# ``models.json`` manifest (every asset's sha256 and artifact grouping, the
+# upstream repository + revision the bytes come from, how they were produced,
+# the SPDX licence) and the licence texts it names. Optional — a tag that
+# predates them has none.
+_RECORDS = {
+    name: f"models/{name}"
+    for name in (
+        "MODELS_NOTICE.md",
+        "models.json",
+        "LICENSE-Apache-2.0.txt",
+        "LICENSE-CDLA-Permissive-2.0.txt",
+        "LICENSE-MIT.txt",
+        "LICENSE-BSD-3-Clause.txt",
+        "LICENSE-pdfium-binaries.txt",
+    )
+}
+
 # CodeFormula (do_code_enrichment / do_formula_enrichment) — the int8 decoder
 # (~165 MB) makes the ~655 MB fp32 decoder unnecessary (same rule as
 # download_dependencies.sh), so the fp32 graph is fetched only when the int8
@@ -384,6 +403,8 @@ def download_models(
                 )
     if not pdf_models:
         return root
+    for name, rel in _RECORDS.items():
+        _fetch(f"{BASE_URL}/{name}", root / rel, optional=True, progress=progress, force=force)
     for name, rel in _REQUIRED.items():
         _fetch(f"{BASE_URL}/{name}", root / rel, optional=False, progress=progress, force=force)
     for name, rel in {**_OPTIONAL, **(_ENRICH if enrichment else {})}.items():

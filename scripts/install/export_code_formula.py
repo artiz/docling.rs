@@ -50,19 +50,37 @@ import torch.nn.functional as F
 warnings.filterwarnings("ignore")
 
 REPO = "docling-project/CodeFormulaV2"
+
+
+def catalog_revision(artifact: str) -> str:
+    """The upstream revision scripts/install/models_catalog.json records for
+    `artifact` (#942): the export reads exactly that commit, so the released
+    graphs are bound to a revision the manifest can name, not to whatever
+    `main` holds on the day of the run. Bump the catalog to re-export."""
+    import json
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models_catalog.json")
+    with open(path, encoding="utf-8") as fh:
+        for entry in json.load(fh)["artifacts"]:
+            if entry["id"] == artifact:
+                return entry["upstream"]["revision"]
+    raise SystemExit(f"{path}: no artifact {artifact!r}")
+
+
+REVISION = catalog_revision("code_formula")
 OUT = sys.argv[1] if len(sys.argv) > 1 else ".models/code_formula"
 os.makedirs(OUT, exist_ok=True)
 
-print(f"loading {REPO} ...", flush=True)
+print(f"loading {REPO} @ {REVISION} ...", flush=True)
 from transformers import AutoModelForImageTextToText, AutoProcessor  # noqa: E402
 
-model = AutoModelForImageTextToText.from_pretrained(REPO, dtype=torch.float32)
+model = AutoModelForImageTextToText.from_pretrained(REPO, revision=REVISION, dtype=torch.float32)
 model.eval()
 # The wrapper modules below close over `model`'s submodules without registering
 # them, so the tracer treats the weights as constants — which torch.onnx
 # rejects while they still require grad.
 model.requires_grad_(False)
-processor = AutoProcessor.from_pretrained(REPO)
+processor = AutoProcessor.from_pretrained(REPO, revision=REVISION)
 
 text_model = model.model.text_model
 vision_model = model.model.vision_model
@@ -305,7 +323,7 @@ import shutil  # noqa: E402
 from huggingface_hub import hf_hub_download  # noqa: E402
 
 for f in ["tokenizer.json"]:
-    shutil.copyfile(hf_hub_download(REPO, f), f"{OUT}/{f}")
+    shutil.copyfile(hf_hub_download(REPO, f, revision=REVISION), f"{OUT}/{f}")
 
 # ---------------------------------------------------------------------------
 # Verify the exported graphs against torch end-to-end (greedy, zero-len prefill

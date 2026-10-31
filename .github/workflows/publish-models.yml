@@ -125,7 +125,7 @@ jobs:
         run: python scripts/install/quantize_models.py tableformer-encoder-fp16
 
       # --- CodeFormula VLM (optional — the enrichment models are opt-in) ---
-      # CodeFormulaV2 (Idefics3/SmolVLM-class, Apache-2.0) exported to the
+      # CodeFormulaV2 (Idefics3/SmolVLM-class, CDLA-Permissive-2.0) exported to the
       # three-graph ONNX set the Rust `--enrich-code`/`--enrich-formula`
       # passes run; the export script verifies the graphs argmax-identical to
       # transformers.generate before writing them.
@@ -149,33 +149,46 @@ jobs:
       # The tokenizer is all-MiniLM-L6-v2's tokenizer.json (Apache-2.0), the
       # default docling's HybridChunker counts tokens with; re-hosted so the
       # hybrid chunker works out of the box after download_dependencies.sh.
+      # Each re-hosted file is fetched at the upstream revision the provenance
+      # catalog records (scripts/install/models_catalog.json, #942), so the
+      # bytes the release hosts are the ones models.json binds to that
+      # revision — not whatever `main` holds on the day of the run. Bumping
+      # a model = bumping its catalog revision; pdfium-binaries likewise by
+      # its tag.
       - name: Fetch pdfium + OCR + ASR + chunk tokenizer assets
         run: |
           mkdir -p third-party third-party/asr
+          rev() { jq -er --arg id "$1" '.artifacts[] | select(.id == $id) | .upstream.revision' scripts/install/models_catalog.json; }
+          PDFIUM_TAG="$(rev pdfium)"
+          RAPIDOCR_REV="$(rev ocr_rec_v3_ch)"
+          RAPIDOCR_MS_REV="$(rev ocr_rec_v6)"
+          WHISPER_REV="$(rev whisper_tiny)"
+          MINILM_REV="$(rev chunk_tokenizer)"
+          FIGCLS_REV="$(rev picture_classifier)"
           # Same backoff download_dependencies.sh uses: Hugging Face and
           # raw.githubusercontent answer 429 to shared CI egress often enough
           # to fail an unretried fetch, and GitHub's release-asset CDN has
           # answered 504 for a quarter of a minute straight.
           RETRY="--retry 8 --connect-timeout 30"
           curl -fsSL $RETRY -o /tmp/pdfium.tgz \
-            "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz"
+            "https://github.com/bblanchon/pdfium-binaries/releases/download/$PDFIUM_TAG/pdfium-linux-x64.tgz"
           tar -xzf /tmp/pdfium.tgz -C third-party
           curl -fsSL $RETRY -o third-party/ocr_rec.onnx \
-            "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/ch_PP-OCRv3_rec_infer.onnx"
+            "https://huggingface.co/SWHL/RapidOCR/resolve/$RAPIDOCR_REV/PP-OCRv3/ch_PP-OCRv3_rec_infer.onnx"
           curl -fsSL $RETRY -o third-party/ppocr_keys_v1.txt \
             "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/ppocr_keys_v1.txt"
           curl -fsSL $RETRY -o third-party/chunk_tokenizer.json \
-            "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
-          # DocumentFigureClassifier-v2.5 (Apache-2.0) ships its ONNX graph
+            "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/$MINILM_REV/tokenizer.json"
+          # DocumentFigureClassifier-v2.5 (MIT) ships its ONNX graph
           # upstream — re-hosted as-is for --enrich-picture-classes.
           curl -fsSL $RETRY -o third-party/picture_classifier.onnx \
-            "https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5/resolve/main/model.onnx"
+            "https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5/resolve/$FIGCLS_REV/model.onnx"
           # English PP-OCRv3 recognition pair — the *runtime default* OCR
           # model (the ch_ pair above is the conformance one). Unmirrored, it
           # was the last required asset a container build pulled from Hugging
           # Face, and a 429 there failed the image publish outright.
           curl -fsSL $RETRY -o third-party/ocr_rec_en.onnx \
-            "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx"
+            "https://huggingface.co/SWHL/RapidOCR/resolve/$RAPIDOCR_REV/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx"
           curl -fsSL $RETRY -o third-party/en_dict.txt \
             "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt"
           # PP-OCRv6 text detector (#429, Apache-2.0): RapidOCR's small DB
@@ -183,34 +196,34 @@ jobs:
           # unmodified from RapidOCR's model hub (its SHA256 is pinned there:
           # 090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f).
           curl -fsSL $RETRY -o third-party/ocr_det.onnx \
-            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx"
+            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/$RAPIDOCR_MS_REV/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx"
           # PP-OCRv6 recognizer + dictionary (#570, Apache-2.0): RapidOCR's
           # multilingual `PP-OCRv6_rec_small`, the recognizer docling runs for
           # every language and the Rust default when present; re-hosted
           # unmodified (hub SHA256:
           # 6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884).
           curl -fsSL $RETRY -o third-party/ocr_rec_v6.onnx \
-            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx"
+            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/$RAPIDOCR_MS_REV/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx"
           curl -fsSL $RETRY -o third-party/ocr_rec_v6_dict.txt \
-            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt"
+            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/$RAPIDOCR_MS_REV/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt"
           # PP-LCNet text-line orientation classifier (#666, Apache-2.0):
           # RapidOCR's `ch_PP-LCNet_x0_25_textline_ori_cls_mobile`, the 0/180
           # check of `ocr_textline_orientation`; re-hosted unmodified (hub
           # SHA256: 54379ae5174d026780215fc748a7f31910dee36818e63d49e17dc598ecc82df7).
           curl -fsSL $RETRY -o third-party/ocr_textline_ori.onnx \
-            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/cls/ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx"
+            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/$RAPIDOCR_MS_REV/onnx/PP-OCRv5/cls/ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx"
           echo "54379ae5174d026780215fc748a7f31910dee36818e63d49e17dc598ecc82df7  third-party/ocr_textline_ori.onnx" | sha256sum -c -
           # Whisper tiny (the ASR default, ~150 MB): same reasoning — a
           # default install fetches it, so mirror it here and leave Hugging
           # Face as download_dependencies.sh's fallback host.
           for f in encoder_model decoder_model; do
             curl -fsSL $RETRY -o "third-party/asr/$f.onnx" \
-              "https://huggingface.co/onnx-community/whisper-tiny/resolve/main/onnx/$f.onnx"
+              "https://huggingface.co/onnx-community/whisper-tiny/resolve/$WHISPER_REV/onnx/$f.onnx"
           done
           curl -fsSL $RETRY -o third-party/asr/vocab.json \
-            "https://huggingface.co/onnx-community/whisper-tiny/resolve/main/vocab.json"
+            "https://huggingface.co/onnx-community/whisper-tiny/resolve/$WHISPER_REV/vocab.json"
           curl -fsSL $RETRY -o third-party/asr/added_tokens.json \
-            "https://huggingface.co/onnx-community/whisper-tiny/resolve/main/added_tokens.json"
+            "https://huggingface.co/onnx-community/whisper-tiny/resolve/$WHISPER_REV/added_tokens.json"
 
       # --- stage + publish -------------------------------------------------
       # GitHub release assets can't contain "/", so tableformer/*.onnx is
@@ -229,6 +242,10 @@ jobs:
             if [ -f "$1.data" ]; then cp "$1.data" "release-assets/$2.data"; fi
           }
           stage third-party/lib/libpdfium.so libpdfium.so
+          # pdfium-binaries' own LICENSE travels with its library (#942); the
+          # other records — MODELS_NOTICE.md, models.json, LICENSE-<SPDX>.txt
+          # — are models_manifest.sh's, generated last.
+          stage third-party/LICENSE LICENSE-pdfium-binaries.txt
           stage third-party/ocr_rec.onnx ocr_rec.onnx
           stage third-party/ppocr_keys_v1.txt ppocr_keys_v1.txt
           stage third-party/chunk_tokenizer.json chunk_tokenizer.json
@@ -299,7 +316,9 @@ jobs:
             # (v1.98.0, after a re-run of this workflow). Keep the patterns in
             # sync with every workflow that uploads into $TAG.
             case "$asset" in
-              docling-parse-render-*|onnxruntime-linux-*|SHA256SUMS) continue ;;
+              docling-parse-render-*|onnxruntime-linux-*) continue ;;
+              # models_manifest.sh's records, regenerated below.
+              SHA256SUMS|models.json|MODELS_NOTICE.md|LICENSE-*) continue ;;
             esac
             if [ ! -f "release-assets/$asset" ]; then
               echo "pruning stale asset: $asset"
@@ -307,9 +326,12 @@ jobs:
             fi
           done
 
-      # Last: the SHA256SUMS the downloaders verify every asset against,
-      # regenerated from the release as it stands after the upload and the
-      # prune (scripts/ci/models_manifest.sh — also the last step of the
-      # other workflows that upload into this release).
-      - name: Regenerate SHA256SUMS
+      # Last: the release's records — the SHA256SUMS the downloaders verify
+      # every asset against, and the digest-bound models.json + notice +
+      # licence texts (#942) — regenerated from the release as it stands
+      # after the upload and the prune (scripts/ci/models_manifest.sh — also
+      # the last step of the other workflows that upload into this release).
+      # It fails on an asset scripts/install/models_catalog.json does not
+      # cover: a new export needs its catalog entry in the same change.
+      - name: Regenerate SHA256SUMS + models.json + notices
         run: scripts/ci/models_manifest.sh "$TAG"
