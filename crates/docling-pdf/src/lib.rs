@@ -140,7 +140,7 @@ pub use heading_hierarchy::HeadingHierarchyOptions;
 #[cfg(feature = "ml")]
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options, convert_mets_gbs_with_pipeline};
 #[cfg(feature = "ml")]
-pub use ocr::{OcrEngine, OcrLang, OcrMode};
+pub use ocr::{OcrEngine, OcrLang, OcrMode, OcrModel, RecognizedLine};
 #[cfg(feature = "render")]
 pub use pdfium_backend::PdfDocument;
 pub use pdfium_backend::TextOptions;

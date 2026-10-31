@@ -335,6 +335,24 @@ run with `--ocr-lang ch`. `--ocr-engine tesseract` (#460) runs the system
 Languages, `ocr_mode`, `ocr_scale`, the Tesseract environment and the
 detector knobs: [`docs/OPTIONS.md` § OCR](../../docs/OPTIONS.md#ocr-engines-and-languages).
 
+The two stages are also usable without page layout (#939) — for a caller
+that brings its own crops, e.g. from the public detector:
+
+```rust,ignore
+use docling_pdf::{ocr_det::DetModel, OcrLang, OcrModel};
+
+let mut det = DetModel::load(1)?;
+let mut ocr = OcrModel::load_with(OcrLang::En, 4)?; // 4 recognition lanes
+let boxes = det.detect(&img)?; // img pixels, reading order
+for (b, line) in boxes.iter().zip(ocr.recognize_det_boxes(&img, &boxes)?) {
+    // line.text, line.confidence (recognition, not b.score); nothing is
+    // dropped — line.passes_text_score() is the page OCR's filter.
+}
+```
+
+`recognize_crops(&[RgbImage])` reads ready-made line crops the same way;
+both return one result per input, in input order.
+
 ## VLM pipeline (remote endpoint)
 
 `--pipeline vlm` (#77) replaces the discriminative ML stack with a Vision
