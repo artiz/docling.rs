@@ -9,4 +9,4 @@
 #923 | fixed | claude/issues-919-923-pdf-text-layer | 2026-10-29T03:55Z
 #934 | skipped | feature request not a bug: recovery is correct; wants a new public repair-provenance API that lopdf 0.45 discards (Stream::new overwrites /Length) — needs maintainer API design or lopdf patch | 2026-10-30T06:50Z
 #936 | fixed | claude/issue-936-sideways-outlines | 2026-10-30T19:50Z
-#938 | claimed | claude/issue-938-bounded-repairs | 2026-10-31T03:03Z
+#938 | fixed | claude/issue-938-bounded-repairs | 2026-10-31T03:13Z
