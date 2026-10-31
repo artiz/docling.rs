@@ -13,3 +13,4 @@
 #942 | skipped | release-asset provenance/licence manifest request (mutable models-v1 release, upstream revisions unverifiable offline); needs maintainer design, not a code bug | 2026-10-31T07:00Z
 #945 | skipped | OCR detector perf tuning; acceptance needs .models + docling-parse shim (absent here) to measure FUNSD recall, snapshots and time/memory; cannot validate | 2026-10-31T12:00Z
 #947 | fixed | claude/issue-947-det-box-crop-outside | 2026-10-31T15:27Z
+#951 | skipped | release-hosting request (immutable/digest-addressed models-v1 history), not a code bug; same class as #942, needs maintainer release-process decision | 2026-10-31T23:16Z
