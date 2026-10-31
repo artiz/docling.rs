@@ -89,10 +89,10 @@ impl Pipeline {
             b: h as f32,
         };
         let worker = self.primary()?;
-        let detected = match worker.det_model() {
-            Some(det) => Some(det.detect(view).map_err(PdfError::Ocr)?),
-            None => None,
-        };
+        let detected = worker
+            .with_det(|det| det.detect(view))
+            .transpose()
+            .map_err(PdfError::Ocr)?;
         let Some(model) = worker.ocr_model()? else {
             return Err(PdfError::Ocr("OCR model unavailable".into()));
         };

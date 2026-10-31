@@ -91,6 +91,9 @@ const CONF_MARGIN: f32 = 0.10;
 /// nothing (blank page, pure line-art) has no orientation evidence at all.
 const MIN_CHARS: usize = 8;
 const MIN_CONF: f32 = 0.55;
+/// [`overturns`]: a rotated hypothesis reading this many times the upright
+/// characters at [`UPRIGHT_CONF`] wins without the confidence margin.
+const DOMINANT: usize = 4;
 
 /// One hypothesis' evidence: Σ(confidence × chars) over its probe lines, and
 /// the raw character count.
@@ -246,24 +249,55 @@ fn detect_by_probe(img: &RgbImage, ocr: &mut OcrModel, boxes: &[DetBox]) -> u16 
             (best_deg, best) = (*deg, s);
         }
     }
-    // Overturn "upright" only on clear evidence: the winner must read real
-    // text (floors), beat the 0° hypothesis by a margin, *and* read more
-    // confidently than it (#571) — more characters at the same poor
-    // confidence is a sparse upright page, not a rotated one.
-    if best_deg != 0
-        && best.chars >= MIN_CHARS
-        && best.mean_conf() >= MIN_CONF
-        && best.weighted > OVERTURN * s0.weighted
-        && best.mean_conf() >= s0.mean_conf() + CONF_MARGIN
-    {
+    if best_deg != 0 && overturns(&s0, &best) {
         return best_deg;
     }
     0
 }
 
+/// Whether the best rotated hypothesis `best` overturns "upright" `s0`.
+/// Only on clear evidence: the winner must read real text (floors), beat
+/// the 0° hypothesis by a margin, *and* read more confidently than it (#571)
+/// — more characters at the same poor confidence is a sparse upright page,
+/// not a rotated one — unless it reads [`UPRIGHT_CONF`]-grade text and
+/// [`DOMINANT`]× the characters: a page whose upright layer is one confident
+/// `Page 1` footer beside a sideways table (#936) read 9 chars at 0.90
+/// upright against 429 at 0.99 turned, and whether the margin held hinged on
+/// the footer's second decimal (0.88 at one detector resolution, 0.90 at
+/// another, #945). That many confident characters is not the #571 case.
+fn overturns(s0: &Score, best: &Score) -> bool {
+    best.chars >= MIN_CHARS
+        && best.mean_conf() >= MIN_CONF
+        && best.weighted > OVERTURN * s0.weighted
+        && (best.mean_conf() >= s0.mean_conf() + CONF_MARGIN
+            || (best.mean_conf() >= UPRIGHT_CONF && best.chars >= DOMINANT * s0.chars.max(1)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn score(chars: usize, conf: f32) -> Score {
+        Score {
+            weighted: conf * chars as f32,
+            chars,
+        }
+    }
+
+    /// The overturn rule: #571's sparse upright page (more characters at the
+    /// same poor confidence) stays upright; #936's confident footer beside a
+    /// sideways table turns whether the footer reads 0.88 or 0.90.
+    #[test]
+    fn overturn_needs_a_confidence_margin_or_dominant_confident_text() {
+        assert!(!overturns(&score(40, 0.62), &score(90, 0.63)));
+        assert!(!overturns(&score(40, 0.62), &score(300, 0.70)));
+        assert!(overturns(&score(10, 0.88), &score(464, 0.99)));
+        assert!(overturns(&score(9, 0.90), &score(429, 0.99)));
+        // Confident but not dominant: a near-tie needs the margin.
+        assert!(!overturns(&score(100, 0.90), &score(130, 0.92)));
+        // Floors still apply.
+        assert!(!overturns(&score(1, 0.5), &score(6, 0.99)));
+    }
 
     /// A box follows the pixels through each un-rotation: on a 100 × 60 image
     /// the line at (10, 5)–(50, 15) lands where `rotate270` / `rotate180` /
