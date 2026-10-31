@@ -1,0 +1,600 @@
+{
+  "$comment": "The provenance catalog of the models release (docs/MODELS_NOTICE.md, #942): every asset the release hosts, grouped into the artifacts they form (an ONNX graph with its `.onnx.data` external-weights sidecar is one artifact), with the upstream repository and revision the bytes come from, how they were produced (export | quantization | repack | rehost | build), the tool that did it and the SPDX licence. scripts/ci/models_manifest.sh joins it with the release's digests into the digest-bound `models.json` asset and refuses a release asset this file does not cover; scripts/install/export_*.py pin their upstream revision from it; publish-models.yml fetches the re-hosted files at the revisions recorded here.",
+  "schema": 1,
+  "release": "models-v1",
+  "notice": "MODELS_NOTICE.md",
+  "licenses": {
+    "Apache-2.0": "LICENSE-Apache-2.0.txt",
+    "CDLA-Permissive-2.0": "LICENSE-CDLA-Permissive-2.0.txt",
+    "MIT": "LICENSE-MIT.txt",
+    "BSD-3-Clause": "LICENSE-BSD-3-Clause.txt"
+  },
+  "artifacts": [
+    {
+      "id": "layout_heron",
+      "name": "RT-DETR layout model (docling heron)",
+      "license": "Apache-2.0",
+      "provenance": "export",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/docling-layout-heron",
+        "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+        "files": [
+          "model.safetensors",
+          "config.json",
+          "preprocessor_config.json"
+        ]
+      },
+      "tool": "scripts/install/export_layout.py",
+      "note": "A PyTorch→ONNX export (torch.onnx.export) of the upstream weights; nothing retrained or fine-tuned.",
+      "files": [
+        {
+          "asset": "layout_heron.onnx",
+          "path": ".models/layout_heron.onnx",
+          "role": "graph"
+        }
+      ]
+    },
+    {
+      "id": "layout_heron_int8",
+      "name": "RT-DETR layout model, static INT8 (conv-only)",
+      "license": "Apache-2.0",
+      "provenance": "quantization",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/docling-layout-heron",
+        "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+        "files": [
+          "model.safetensors",
+          "config.json",
+          "preprocessor_config.json"
+        ]
+      },
+      "tool": "scripts/install/quantize_models.py layout",
+      "derived_from": "layout_heron.onnx",
+      "note": "A post-training quantization of layout_heron.onnx (a numeric re-encoding of the same weights, calibrated on the repository's PDF corpus); no retraining.",
+      "files": [
+        {
+          "asset": "layout_heron_int8.onnx",
+          "path": ".models/layout_heron_int8.onnx",
+          "role": "graph"
+        }
+      ]
+    },
+    {
+      "id": "tableformer_encoder",
+      "name": "TableFormer encoder",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0",
+      "provenance": "export",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/docling-models",
+        "revision": "2199320848bb9a8a519d22e4b528185a4f9a6f64",
+        "files": [
+          "model_artifacts/tableformer/accurate/tableformer_accurate.safetensors",
+          "model_artifacts/tableformer/accurate/tm_config.json"
+        ]
+      },
+      "tool": "scripts/install/export_tableformer.py",
+      "note": "A PyTorch→ONNX export of docling-ibm-models' TableFormer `accurate` checkpoint; the `.onnx.data` sidecar holds the graph's weights (ONNX external data) and is read by the graph that names it in `data` — the two files are one artifact and travel together. (The encoder export fits in one file; its sidecar is listed for the exports that need it.)",
+      "files": [
+        {
+          "asset": "encoder.onnx",
+          "path": ".models/tableformer/encoder.onnx",
+          "role": "graph",
+          "data": "encoder.onnx.data"
+        },
+        {
+          "asset": "encoder.onnx.data",
+          "path": ".models/tableformer/encoder.onnx.data",
+          "role": "external-data",
+          "of": "encoder.onnx"
+        }
+      ]
+    },
+    {
+      "id": "tableformer_encoder_fp16",
+      "name": "TableFormer encoder, fp16-stored weights",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0",
+      "provenance": "repack",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/docling-models",
+        "revision": "2199320848bb9a8a519d22e4b528185a4f9a6f64",
+        "files": [
+          "model_artifacts/tableformer/accurate/tableformer_accurate.safetensors",
+          "model_artifacts/tableformer/accurate/tm_config.json"
+        ]
+      },
+      "tool": "scripts/install/quantize_models.py tableformer-encoder-fp16",
+      "derived_from": "encoder.onnx",
+      "note": "encoder.onnx with its weights stored as fp16 and cast back to fp32 at run time (#374): half the download, the same computation.",
+      "files": [
+        {
+          "asset": "encoder_fp16.onnx",
+          "path": ".models/tableformer/encoder_fp16.onnx",
+          "role": "graph"
+        }
+      ]
+    },
+    {
+      "id": "tableformer_decoder",
+      "name": "TableFormer decoder (legacy graph)",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0",
+      "provenance": "export",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/docling-models",
+        "revision": "2199320848bb9a8a519d22e4b528185a4f9a6f64",
+        "files": [
+          "model_artifacts/tableformer/accurate/tableformer_accurate.safetensors",
+          "model_artifacts/tableformer/accurate/tm_config.json"
+        ]
+      },
+      "tool": "scripts/install/export_tableformer.py",
+      "note": "A PyTorch→ONNX export of docling-ibm-models' TableFormer `accurate` checkpoint; the `.onnx.data` sidecar holds the graph's weights (ONNX external data) and is read by the graph that names it in `data` — the two files are one artifact and travel together.",
+      "files": [
+        {
+          "asset": "decoder.onnx",
+          "path": ".models/tableformer/decoder.onnx",
+          "role": "graph",
+          "data": "decoder.onnx.data"
+        },
+        {
+          "asset": "decoder.onnx.data",
+          "path": ".models/tableformer/decoder.onnx.data",
+          "role": "external-data",
+          "of": "decoder.onnx"
+        }
+      ]
+    },
+    {
+      "id": "tableformer_decoder_int8",
+      "name": "TableFormer decoder (legacy graph), dynamic INT8",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0",
+      "provenance": "quantization",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/docling-models",
+        "revision": "2199320848bb9a8a519d22e4b528185a4f9a6f64",
+        "files": [
+          "model_artifacts/tableformer/accurate/tableformer_accurate.safetensors",
+          "model_artifacts/tableformer/accurate/tm_config.json"
+        ]
+      },
+      "tool": "scripts/install/quantize_models.py tableformer-decoder",
+      "derived_from": "decoder.onnx",
+      "note": "A post-training dynamic quantization of decoder.onnx (+ its .data); no retraining.",
+      "files": [
+        {
+          "asset": "decoder_int8.onnx",
+          "path": ".models/tableformer/decoder_int8.onnx",
+          "role": "graph"
+        }
+      ]
+    },
+    {
+      "id": "tableformer_decoder_kv",
+      "name": "TableFormer decoder, hoisted KV cache",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0",
+      "provenance": "export",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/docling-models",
+        "revision": "2199320848bb9a8a519d22e4b528185a4f9a6f64",
+        "files": [
+          "model_artifacts/tableformer/accurate/tableformer_accurate.safetensors",
+          "model_artifacts/tableformer/accurate/tm_config.json"
+        ]
+      },
+      "tool": "scripts/install/export_tableformer.py",
+      "note": "A PyTorch→ONNX export of docling-ibm-models' TableFormer `accurate` checkpoint; the `.onnx.data` sidecar holds the graph's weights (ONNX external data) and is read by the graph that names it in `data` — the two files are one artifact and travel together. decoder_kv_layers.onnx (#871) is the same export with per-layer cache inputs — it reads the same decoder_kv.onnx.data, so the three files are one artifact.",
+      "files": [
+        {
+          "asset": "decoder_kv.onnx",
+          "path": ".models/tableformer/decoder_kv.onnx",
+          "role": "graph",
+          "data": "decoder_kv.onnx.data"
+        },
+        {
+          "asset": "decoder_kv_layers.onnx",
+          "path": ".models/tableformer/decoder_kv_layers.onnx",
+          "role": "graph",
+          "data": "decoder_kv.onnx.data"
+        },
+        {
+          "asset": "decoder_kv.onnx.data",
+          "path": ".models/tableformer/decoder_kv.onnx.data",
+          "role": "external-data",
+          "of": "decoder_kv.onnx"
+        }
+      ]
+    },
+    {
+      "id": "tableformer_decoder_kv_int8",
+      "name": "TableFormer decoder, hoisted KV cache, dynamic INT8",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0",
+      "provenance": "quantization",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/docling-models",
+        "revision": "2199320848bb9a8a519d22e4b528185a4f9a6f64",
+        "files": [
+          "model_artifacts/tableformer/accurate/tableformer_accurate.safetensors",
+          "model_artifacts/tableformer/accurate/tm_config.json"
+        ]
+      },
+      "tool": "scripts/install/quantize_models.py tableformer-decoder",
+      "derived_from": "decoder_kv.onnx",
+      "note": "A post-training dynamic quantization of decoder_kv.onnx; no retraining.",
+      "files": [
+        {
+          "asset": "decoder_kv_int8.onnx",
+          "path": ".models/tableformer/decoder_kv_int8.onnx",
+          "role": "graph",
+          "data": "decoder_kv_int8.onnx.data"
+        },
+        {
+          "asset": "decoder_kv_int8.onnx.data",
+          "path": ".models/tableformer/decoder_kv_int8.onnx.data",
+          "role": "external-data",
+          "of": "decoder_kv_int8.onnx"
+        }
+      ]
+    },
+    {
+      "id": "tableformer_bbox",
+      "name": "TableFormer bbox decoder",
+      "license": "CDLA-Permissive-2.0 AND Apache-2.0",
+      "provenance": "export",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/docling-models",
+        "revision": "2199320848bb9a8a519d22e4b528185a4f9a6f64",
+        "files": [
+          "model_artifacts/tableformer/accurate/tableformer_accurate.safetensors",
+          "model_artifacts/tableformer/accurate/tm_config.json"
+        ]
+      },
+      "tool": "scripts/install/export_tableformer.py",
+      "note": "A PyTorch→ONNX export of docling-ibm-models' TableFormer `accurate` checkpoint; the `.onnx.data` sidecar holds the graph's weights (ONNX external data) and is read by the graph that names it in `data` — the two files are one artifact and travel together.",
+      "files": [
+        {
+          "asset": "bbox.onnx",
+          "path": ".models/tableformer/bbox.onnx",
+          "role": "graph",
+          "data": "bbox.onnx.data"
+        },
+        {
+          "asset": "bbox.onnx.data",
+          "path": ".models/tableformer/bbox.onnx.data",
+          "role": "external-data",
+          "of": "bbox.onnx"
+        }
+      ]
+    },
+    {
+      "id": "picture_classifier",
+      "name": "DocumentFigureClassifier-v2.5 (EfficientNet-B0)",
+      "license": "MIT",
+      "provenance": "rehost",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5",
+        "revision": "f859dfbff5c9916cd996942d4b0db7fa25808220",
+        "files": [
+          "model.onnx"
+        ]
+      },
+      "note": "Upstream's own ONNX graph, re-hosted unmodified. Upstream declares the licence in its model card (`license: mit`); it ships no LICENSE file of its own, so the SPDX MIT text is the one bundled here.",
+      "files": [
+        {
+          "asset": "picture_classifier.onnx",
+          "path": ".models/picture_classifier.onnx",
+          "role": "graph"
+        }
+      ]
+    },
+    {
+      "id": "code_formula",
+      "name": "CodeFormulaV2 (Idefics3-class VLM: vision, embed, decoder graphs + tokenizer)",
+      "license": "CDLA-Permissive-2.0",
+      "provenance": "export",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/CodeFormulaV2",
+        "revision": "ecedbe111d15c2dc60bfd4a823cbe80127b58af4",
+        "files": [
+          "model.safetensors",
+          "config.json",
+          "tokenizer.json"
+        ]
+      },
+      "tool": "scripts/install/export_code_formula.py",
+      "note": "A PyTorch→ONNX export of the upstream weights in three graphs; cf_tokenizer.json is upstream's tokenizer.json re-hosted unmodified. Upstream declares the licence in its model card (`license: cdla-permissive-2.0`).",
+      "files": [
+        {
+          "asset": "cf_vision.onnx",
+          "path": ".models/code_formula/vision.onnx",
+          "role": "graph"
+        },
+        {
+          "asset": "cf_embed.onnx",
+          "path": ".models/code_formula/embed.onnx",
+          "role": "graph"
+        },
+        {
+          "asset": "cf_decoder_kv.onnx",
+          "path": ".models/code_formula/decoder_kv.onnx",
+          "role": "graph"
+        },
+        {
+          "asset": "cf_tokenizer.json",
+          "path": ".models/code_formula/tokenizer.json",
+          "role": "tokenizer"
+        }
+      ]
+    },
+    {
+      "id": "code_formula_decoder_int8",
+      "name": "CodeFormulaV2 decoder, dynamic INT8",
+      "license": "CDLA-Permissive-2.0",
+      "provenance": "quantization",
+      "upstream": {
+        "repository": "https://huggingface.co/docling-project/CodeFormulaV2",
+        "revision": "ecedbe111d15c2dc60bfd4a823cbe80127b58af4",
+        "files": [
+          "model.safetensors",
+          "config.json",
+          "tokenizer.json"
+        ]
+      },
+      "tool": "scripts/install/quantize_models.py code-formula-decoder",
+      "derived_from": "cf_decoder_kv.onnx",
+      "note": "A post-training dynamic quantization of cf_decoder_kv.onnx; no retraining.",
+      "files": [
+        {
+          "asset": "cf_decoder_kv_int8.onnx",
+          "path": ".models/code_formula/decoder_kv_int8.onnx",
+          "role": "graph"
+        }
+      ]
+    },
+    {
+      "id": "ocr_rec_v3_ch",
+      "name": "PP-OCRv3 recognition model + dictionary, multilingual (ch_PP-OCRv3_rec_infer)",
+      "license": "Apache-2.0",
+      "provenance": "rehost",
+      "upstream": {
+        "repository": "https://huggingface.co/SWHL/RapidOCR",
+        "revision": "1cfba2e90fc938db55889873735088de210cc173",
+        "files": [
+          "PP-OCRv3/ch_PP-OCRv3_rec_infer.onnx"
+        ]
+      },
+      "note": "PaddleOCR's model as the ready ONNX conversion SWHL/RapidOCR re-hosts, unmodified. The dictionary is PaddleOCR's own ppocr/utils/ppocr_keys_v1.txt (https://github.com/PaddlePaddle/PaddleOCR, fetched from `main`; the released copy is bound by its digest).",
+      "files": [
+        {
+          "asset": "ocr_rec.onnx",
+          "path": ".models/ocr_rec.onnx",
+          "role": "graph"
+        },
+        {
+          "asset": "ppocr_keys_v1.txt",
+          "path": ".models/ppocr_keys_v1.txt",
+          "role": "dictionary"
+        }
+      ]
+    },
+    {
+      "id": "ocr_rec_v3_en",
+      "name": "PP-OCRv3 recognition model + dictionary, English (en_PP-OCRv3_rec_infer)",
+      "license": "Apache-2.0",
+      "provenance": "rehost",
+      "upstream": {
+        "repository": "https://huggingface.co/SWHL/RapidOCR",
+        "revision": "1cfba2e90fc938db55889873735088de210cc173",
+        "files": [
+          "PP-OCRv3/en_PP-OCRv3_rec_infer.onnx"
+        ]
+      },
+      "note": "As ocr_rec_v3_ch; the dictionary is PaddleOCR's ppocr/utils/en_dict.txt.",
+      "files": [
+        {
+          "asset": "ocr_rec_en.onnx",
+          "path": ".models/ocr_rec_en.onnx",
+          "role": "graph"
+        },
+        {
+          "asset": "en_dict.txt",
+          "path": ".models/en_dict.txt",
+          "role": "dictionary"
+        }
+      ]
+    },
+    {
+      "id": "ocr_rec_v6",
+      "name": "PP-OCRv6 recognition model + dictionary, multilingual (PP-OCRv6_rec_small)",
+      "license": "Apache-2.0",
+      "provenance": "rehost",
+      "upstream": {
+        "repository": "https://www.modelscope.cn/models/RapidAI/RapidOCR",
+        "revision": "v3.9.2",
+        "files": [
+          "onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx",
+          "paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt"
+        ],
+        "upstream_sha256": {
+          "PP-OCRv6_rec_small.onnx": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884"
+        }
+      },
+      "note": "RapidOCR's recognizer (derived from PaddleOCR), re-hosted unmodified from RapidOCR's model hub (#570).",
+      "files": [
+        {
+          "asset": "ocr_rec_v6.onnx",
+          "path": ".models/ocr_rec_v6.onnx",
+          "role": "graph"
+        },
+        {
+          "asset": "ocr_rec_v6_dict.txt",
+          "path": ".models/ocr_rec_v6_dict.txt",
+          "role": "dictionary"
+        }
+      ]
+    },
+    {
+      "id": "ocr_det_v6",
+      "name": "PP-OCRv6 text detection model (PP-OCRv6_det_small)",
+      "license": "Apache-2.0",
+      "provenance": "rehost",
+      "upstream": {
+        "repository": "https://www.modelscope.cn/models/RapidAI/RapidOCR",
+        "revision": "v3.9.2",
+        "files": [
+          "onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx"
+        ],
+        "upstream_sha256": {
+          "PP-OCRv6_det_small.onnx": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f"
+        }
+      },
+      "note": "RapidOCR's DB detector (derived from PaddleOCR), re-hosted unmodified (#429).",
+      "files": [
+        {
+          "asset": "ocr_det.onnx",
+          "path": ".models/ocr_det.onnx",
+          "role": "graph"
+        }
+      ]
+    },
+    {
+      "id": "ocr_textline_ori",
+      "name": "PP-LCNet text-line orientation classifier (ch_PP-LCNet_x0_25_textline_ori_cls_mobile)",
+      "license": "Apache-2.0",
+      "provenance": "rehost",
+      "upstream": {
+        "repository": "https://www.modelscope.cn/models/RapidAI/RapidOCR",
+        "revision": "v3.9.2",
+        "files": [
+          "onnx/PP-OCRv5/cls/ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx"
+        ],
+        "upstream_sha256": {
+          "ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx": "54379ae5174d026780215fc748a7f31910dee36818e63d49e17dc598ecc82df7"
+        }
+      },
+      "note": "Re-hosted unmodified from RapidOCR's model hub (#666).",
+      "files": [
+        {
+          "asset": "ocr_textline_ori.onnx",
+          "path": ".models/ocr_textline_ori.onnx",
+          "role": "graph"
+        }
+      ]
+    },
+    {
+      "id": "whisper_tiny",
+      "name": "Whisper tiny (ONNX encoder + decoder, vocabulary, added tokens)",
+      "license": "Apache-2.0",
+      "provenance": "rehost",
+      "upstream": {
+        "repository": "https://huggingface.co/onnx-community/whisper-tiny",
+        "revision": "ff4177021cc41f7db950912b73ea4fdf7d01d8e7",
+        "files": [
+          "onnx/encoder_model.onnx",
+          "onnx/decoder_model.onnx",
+          "vocab.json",
+          "added_tokens.json"
+        ]
+      },
+      "note": "The community ONNX export of openai/whisper-tiny, re-hosted unmodified under the asr_ prefix.",
+      "files": [
+        {
+          "asset": "asr_encoder_model.onnx",
+          "path": ".models/asr/encoder_model.onnx",
+          "role": "graph"
+        },
+        {
+          "asset": "asr_decoder_model.onnx",
+          "path": ".models/asr/decoder_model.onnx",
+          "role": "graph"
+        },
+        {
+          "asset": "asr_vocab.json",
+          "path": ".models/asr/vocab.json",
+          "role": "tokenizer"
+        },
+        {
+          "asset": "asr_added_tokens.json",
+          "path": ".models/asr/added_tokens.json",
+          "role": "tokenizer"
+        }
+      ]
+    },
+    {
+      "id": "chunk_tokenizer",
+      "name": "Hybrid-chunker tokenizer (all-MiniLM-L6-v2's tokenizer.json)",
+      "license": "Apache-2.0",
+      "provenance": "rehost",
+      "upstream": {
+        "repository": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+        "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+        "files": [
+          "tokenizer.json"
+        ]
+      },
+      "note": "A tokenizer definition, no weights; re-hosted unmodified.",
+      "files": [
+        {
+          "asset": "chunk_tokenizer.json",
+          "path": ".models/chunk/tokenizer.json",
+          "role": "tokenizer"
+        }
+      ]
+    },
+    {
+      "id": "pdfium",
+      "name": "PDFium shared library (bblanchon/pdfium-binaries build, linux-x64)",
+      "license": "BSD-3-Clause",
+      "provenance": "rehost",
+      "upstream": {
+        "repository": "https://github.com/bblanchon/pdfium-binaries",
+        "revision": "chromium/8100",
+        "files": [
+          "pdfium-linux-x64.tgz: lib/libpdfium.so"
+        ]
+      },
+      "note": "Not a model: Google's PDFium (BSD-3-Clause) as built and released by bblanchon/pdfium-binaries, re-hosted unmodified for docling-pdf's opt-in `pdfium` feature and its oracle tests; the default pipeline renders in pure Rust. The build's own LICENSE and the third-party notices of its dependencies ship inside the upstream tarball (`LICENSE`, `licenses/`) — LICENSE-pdfium-binaries.txt is that LICENSE.",
+      "files": [
+        {
+          "asset": "libpdfium.so",
+          "path": ".pdfium/lib/libpdfium.so",
+          "role": "library"
+        }
+      ]
+    },
+    {
+      "id": "docling_parse_render",
+      "name": "docling-parse page-renderer plugin (development oracle)",
+      "license": "MIT",
+      "provenance": "build",
+      "upstream": {
+        "repository": "https://github.com/docling-project/docling-parse",
+        "revision": "v7.22.1",
+        "files": [
+          "(built from source by scripts/install/build_docling_parse_render.sh)"
+        ]
+      },
+      "tool": ".github/workflows/docling-parse-render.yml",
+      "note": "Not a model: docling-parse's Blend2D renderer compiled as a dlopen-able shim (#478), one tarball per platform (lib/ + pdf_resources/). Only the conformance scripts load it (DOCLING_RS_RENDERER=docling-parse).",
+      "pattern": "^docling-parse-render-.*\\.tar\\.gz$",
+      "files": [],
+      "install_dir": ".docling-parse/"
+    },
+    {
+      "id": "onnxruntime_s390x",
+      "name": "ONNX Runtime shared library for IBM Z (s390x)",
+      "license": "MIT",
+      "provenance": "build",
+      "upstream": {
+        "repository": "https://github.com/microsoft/onnxruntime",
+        "revision": "v1.31.0",
+        "files": [
+          "(built from source by .github/workflows/onnxruntime-s390x.yml)"
+        ]
+      },
+      "tool": ".github/workflows/onnxruntime-s390x.yml",
+      "note": "Not a model: the runtime an `ort-load-dynamic` build dlopens where no prebuilt ORT exists (#504); the tarball carries upstream's LICENSE and VERSION.",
+      "pattern": "^onnxruntime-linux-.*\\.tar\\.gz$",
+      "files": [],
+      "install_dir": ".models/onnxruntime/"
+    }
+  ]
+}

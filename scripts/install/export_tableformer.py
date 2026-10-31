@@ -48,18 +48,37 @@ import torch.nn as nn
 warnings.filterwarnings("ignore")
 
 
+
+def catalog_revision(artifact: str) -> str:
+    """The upstream revision scripts/install/models_catalog.json records for
+    `artifact` (#942): the export reads exactly that commit, so the released
+    graphs are bound to a revision the manifest can name, not to whatever
+    `main` holds on the day of the run. Bump the catalog to re-export."""
+    import json
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models_catalog.json")
+    with open(path, encoding="utf-8") as fh:
+        for entry in json.load(fh)["artifacts"]:
+            if entry["id"] == artifact:
+                return entry["upstream"]["revision"]
+    raise SystemExit(f"{path}: no artifact {artifact!r}")
+
+
 def resolve_artifacts():
-    """The `accurate` TableFormer artifacts dir from the published docling models.
-    Uses the HF cache if present, else downloads `docling-project/docling-models`
-    (the checkpoint current docling runs — its OTSL differs from the older ds4sd
-    weights, so the exported graphs must come from this one)."""
-    pat = "models--docling-project--docling-models/snapshots/*/model_artifacts/tableformer/accurate"
+    """The `accurate` TableFormer artifacts dir from the published docling models,
+    at the revision scripts/install/models_catalog.json pins (#942): the HF
+    cache's snapshot of that commit if present, else `snapshot_download` of
+    `docling-project/docling-models` at it (the checkpoint current docling runs
+    — its OTSL differs from the older ds4sd weights, so the exported graphs
+    must come from this one)."""
+    revision = catalog_revision("tableformer_decoder")
+    pat = f"models--docling-project--docling-models/snapshots/{revision}/model_artifacts/tableformer/accurate"
     hits = glob.glob(os.path.expanduser(f"~/.cache/huggingface/hub/{pat}"))
     if hits:
-        return sorted(hits)[-1]
+        return hits[0]
     from huggingface_hub import snapshot_download
 
-    root = snapshot_download("docling-project/docling-models")
+    root = snapshot_download("docling-project/docling-models", revision=revision)
     return os.path.join(root, "model_artifacts", "tableformer", "accurate")
 
 

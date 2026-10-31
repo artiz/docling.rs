@@ -41,6 +41,25 @@ one or an asset missing from it; `require` fails on either — what a
 locked-down build should set; `off` skips the check. A mirror serves its
 own `SHA256SUMS` next to its assets (`sha256sum * > SHA256SUMS`).
 
+**Attribution records (#942).** Next to `SHA256SUMS` the release hosts
+`models.json` — the digest-bound manifest `scripts/ci/models_manifest.sh`
+builds from the provenance catalog `scripts/install/models_catalog.json`:
+every asset's sha256 and size, grouped into the artifacts they form (an
+ONNX graph and its `.onnx.data` external-weights sidecar are one artifact),
+the upstream repository and revision the bytes come from, how they were
+produced (`export` — a PyTorch→ONNX conversion by `scripts/install/export_*.py`,
+which pin that revision; `quantization` / `repack` — derived from such an
+export; `rehost` — an upstream file, unmodified, fetched at that revision;
+`build` — compiled from source) and the SPDX licence — plus
+`MODELS_NOTICE.md` ([`docs/MODELS_NOTICE.md`](MODELS_NOTICE.md)) and the
+licence texts it names (`LICENSE-<SPDX>.txt`, from `docs/licenses/`;
+`LICENSE-pdfium-binaries.txt` is the pdfium build's own). Every downloader
+keeps them beside the files (`.models/models.json`, `.models/MODELS_NOTICE.md`,
+`.models/LICENSE-*.txt`; the Python cache's `models/`), so a redistributed
+model directory carries its attribution. The manifest refuses a release
+asset the catalog does not cover, so a new export lands with its upstream,
+revision and licence recorded or not at all.
+
 | Asset | Destination |
 | --- | --- |
 | RT-DETR layout | `.models/layout_heron.onnx` |

@@ -576,6 +576,40 @@ def test_ensure_env_leaves_ocr_lang_selectable(tmp_path, monkeypatch):
     assert "models/en_dict.txt" in m._FALLBACK_URLS
 
 
+def test_download_assets_are_in_the_provenance_catalog():
+    """#942: every release asset the Python downloader fetches has an entry in
+    ``scripts/install/models_catalog.json`` — the provenance record
+    ``scripts/ci/models_manifest.sh`` turns into the release's ``models.json``
+    (upstream repository + revision, licence, graph/sidecar grouping) — and
+    the attribution records it keeps beside the models are the catalog's."""
+    from docling_rs import models as m
+
+    catalog = json.loads((REPO / "scripts/install/models_catalog.json").read_text("utf-8"))
+    by_asset = {f["asset"]: a for a in catalog["artifacts"] for f in a["files"]}
+    fetched = {**m._REQUIRED, **m._OPTIONAL, **m._ENRICH, dict([m._ENRICH_FP32_DECODER]).popitem()[0]: ""}
+    missing = sorted(set(fetched) - set(by_asset))
+    assert not missing, f"assets without a catalog entry: {missing}"
+    for asset, rel in {**m._REQUIRED, **m._OPTIONAL, **m._ENRICH}.items():
+        # The catalog's install path is the CLI's `.models/…` spelling of the
+        # cache's `models/…` one.
+        entry = next(f for f in by_asset[asset]["files"] if f["asset"] == asset)
+        assert entry["path"] == "." + rel, (asset, entry["path"], rel)
+    for artifact in catalog["artifacts"]:
+        assert artifact["license"]
+        assert artifact["provenance"] in {"export", "quantization", "repack", "rehost", "build"}
+        if not artifact.get("pattern"):
+            assert artifact["upstream"]["revision"], artifact["id"]
+        # A `.onnx.data` sidecar names its graph, and the graph it.
+        for f in artifact["files"]:
+            if f["role"] == "external-data":
+                graphs = [g for g in artifact["files"] if g.get("data") == f["asset"]]
+                assert graphs and any(g["asset"] == f["of"] for g in graphs), f
+    records = set(m._RECORDS)
+    assert catalog["notice"] in records
+    assert set(catalog["licenses"].values()) <= records
+    assert all(rel == f"models/{name}" for name, rel in m._RECORDS.items())
+
+
 def test_ensure_env_still_respects_explicit_ocr_pins(tmp_path, monkeypatch):
     """The per-file vars remain the pin-any-model hatch (#285 workaround 2):
     ensure_env never overwrites caller-set values."""

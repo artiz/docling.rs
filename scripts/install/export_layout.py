@@ -37,6 +37,24 @@ from onnx.reference import ReferenceEvaluator
 from transformers import RTDetrV2ForObjectDetection
 
 REPO = "docling-project/docling-layout-heron"
+
+
+def catalog_revision(artifact: str) -> str:
+    """The upstream revision scripts/install/models_catalog.json records for
+    `artifact` (#942): the export reads exactly that commit, so the released
+    graphs are bound to a revision the manifest can name, not to whatever
+    `main` holds on the day of the run. Bump the catalog to re-export."""
+    import json
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models_catalog.json")
+    with open(path, encoding="utf-8") as fh:
+        for entry in json.load(fh)["artifacts"]:
+            if entry["id"] == artifact:
+                return entry["upstream"]["revision"]
+    raise SystemExit(f"{path}: no artifact {artifact!r}")
+
+
+REVISION = catalog_revision("layout_heron")
 POS_EMBED = "/position_embedding/"
 
 
@@ -132,8 +150,10 @@ def main() -> None:
     out_dir = os.path.dirname(out)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
-    print(f"loading {REPO} ...", flush=True)
-    model = RTDetrV2ForObjectDetection.from_pretrained(REPO, torch_dtype=torch.float32).eval()
+    print(f"loading {REPO} @ {REVISION} ...", flush=True)
+    model = RTDetrV2ForObjectDetection.from_pretrained(
+        REPO, revision=REVISION, torch_dtype=torch.float32
+    ).eval()
     wrap = Wrap(model)
     with torch.no_grad():
         logits, boxes = wrap(torch.zeros(1, 3, 640, 640, dtype=torch.float32))

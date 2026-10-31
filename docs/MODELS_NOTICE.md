@@ -5,41 +5,73 @@ that are **format conversions of docling-project's own PyTorch models** (not
 weights docling.rs trains or modifies), and a few **re-hosted, unmodified
 public releases** of models docling itself builds on (OCR, ASR, the chunk
 tokenizer). All are licensed separately from docling.rs's own MIT code (see
-[`LICENSE`](../LICENSE)) under their upstream terms:
+[`LICENSE`](../LICENSE)) under their upstream terms. This notice is hosted in
+the models release as `MODELS_NOTICE.md`, beside the digest-bound manifest
+`models.json` and the licence texts `LICENSE-<SPDX>.txt`, and every downloader
+keeps the three next to the files it fetches (see "Records" below).
 
-| Model | Source | License |
+| Model | Release assets (an ONNX graph + its `.onnx.data` external-weights sidecar are one artifact) | Source and upstream revision | License |
+|---|---|---|---|
+| RT-DETR layout model | `layout_heron.onnx` (→ `.models/layout_heron.onnx`); `layout_heron_int8.onnx`, a post-training static INT8 quantization of it | [`docling-project/docling-layout-heron`](https://huggingface.co/docling-project/docling-layout-heron) @ `8f39ad3c0b4c58e9c2d2c84a38465abf757272d8`, exported by `scripts/install/export_layout.py` | Apache-2.0 |
+| TableFormer (`accurate`) | `encoder.onnx` (+ `encoder.onnx.data` when the export needs it); `decoder.onnx` + `decoder.onnx.data`; `decoder_kv.onnx` + `decoder_kv_layers.onnx` + `decoder_kv.onnx.data` (both graphs read that one sidecar); `bbox.onnx` + `bbox.onnx.data` (→ `.models/tableformer/`). `encoder_fp16.onnx` is the encoder with fp16-stored weights, `decoder_int8.onnx` / `decoder_kv_int8.onnx` (+ `.data`) post-training dynamic INT8 quantizations of the decoders | [`docling-project/docling-models`](https://huggingface.co/docling-project/docling-models) (`model_artifacts/tableformer/accurate`) @ `2199320848bb9a8a519d22e4b528185a4f9a6f64`, exported by `scripts/install/export_tableformer.py` | CDLA-Permissive-2.0 and Apache-2.0 (upstream lists both) |
+| DocumentFigureClassifier-v2.5 | `picture_classifier.onnx` — upstream's own ONNX graph, re-hosted unmodified | [`docling-project/DocumentFigureClassifier-v2.5`](https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5) @ `f859dfbff5c9916cd996942d4b0db7fa25808220` (`model.onnx`) | MIT (declared in the model card; upstream ships no LICENSE file, so the SPDX text is bundled) |
+| CodeFormulaV2 | `cf_vision.onnx` + `cf_embed.onnx` + `cf_decoder_kv.onnx` + `cf_tokenizer.json` (→ `.models/code_formula/`); `cf_decoder_kv_int8.onnx` is a post-training dynamic INT8 quantization of the decoder | [`docling-project/CodeFormulaV2`](https://huggingface.co/docling-project/CodeFormulaV2) @ `ecedbe111d15c2dc60bfd4a823cbe80127b58af4`, exported by `scripts/install/export_code_formula.py` (the tokenizer re-hosted unmodified) | CDLA-Permissive-2.0 (declared in the model card) |
+| PP-OCRv3 recognition model + dictionary, multilingual | `ocr_rec.onnx` + `ppocr_keys_v1.txt` | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s `ch_PP-OCRv3_rec_infer`, taken as the ready ONNX conversion re-hosted by [`SWHL/RapidOCR`](https://huggingface.co/SWHL/RapidOCR) @ `1cfba2e90fc938db55889873735088de210cc173` (unmodified); the dictionary is PaddleOCR's own `ppocr/utils/ppocr_keys_v1.txt` | Apache-2.0 |
+| PP-OCRv3 recognition model + dictionary, English | `ocr_rec_en.onnx` + `en_dict.txt` | The same pair for PaddleOCR's `en_PP-OCRv3_rec_infer`, from the same `SWHL/RapidOCR` revision, with the dictionary PaddleOCR's `ppocr/utils/en_dict.txt`; both re-hosted unmodified | Apache-2.0 |
+| PP-OCRv6 recognition model + dictionary, multilingual | `ocr_rec_v6.onnx` + `ocr_rec_v6_dict.txt` | [RapidOCR](https://github.com/RapidAI/RapidOCR)'s `PP-OCRv6_rec_small.onnx` + `ppocrv6_dict.txt` (the recognizer its default pipeline — and so docling — runs, derived from [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)), re-hosted unmodified from RapidOCR's model hub @ `v3.9.2` (hub sha256 `6f327246…`) | Apache-2.0 |
+| PP-OCRv6 text detection model | `ocr_det.onnx` | [RapidOCR](https://github.com/RapidAI/RapidOCR)'s `PP-OCRv6_det_small.onnx` (the DB detector its default pipeline runs, derived from [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)), re-hosted unmodified from RapidOCR's model hub @ `v3.9.2` (hub sha256 `090f04ab…`) | Apache-2.0 |
+| Text-line orientation classifier (#666) | `ocr_textline_ori.onnx` | [RapidOCR](https://github.com/RapidAI/RapidOCR)'s `ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx` ([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s `PP-LCNet_x0_25_textline_ori`), re-hosted unmodified from RapidOCR's model hub @ `v3.9.2` (hub sha256 `54379ae5…`) | Apache-2.0 |
+| Whisper tiny | `asr_encoder_model.onnx` + `asr_decoder_model.onnx` + `asr_vocab.json` + `asr_added_tokens.json` (→ `.models/asr/`) | [`onnx-community/whisper-tiny`](https://huggingface.co/onnx-community/whisper-tiny) @ `ff4177021cc41f7db950912b73ea4fdf7d01d8e7`, the community ONNX export of [`openai/whisper-tiny`](https://huggingface.co/openai/whisper-tiny) (re-hosted unmodified; Hugging Face stays the fallback host) | Apache-2.0 |
+| Hybrid-chunker tokenizer | `chunk_tokenizer.json` (→ `.models/chunk/tokenizer.json`) | [`sentence-transformers/all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) @ `1110a243fdf4706b3f48f1d95db1a4f5529b4d41` (`tokenizer.json` — a tokenizer definition, no weights) | Apache-2.0 |
+
+Not models, hosted in the same release:
+
+| Asset | Source | License |
 |---|---|---|
-| RT-DETR layout model (`layout_heron.onnx`) | [`docling-project/docling-layout-heron`](https://huggingface.co/docling-project/docling-layout-heron) | Apache-2.0 |
-| TableFormer (`tableformer/{encoder,decoder,bbox}.onnx`; `encoder_fp16.onnx` is the same export with fp16-stored weights, `*_int8` post-training quantizations) | [`docling-project/docling-models`](https://huggingface.co/docling-project/docling-models) (`model_artifacts/tableformer/accurate`) | CDLA-Permissive-2.0 / Apache-2.0 |
-| DocumentFigureClassifier (`picture_classifier.onnx`) | [`docling-project/DocumentFigureClassifier-v2.5`](https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5) (upstream's own ONNX, re-hosted unmodified) | Apache-2.0 |
-| CodeFormulaV2 (`cf_{vision,embed,decoder_kv}.onnx` + `cf_tokenizer.json`; `cf_decoder_kv_int8.onnx` is a post-training quantization of the same export) | [`docling-project/CodeFormulaV2`](https://huggingface.co/docling-project/CodeFormulaV2) | Apache-2.0 |
-| PP-OCRv3 recognition model + dictionary, multilingual (`ocr_rec.onnx`, `ppocr_keys_v1.txt`) | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s `ch_PP-OCRv3_rec_infer`, taken as the ready ONNX conversion re-hosted by [`SWHL/RapidOCR`](https://huggingface.co/SWHL/RapidOCR) (unmodified) | Apache-2.0 |
-| PP-OCRv3 recognition model + dictionary, English (`ocr_rec_en.onnx`, `en_dict.txt`) | The same pair for PaddleOCR's `en_PP-OCRv3_rec_infer`, with the dictionary taken from [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) itself (`ppocr/utils/en_dict.txt`); both re-hosted unmodified | Apache-2.0 |
-| PP-OCRv6 recognition model + dictionary, multilingual (`ocr_rec_v6.onnx`, `ocr_rec_v6_dict.txt`) | [RapidOCR](https://github.com/RapidAI/RapidOCR)'s `PP-OCRv6_rec_small.onnx` + `ppocrv6_dict.txt` (the recognizer its default pipeline — and so docling — runs, derived from [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)), re-hosted unmodified from RapidOCR's model hub | Apache-2.0 |
-| PP-OCRv6 text detection model (`ocr_det.onnx`) | [RapidOCR](https://github.com/RapidAI/RapidOCR)'s `PP-OCRv6_det_small.onnx` (the DB detector its default pipeline runs, derived from [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)), re-hosted unmodified from RapidOCR's model hub | Apache-2.0 |
-| Text-line orientation classifier (`ocr_textline_ori.onnx`, #666) | [RapidOCR](https://github.com/RapidAI/RapidOCR)'s `ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx` ([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s `PP-LCNet_x0_25_textline_ori`), re-hosted unmodified from RapidOCR's model hub | Apache-2.0 |
-| Whisper tiny (`asr/{encoder_model,decoder_model}.onnx`, `vocab.json`) | [`onnx-community/whisper-tiny`](https://huggingface.co/onnx-community/whisper-tiny), the community ONNX export of [`openai/whisper-tiny`](https://huggingface.co/openai/whisper-tiny) (re-hosted unmodified as `asr_*`; Hugging Face stays the fallback host) | Apache-2.0 |
-| Hybrid-chunker tokenizer (`chunk/tokenizer.json`) | [`sentence-transformers/all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)'s `tokenizer.json` (a tokenizer definition, no weights) | Apache-2.0 |
-
-(The `pdfium` shared library re-hosted alongside the models — used only by a
-build with docling-pdf's opt-in `pdfium` feature and its oracle tests; the
-default pipeline renders in pure Rust — is not a model but carries its own
-terms: [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries)
-builds of Google's PDFium, BSD-3-Clause / Apache-2.0.)
+| `libpdfium.so` — used only by a build with docling-pdf's opt-in `pdfium` feature and its oracle tests; the default pipeline renders in pure Rust | [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) @ `chromium/8100` (`pdfium-linux-x64.tgz`), a build of Google's PDFium, re-hosted unmodified; the build's own `LICENSE` is the release's `LICENSE-pdfium-binaries.txt`, its dependencies' notices ship inside the upstream tarball | BSD-3-Clause (PDFium) / Apache-2.0 |
+| `docling-parse-render-<os>-<arch>.tar.gz` — docling-parse's Blend2D renderer as a `dlopen`-able shim (#478), the conformance scripts' development oracle | [docling-project/docling-parse](https://github.com/docling-project/docling-parse) @ `v7.22.1`, built from source by `.github/workflows/docling-parse-render.yml` | MIT |
+| `onnxruntime-linux-s390x.tar.gz` — the ONNX Runtime an `ort-load-dynamic` build `dlopen`s on IBM Z (#504); carries upstream's `LICENSE` | [microsoft/onnxruntime](https://github.com/microsoft/onnxruntime) @ `v1.31.0`, built from source by `.github/workflows/onnxruntime-s390x.yml` | MIT |
 
 `scripts/install/export_layout.py`, `scripts/install/export_tableformer.py` and
 `scripts/install/export_code_formula.py` do the conversion (PyTorch → ONNX via
-`torch.onnx.export`); no weights are retrained, fine-tuned, or otherwise
-altered. `.github/workflows/publish-models.yml` runs
-that conversion (and re-hosts the third-party models a default install needs,
-plus pdfium for the opt-in feature — both OCR pairs, Whisper tiny, the chunk tokenizer, the picture
-classifier — alongside it) and
+`torch.onnx.export`) at the upstream revision above — pinned in
+`scripts/install/models_catalog.json`, which they read; no weights are
+retrained, fine-tuned, or otherwise altered. The `*_int8` / `*_fp16` assets
+are `scripts/install/quantize_models.py`'s numeric re-encodings of those same
+exports. `.github/workflows/publish-models.yml` runs the conversion (and
+re-hosts the third-party models a default install needs, fetched at the
+catalog's revisions, plus pdfium for the opt-in feature — both OCR pairs,
+Whisper tiny, the chunk tokenizer, the picture classifier — alongside it) and
 publishes everything as GitHub Release assets on this repo (tag `models-v1`),
 fetched by `scripts/install/download_dependencies.sh` — see that script and
 `crates/docling-node/deps.js` — purely to spare downstream users the
 PyTorch/`transformers`/`docling_ibm_models` toolchain needed to export them
 locally.
 
-All the upstream licenses permit redistribution with attribution; this file is
-that attribution. See the linked model cards for the full license text and any
+## Records
+
+The release's attribution travels with its bytes (#942):
+
+- `models.json` — the digest-bound manifest `scripts/ci/models_manifest.sh`
+  generates from `scripts/install/models_catalog.json` after every upload
+  into the release: each artifact's assets with their sha256 and size (a
+  graph and its `.onnx.data` sidecar grouped, the sidecar naming the graph it
+  belongs to), the upstream repository, revision and files, how the bytes
+  were produced (`export`, `quantization`, `repack`, `rehost`, `build`) and
+  by which script, and the SPDX licence; `notice` and `licenses` name the
+  files below. A release asset the catalog does not cover fails the
+  generation, so nothing is hosted unattributed.
+- `MODELS_NOTICE.md` — this file.
+- `LICENSE-Apache-2.0.txt`, `LICENSE-CDLA-Permissive-2.0.txt`,
+  `LICENSE-MIT.txt`, `LICENSE-BSD-3-Clause.txt` — the licence texts
+  (`docs/licenses/`), and `LICENSE-pdfium-binaries.txt`, the pdfium build's
+  own.
+
+`scripts/install/download_dependencies.sh` / `.bat` and the Python
+`download_models()` fetch them beside the models (`.models/models.json`,
+`.models/MODELS_NOTICE.md`, `.models/LICENSE-*.txt`), and `SHA256SUMS` lists
+them with every other asset.
+
+All the upstream licenses permit redistribution with attribution; this file
+and `models.json` are that attribution. See the linked model cards for any
 additional upstream terms.
