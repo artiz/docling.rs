@@ -2187,8 +2187,10 @@ These are deliberate or unavoidable divergences, not bugs.
     programmatic text touches is OCR'd, as docling's
     `_find_pdf_aware_layout_ocr_rects` does for "clusters without any
     visible programmatic text" (the page renders on demand for it). A page
-    whose text layer is that thin (under 2 % of the page) is also probed
-    for a sideways raster like a scan (#936) — a landscape table turned
+    whose text layer is that thin (under 2 % of the page and at most 12
+    words — a page number, a running header; a figure page's caption is
+    more and skips the probe, which costs a full-page text detection) is
+    also probed for a sideways raster like a scan (#936) — a landscape table turned
     90° and outlined, beside an upright page number, is un-rotated before
     layout and OCR instead of read as noise. Its
     other two triggers — clusters over a bitmap, and clusters whose text
