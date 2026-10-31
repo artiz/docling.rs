@@ -127,13 +127,22 @@ pub(crate) fn max_side_cap() -> u32 {
 /// the page's own longer side).
 ///
 /// Why: the DB net's cost and arena are linear in input pixels, and a 2 px/pt
-/// render of 10 pt text shows 20 px lines where 12 px read identically (the
-/// scanned fixtures' Markdown is byte-identical from 960 to 2000) — paying
-/// the 2000 px budget there bought nothing and cost ~2× the time and
-/// +250 MB per worker.
+/// render of 12–15 pt text (a typewritten letter, a form's print) shows
+/// 24–30 px lines where [`BUDGET_LINE_PX`] reads identically (the scanned
+/// PDF fixtures' Markdown is byte-identical) — paying the 2000 px budget
+/// there bought nothing and cost ~2× the time and +250 MB per worker.
+/// Standalone images (read at docling's 3 px/pt effective resolution, #570)
+/// are not budgeted by the caller: their OCR output moved under any input
+/// change, and their baselines are pinned to the cap.
 pub fn scan_budget(w: u32, h: u32, line_px: Option<f32>, cap: u32) -> u32 {
     let longer = w.max(h);
     let upper = if cap == 0 { longer } else { cap };
+    // A page whose shorter side RapidOCR's rule would *upscale* (a wide
+    // figure PDF, a strip) is not budgeted: its output moved under any
+    // input change, the upscale and the cap interact, and it is small.
+    if w.min(h) < LIMIT_SIDE_LEN {
+        return upper;
+    }
     let Some(line) = line_px.filter(|l| *l > BUDGET_LINE_PX) else {
         return upper;
     };
@@ -142,10 +151,14 @@ pub fn scan_budget(w: u32, h: u32, line_px: Option<f32>, cap: u32) -> u32 {
 }
 
 /// [`scan_budget`]'s target: the text-line height (px) the detector input
-/// keeps for the page's small print. 12 px lines read identically to 20 px
-/// ones on the scanned corpus; below ~10 px the DB net starts missing
-/// words (the FUNSD finding of #570).
-pub const BUDGET_LINE_PX: f32 = 12.0;
+/// keeps for the page's small print. Conservative on purpose: the scanned
+/// PDF fixtures read byte-identically with their 23–30 px lines brought to
+/// 20 (and, for the 30 px ones, down to the 960 floor), while at 12 — which
+/// the three plainest scans also tolerated — the paper scanned as a TIFF
+/// and the figure images drifted at character level (mixed, not better or
+/// worse); below ~10 px the DB net starts missing words (the FUNSD finding
+/// of #570).
+pub const BUDGET_LINE_PX: f32 = 20.0;
 
 /// [`scan_budget`]'s floor: the pre-#570 960 px longer side.
 pub const BUDGET_FLOOR: u32 = 960;
@@ -759,12 +772,14 @@ mod session {
             }
         }
 
-        /// [`detect`](Self::detect) for a scanned page: the input budgeted
-        /// to the page's own text size ([`scan_budget`], #945) — the full cap
-        /// for small print, down to the 960 px floor for ordinary body text —
-        /// unless `DOCLING_RS_OCR_DET_BUDGET=full`.
-        pub fn detect_scan(&mut self, img: &RgbImage) -> Result<Vec<DetBox>, String> {
-            if !budget_enabled() {
+        /// [`detect`](Self::detect) for a scanned page: with `budget` (a PDF
+        /// page render at its own scale — not a standalone image, not an
+        /// `--ocr-scale` resample), the input budgeted to the page's own
+        /// text size ([`scan_budget`], #945) — the full cap for small print,
+        /// down to the 960 px floor for large type — unless
+        /// `DOCLING_RS_OCR_DET_BUDGET=full`.
+        pub fn detect_scan(&mut self, img: &RgbImage, budget: bool) -> Result<Vec<DetBox>, String> {
+            if !budget || !budget_enabled() {
                 return self.detect(img);
             }
             let cap = max_side_cap();
@@ -904,15 +919,18 @@ mod tests {
     /// the cap and, uncapped, to the page's own size; no lines = full.
     #[test]
     fn scan_budget_follows_the_small_print() {
-        assert_eq!(scan_budget(1224, 1584, Some(20.0), 2000), 960);
-        assert_eq!(scan_budget(1224, 1584, Some(14.0), 2000), 1358);
-        assert_eq!(scan_budget(1224, 1584, Some(9.0), 2000), 2000);
-        assert_eq!(scan_budget(1224, 1584, Some(12.0), 2000), 2000);
+        assert_eq!(scan_budget(1224, 1584, Some(30.0), 2000), 1056);
+        assert_eq!(scan_budget(1224, 1584, Some(40.0), 2000), 960);
+        assert_eq!(scan_budget(1190, 1684, Some(23.0), 2000), 1464);
+        assert_eq!(scan_budget(1224, 1584, Some(20.0), 2000), 2000);
+        assert_eq!(scan_budget(1224, 1584, Some(14.0), 2000), 2000);
         assert_eq!(scan_budget(1224, 1584, None, 2000), 2000);
         assert_eq!(scan_budget(762, 1000, Some(9.0), 2000), 2000);
+        // A strip or wide figure (shorter side under 736) is never budgeted.
+        assert_eq!(scan_budget(2552, 402, Some(96.0), 2000), 2000);
         // A cap under the floor wins; uncapped never upscales.
-        assert_eq!(scan_budget(1224, 1584, Some(20.0), 800), 800);
-        assert_eq!(scan_budget(3000, 4000, Some(30.0), 0), 1600);
+        assert_eq!(scan_budget(1224, 1584, Some(40.0), 800), 800);
+        assert_eq!(scan_budget(3000, 4000, Some(50.0), 0), 1600);
         assert_eq!(scan_budget(3000, 4000, Some(9.0), 0), 4000);
         // Synthetic page: 20 px black bars every 40 px → p25 = 20.
         let mut img = RgbImage::from_pixel(800, 600, image::Rgb([255, 255, 255]));

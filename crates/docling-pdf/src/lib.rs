@@ -1427,7 +1427,10 @@ impl Worker {
                             page.scale,
                             page_ocr_scale(ocr_scale, page.width, page.height, page.scale),
                         );
-                        (n, timing::timed("ocr.det", || det.detect_scan(img)))
+                        (
+                            n,
+                            timing::timed("ocr.det", || det.detect_scan(img, ocr_scale.is_none())),
+                        )
                     })
                     .collect::<Vec<_>>()
             });
@@ -1485,12 +1488,13 @@ impl Worker {
         // (thin) text layer only needs the probe's few wide lines and its
         // OCR pass detects on region crops (#931), so it pays the pre-#570
         // 960 px budget here instead of the full one (#945).
+        let ocr_scale = page_ocr_scale(self.ocr_scale, page.width, page.height, page.scale);
         let image = &page.image;
         let boxes: Vec<ocr_det::DetBox> = self
             .with_det(|det| {
                 timing::timed("orient.det", || {
                     if scanned {
-                        det.detect_scan(image)
+                        det.detect_scan(image, ocr_scale.is_none())
                     } else {
                         det.detect_capped(image, PROBE_DET_MAX_SIDE)
                     }
@@ -1504,7 +1508,6 @@ impl Worker {
                 );
                 Vec::new()
             });
-        let ocr_scale = page_ocr_scale(self.ocr_scale, page.width, page.height, page.scale);
         let Some(ocr) = self.ocr_model()? else {
             return Ok(());
         };
@@ -2018,7 +2021,9 @@ impl Worker {
                 match self.pending_det.remove(&n) {
                     Some(result) => result,
                     None => self
-                        .with_det(|det| timing::timed("ocr.det", || det.detect_scan(img)))
+                        .with_det(|det| {
+                            timing::timed("ocr.det", || det.detect_scan(img, ocr_scale.is_none()))
+                        })
                         .unwrap_or(Ok(Vec::new())),
                 }
                 .unwrap_or_else(|e| {

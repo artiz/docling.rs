@@ -287,10 +287,11 @@ codec or copybook when the conversion runs.
 - **Detector and recognizer knobs** (env): `DOCLING_RS_OCR_DET_MAX_SIDE`
   (2000 = RapidOCR's `max_side_len`; `0` lifts the cap, 960 — PaddleOCR's
   budget — is about a third of the time at ~0.02 recall on FUNSD),
-  `DOCLING_RS_OCR_DET_BUDGET` (`auto`, the default: a scanned page is
+  `DOCLING_RS_OCR_DET_BUDGET` (`auto`, the default: a scanned PDF page is
   detected at the input that keeps its small print — the 25th-percentile
-  text-line height — at 12 px, the full cap for 72-dpi forms and down to
-  960 for a 2 px/pt render of body text, #945; `full` always uses the cap),
+  text-line height — at 20 px: the full cap for 72-dpi forms, down to 960
+  for a 2 px/pt render of large type, #945; standalone images stay at the
+  cap; `full` always uses the cap),
   `DOCLING_RS_OCR_TEXT_SCORE` (RapidOCR's `text_score`, 0.5 — a line whose
   mean character confidence is under it is dropped; `0` keeps all),
   `DOCLING_RS_OCR_ORIENTATION=off` (no un-rotation probe of raster-rotated
