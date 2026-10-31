@@ -12,4 +12,4 @@
 #938 | fixed | claude/issue-938-bounded-repairs | 2026-10-31T03:13Z
 #942 | skipped | release-asset provenance/licence manifest request (mutable models-v1 release, upstream revisions unverifiable offline); needs maintainer design, not a code bug | 2026-10-31T07:00Z
 #945 | skipped | OCR detector perf tuning; acceptance needs .models + docling-parse shim (absent here) to measure FUNSD recall, snapshots and time/memory; cannot validate | 2026-10-31T12:00Z
-#947 | claimed | claude/issue-947-det-box-crop-outside | 2026-10-31T15:16Z
+#947 | fixed | claude/issue-947-det-box-crop-outside | 2026-10-31T15:27Z
