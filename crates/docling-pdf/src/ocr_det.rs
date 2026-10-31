@@ -773,8 +773,10 @@ mod session {
         }
 
         /// [`detect`](Self::detect) for a scanned page: with `budget` (a PDF
-        /// page render at its own scale — not a standalone image, not an
-        /// `--ocr-scale` resample), the input budgeted to the page's own
+        /// page render at its own 2 px/pt — not a standalone image, which
+        /// has `scale` 1.0 and reads at docling's 3 px/pt effective
+        /// resolution or, over 2000 px, as decoded; not an `--ocr-scale`
+        /// resample), the input budgeted to the page's own
         /// text size ([`scan_budget`], #945) — the full cap for small print,
         /// down to the 960 px floor for large type — unless
         /// `DOCLING_RS_OCR_DET_BUDGET=full`.
