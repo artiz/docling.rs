@@ -509,10 +509,14 @@ pub fn det_box_crop(
     d: &crate::ocr_det::DetBox,
     oriented: bool,
 ) -> Option<RgbImage> {
+    // Intersection first, oriented or not (#947): `rotate_crop` replicates
+    // border pixels, so a box wholly outside the image would otherwise come
+    // back as edge-colored pixels — the same box the plain path (and
+    // `det_boxes_inside`, which feeds the page OCR) drops.
+    let (l, t, r, b) = det_box_px(d, img.width(), img.height())?;
     if oriented {
         return rotate_crop(img, &d.quad);
     }
-    let (l, t, r, b) = det_box_px(d, img.width(), img.height())?;
     Some(imageops::crop_imm(img, l, t, r - l, b - t).to_image())
 }
 
@@ -873,6 +877,19 @@ mod tests {
         );
         let off = crate::ocr_det::DetBox::rect(70.0, 0.0, 90.0, 10.0, 0.9);
         assert_eq!(det_box_crop(&img, &off, false), None);
+        // #947: wholly outside is `None` oriented too, not replicated edge pixels.
+        assert_eq!(det_box_crop(&img, &off, true), None);
+        let tiny = RgbImage::from_pixel(2, 2, Rgb([255, 255, 255]));
+        let outside = crate::ocr_det::DetBox::rect(3.0, 0.0, 5.0, 2.0, 0.9);
+        assert_eq!(det_box_crop(&tiny, &outside, false), None);
+        assert_eq!(det_box_crop(&tiny, &outside, true), None);
+        let inside = crate::ocr_det::DetBox::rect(0.0, 0.0, 2.0, 2.0, 0.9);
+        assert_eq!(
+            det_box_crop(&tiny, &inside, true).unwrap().dimensions(),
+            (2, 2)
+        );
+        // partially overlapping oriented boxes still crop
+        assert!(det_box_crop(&img, &edge, true).is_some());
     }
 
     /// RapidOCR's `text_score` default, the pre-#570 "keep everything" with
