@@ -2549,6 +2549,20 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
 
 ## 6. Extensions
 
+- **Layout-free OCR recognition** (#939) — `docling_pdf::OcrModel` (with
+  `RecognizedLine`) is public: `recognize_det_boxes(&img, &boxes)` reads the
+  lines `ocr_det::DetModel::detect` found, `recognize_crops(&crops)` reads
+  ready-made line crops, both without the layout model or page assembly
+  that `Pipeline::process_pages` runs per call. Each returns one
+  `{ text, confidence }` per input in input order — the confidence is the
+  recognizer's mean emitted-character probability (what the page OCR
+  reports), never the detector score — and drops nothing:
+  `passes_text_score()` is the page OCR's RapidOCR `text_score` filter.
+  A detector box is cropped exactly as the page OCR crops it
+  (`ocr_prep::det_box_crop`: the clamped box, or under
+  `set_textline_orientation(true)` the quad's warp plus the 180°
+  classifier), and the width batching and lanes are the page OCR's, so the
+  same pixels read the same. Python docling exposes no such entry point.
 - **`extract_diagrams=mermaid`** (#858) — a DOCX DrawingML flowchart as a
   `mermaid` code item after its picture: the labelled shapes are the nodes,
   the connectors that name their two end shapes (`a:stCxn` / `a:endCxn`)

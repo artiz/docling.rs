@@ -484,14 +484,36 @@ fn det_boxes_inside(
             let (cx, cy) = ((d.l + d.r) / 2.0, (d.t + d.b) / 2.0);
             cx >= l as f32 && cx < r as f32 && cy >= t as f32 && cy < b as f32
         })
-        .filter_map(|d| {
-            let dl = d.l.max(0.0) as u32;
-            let dt = d.t.max(0.0) as u32;
-            let dr = (d.r.max(0.0) as u32).min(iw);
-            let db = (d.b.max(0.0) as u32).min(ih);
-            (dr > dl && db > dt).then_some(((dl, dt, dr, db), d))
-        })
+        .filter_map(|d| det_box_px(d, iw, ih).map(|px| (px, d)))
         .collect()
+}
+
+/// A detector box's axis-aligned pixel rectangle, truncated and clamped to a
+/// `iw × ih` image — the plain crop the page OCR recognizes; `None` when
+/// nothing of it is left.
+fn det_box_px(d: &crate::ocr_det::DetBox, iw: u32, ih: u32) -> Option<PxRect> {
+    let dl = d.l.max(0.0) as u32;
+    let dt = d.t.max(0.0) as u32;
+    let dr = (d.r.max(0.0) as u32).min(iw);
+    let db = (d.b.max(0.0) as u32).min(ih);
+    (dr > dl && db > dt).then_some((dl, dt, dr, db))
+}
+
+/// The recognizer's crop of one detector box on `img` (#939), exactly as the
+/// page OCR takes it: `oriented` = RapidOCR's warp of the box's quad
+/// ([`rotate_crop`], tall lines turned 90°) as under
+/// `ocr_textline_orientation`, else the axis-aligned box clamped to the
+/// image. `None` for a box with nothing left inside the image.
+pub fn det_box_crop(
+    img: &RgbImage,
+    d: &crate::ocr_det::DetBox,
+    oriented: bool,
+) -> Option<RgbImage> {
+    if oriented {
+        return rotate_crop(img, &d.quad);
+    }
+    let (l, t, r, b) = det_box_px(d, img.width(), img.height())?;
+    Some(imageops::crop_imm(img, l, t, r - l, b - t).to_image())
 }
 
 /// A text line's pixels before recognition prep: an oriented crop still to
@@ -830,6 +852,27 @@ mod tests {
             fallback,
             prep_table_words(&img, std::slice::from_ref(&table), 1.0).0
         );
+    }
+
+    /// #939: a detector box's recognizer crop — the axis-aligned box
+    /// truncated and clamped to the image, or (oriented) the quad's warp,
+    /// which for an integer rectangle is the same pixels; nothing left
+    /// inside the image → `None`.
+    #[test]
+    fn det_box_crop_matches_the_page_ocr_crop() {
+        let img = RgbImage::from_fn(60, 40, |x, y| Rgb([(x * 4) as u8, (y * 6) as u8, 7]));
+        let d = crate::ocr_det::DetBox::rect(10.0, 5.0, 30.0, 25.0, 0.9);
+        let plain = det_box_crop(&img, &d, false).expect("crop");
+        assert_eq!(plain.dimensions(), (20, 20));
+        assert_eq!(plain.get_pixel(0, 0), img.get_pixel(10, 5));
+        assert_eq!(det_box_crop(&img, &d, true), Some(plain));
+        let edge = crate::ocr_det::DetBox::rect(50.7, -3.0, 80.0, 10.0, 0.9);
+        assert_eq!(
+            det_box_crop(&img, &edge, false).unwrap().dimensions(),
+            (10, 10)
+        );
+        let off = crate::ocr_det::DetBox::rect(70.0, 0.0, 90.0, 10.0, 0.9);
+        assert_eq!(det_box_crop(&img, &off, false), None);
     }
 
     /// RapidOCR's `text_score` default, the pre-#570 "keep everything" with

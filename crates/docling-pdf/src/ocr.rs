@@ -364,9 +364,32 @@ pub(crate) fn resolve_rec_pair(lang: OcrLang) -> (String, String) {
 /// One recognised line: its text and mean emitted-character confidence.
 type Recognized = (String, f32);
 
+/// One crop read by [`OcrModel::recognize_crops`] /
+/// [`OcrModel::recognize_det_boxes`] (#939).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecognizedLine {
+    /// The CTC-decoded text, trimmed of surrounding whitespace (as the page
+    /// OCR trims its cells); empty when nothing decoded.
+    pub text: String,
+    /// The *recognition* confidence: the mean probability of the emitted
+    /// characters (PaddleOCR's per-line score — what the page OCR reports on
+    /// its cells and `ConfidenceReport::ocr_cells`), `0.0` when nothing
+    /// decoded. Not the detector's [`DetBox::score`](crate::ocr_det::DetBox).
+    pub confidence: f32,
+}
+
+impl RecognizedLine {
+    /// Whether the page OCR would keep this line: non-empty text at or above
+    /// RapidOCR's `text_score` ([`crate::ocr_prep::text_score`], 0.5,
+    /// `DOCLING_RS_OCR_TEXT_SCORE`). The crop API itself drops nothing.
+    pub fn passes_text_score(&self) -> bool {
+        !self.text.is_empty() && self.confidence >= crate::ocr_prep::text_score()
+    }
+}
+
 impl OcrModel {
     /// Load the recognition model and its character dictionary for `lang` —
-    /// see [`resolve_rec_pair`] for the selection rules (explicit
+    /// see `resolve_rec_pair` for the selection rules (explicit
     /// `DOCLING_OCR_REC_ONNX`/`DOCLING_OCR_DICT` paths win) — with `lanes`
     /// recognition sessions.
     ///
@@ -454,6 +477,25 @@ impl OcrModel {
         }
     }
 
+    /// Turn the crops the orientation classifier reads as upside down by
+    /// 180°, in place; a no-op without the classifier (warned once).
+    fn upright(&mut self, mut crops: Vec<&mut RgbImage>) -> Result<(), String> {
+        if crops.is_empty() {
+            return Ok(());
+        }
+        let Some(cls) = self.cls() else {
+            return Ok(());
+        };
+        let refs: Vec<&RgbImage> = crops.iter().map(|c| &**c).collect();
+        let flip = crate::timing::timed("ocr.cls", || cls.upside_down(&refs))?;
+        for (c, flip) in crops.iter_mut().zip(flip) {
+            if flip {
+                image::imageops::rotate180_in_place(*c);
+            }
+        }
+        Ok(())
+    }
+
     /// The oriented line prep (#666): RapidOCR's crops, the upside-down ones
     /// turned 180° by the classifier when it is installed, then prepared
     /// for recognition like any other line.
@@ -467,26 +509,14 @@ impl OcrModel {
         use crate::ocr_prep::LineSrc;
         let (bboxes, mut srcs) =
             crate::ocr_prep::region_line_crops_det(img, regions, scale, detected);
-        let crop_idx: Vec<usize> = (0..srcs.len())
-            .filter(|&i| matches!(srcs[i], LineSrc::Crop(_)))
+        let crops: Vec<&mut RgbImage> = srcs
+            .iter_mut()
+            .filter_map(|s| match s {
+                LineSrc::Crop(c) => Some(c),
+                LineSrc::Prepared(_) => None,
+            })
             .collect();
-        if !crop_idx.is_empty() {
-            if let Some(cls) = self.cls() {
-                let crops: Vec<&RgbImage> = crop_idx
-                    .iter()
-                    .map(|&i| match &srcs[i] {
-                        LineSrc::Crop(c) => c,
-                        LineSrc::Prepared(_) => unreachable!("filtered to crops"),
-                    })
-                    .collect();
-                let flip = crate::timing::timed("ocr.cls", || cls.upside_down(&crops))?;
-                for (&i, flip) in crop_idx.iter().zip(flip) {
-                    if let (true, LineSrc::Crop(c)) = (flip, &mut srcs[i]) {
-                        image::imageops::rotate180_in_place(c);
-                    }
-                }
-            }
-        }
+        self.upright(crops)?;
         let mut boxes = Vec::with_capacity(bboxes.len());
         let mut lines = Vec::with_capacity(bboxes.len());
         for (bb, src) in bboxes.into_iter().zip(srcs) {
@@ -500,6 +530,94 @@ impl OcrModel {
             }
         }
         Ok((boxes, lines))
+    }
+
+    /// Recognize standalone line crops (#939) — no layout model, no page
+    /// assembly, no detector: each image is taken to be one upright text
+    /// line (dark ink on light ground, as the recognizer was trained),
+    /// resized to the recognizer's 48 px height at its aspect ratio (width
+    /// clamped to 8–2400 px) and read with the same deterministic
+    /// width-batching and recognition lanes as the page OCR — so a crop
+    /// yields what the page OCR would read from the same pixels.
+    ///
+    /// Returns exactly one [`RecognizedLine`] per crop, in input order; a
+    /// zero-sized crop reads as empty text with confidence `0.0`. Nothing is
+    /// filtered — the page OCR's `text_score` drop is
+    /// [`RecognizedLine::passes_text_score`], left to the caller — and no
+    /// orientation handling runs here (see [`Self::recognize_det_boxes`]).
+    pub fn recognize_crops(&mut self, crops: &[RgbImage]) -> Result<Vec<RecognizedLine>, String> {
+        let prepped: Vec<Option<PrepLine>> = crops.iter().map(crate::ocr_prep::prep_line).collect();
+        self.recognize_prepped(prepped)
+    }
+
+    /// Recognize the lines a text detector found on `img` (#939) — the
+    /// boxes [`DetModel::detect`](crate::ocr_det::DetModel) returns, in
+    /// `img` pixels — without running page layout. Each box is cropped as
+    /// the page OCR crops it ([`crate::ocr_prep::det_box_crop`]): with
+    /// [`Self::set_textline_orientation`] on, RapidOCR's warp of the box's
+    /// quad (tall lines turned 90°) and a 180° turn where the orientation
+    /// classifier reads it upside down; off (the default), the axis-aligned
+    /// box clamped to the image.
+    ///
+    /// One [`RecognizedLine`] per box, in input order (so `boxes[i]` is the
+    /// geometry of result `i`, in `img` pixels); a box with nothing inside
+    /// the image reads as empty with confidence `0.0`. Nothing is filtered,
+    /// as in [`Self::recognize_crops`].
+    pub fn recognize_det_boxes(
+        &mut self,
+        img: &RgbImage,
+        boxes: &[crate::ocr_det::DetBox],
+    ) -> Result<Vec<RecognizedLine>, String> {
+        let oriented = self.orient;
+        let mut crops: Vec<Option<RgbImage>> = boxes
+            .iter()
+            .map(|d| crate::ocr_prep::det_box_crop(img, d, oriented))
+            .collect();
+        if oriented {
+            self.upright(crops.iter_mut().flatten().collect())?;
+        }
+        let prepped = crops
+            .iter()
+            .map(|c| c.as_ref().and_then(crate::ocr_prep::prep_line))
+            .collect();
+        self.recognize_prepped(prepped)
+    }
+
+    /// Recognize the prepared lines, keeping a slot (empty, `0.0`) for each
+    /// `None`, so the results stay index-aligned with the caller's input.
+    fn recognize_prepped(
+        &mut self,
+        prepped: Vec<Option<PrepLine>>,
+    ) -> Result<Vec<RecognizedLine>, String> {
+        let mut slots = Vec::with_capacity(prepped.len());
+        let mut lines = Vec::with_capacity(prepped.len());
+        for p in prepped {
+            slots.push(p.as_ref().map(|_| lines.len()));
+            lines.extend(p);
+        }
+        let mut read = vec![(String::new(), 0.0f32); lines.len()];
+        crate::timing::timed("ocr.rec", || -> Result<(), String> {
+            for (i, r) in self.recognize_all(&lines)? {
+                read[i] = r;
+            }
+            Ok(())
+        })?;
+        Ok(slots
+            .into_iter()
+            .map(|slot| match slot {
+                Some(i) => {
+                    let (text, confidence) = std::mem::take(&mut read[i]);
+                    RecognizedLine {
+                        text: text.trim().to_string(),
+                        confidence,
+                    }
+                }
+                None => RecognizedLine {
+                    text: String::new(),
+                    confidence: 0.0,
+                },
+            })
+            .collect())
     }
 
     /// Recognise every width batch of `lines`, dealt round-robin across the
@@ -617,7 +735,7 @@ impl OcrModel {
     }
 
     /// Recognize the *word* crops inside the page's table regions (mirroring
-    /// the browser scanned path): [`ocr_page`](Self::ocr_page) deliberately
+    /// the browser scanned path): [`ocr_page_with`](Self::ocr_page_with) deliberately
     /// skips table labels, so a scanned table would otherwise reach the cell
     /// matcher with no words at all and dissolve (#173). Returns word-level
     /// [`TextCell`]s in page points.
