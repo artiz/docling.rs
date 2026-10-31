@@ -81,6 +81,7 @@ DOCLING_RS_IMAGE_FETCH_CONCURRENCY,performance,crates/docling/src/backend/images
 DOCLING_RS_NO_ARENA,performance,crates/docling-cli/src/main.rs
 DOCLING_RS_NO_GRAPH_CACHE,performance,crates/docling-onnx/src/lib.rs
 DOCLING_RS_OCR_DET_MAX_SIDE,performance,crates/docling-pdf/src/ocr_det.rs
+DOCLING_RS_OCR_DET_BUDGET,performance,crates/docling-pdf/src/ocr_det.rs
 DOCLING_RS_OCR_SCALE,performance,crates/docling-pdf/src/ocr.rs
 DOCLING_RS_OCR_TEXTLINE_ORIENTATION,operational,crates/docling-pdf/src/ocr.rs
 DOCLING_RS_OCR_SESSIONS,performance,crates/docling-pdf/src/ocr.rs

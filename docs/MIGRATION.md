@@ -2050,9 +2050,20 @@ These are deliberate or unavoidable divergences, not bugs.
      detector input is capped at RapidOCR's 2000 px on the longer side
      since #570 (`DOCLING_RS_OCR_DET_MAX_SIDE`; 960 — PaddleOCR's default and
      the pre-#570 budget — is ~⅓ of the detection time for −0.02 FUNSD
-     recall; `0` = RapidOCR's uncapped rule). That budget is a scanned
-     page's; the two places a page *with* a text layer runs the detector pay
-     less (#945): the layout regions its text layer leaves empty (#931) are
+     recall; `0` = RapidOCR's uncapped rule). That cap is the ceiling: a
+     scanned page's detector input is budgeted to its own text size (#945,
+     `DOCLING_RS_OCR_DET_BUDGET=auto`) — the 25th-percentile height of its
+     ink-projection lines kept at 20 px in the input, so a 2 px/pt render
+     of typewritten or form-sized print (24–30 px lines) detects at
+     1000–1300 px, down to the 960 floor (byte-identical output on the
+     scanned PDF fixtures, 30–45 % less time and arena) while a 72-dpi
+     form's 8–10 px print keeps the full cap, the FUNSD case #570 raised it
+     for. Standalone images (read at docling's 3 px/pt effective
+     resolution) and `--ocr-scale` resamples are not budgeted: their OCR
+     output moved at character level under any input change, and their
+     baselines are pinned to the cap. `full` restores the cap for every
+     page. The two places a page *with* a
+     text layer runs the detector pay less too: the layout regions its text layer leaves empty (#931) are
      detected on their own crops at render resolution — a caption-sized
      crop instead of the whole page — and the sideways-outline orientation
      probe (#936) runs at the 960 px cap; and the page workers share one
