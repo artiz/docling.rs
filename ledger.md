@@ -14,3 +14,7 @@
 #945 | skipped | OCR detector perf tuning; acceptance needs .models + docling-parse shim (absent here) to measure FUNSD recall, snapshots and time/memory; cannot validate | 2026-10-31T12:00Z
 #947 | fixed | claude/issue-947-det-box-crop-outside | 2026-10-31T15:27Z
 #951 | fixed | claude/issue-951-models-immutable | 2026-11-01T07:00Z
+#952 | skipped | audit-report request, no code bug: paste/ttf-parser are unmaintained with no drop-in maintained replacement; swapping deps is a maintainer supply-chain decision | 2026-11-01T08:00Z
+#953 | skipped | licence/attribution notice request for zune-inflate (docs/NOTICE; upstream-crate provenance), not a code bug | 2026-11-01T08:00Z
+#954 | skipped | provenance/SBOM request about Microsoft's ORT binary; nothing actionable in this repo beyond docs | 2026-11-01T08:00Z
+#955 | skipped | model training/conversion lineage records follow-up to #942; needs maintainer/upstream data, docs/manifest only | 2026-11-01T08:00Z
