@@ -19,3 +19,4 @@
 #954 | skipped | provenance/SBOM request about Microsoft's ORT binary; nothing actionable in this repo beyond docs | 2026-11-01T08:00Z
 #955 | skipped | model training/conversion lineage records follow-up to #942; needs maintainer/upstream data, docs/manifest only | 2026-11-01T08:00Z
 #970 | fixed | claude/issue-970-preserve-order-feature | 2026-11-02T03:46Z
+#973 | claimed | claude/issue-973-models-catalog | 2026-11-02T05:56Z
