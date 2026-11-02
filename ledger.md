@@ -18,3 +18,4 @@
 #953 | skipped | licence/attribution notice request for zune-inflate (docs/NOTICE; upstream-crate provenance), not a code bug | 2026-11-01T08:00Z
 #954 | skipped | provenance/SBOM request about Microsoft's ORT binary; nothing actionable in this repo beyond docs | 2026-11-01T08:00Z
 #955 | skipped | model training/conversion lineage records follow-up to #942; needs maintainer/upstream data, docs/manifest only | 2026-11-01T08:00Z
+#970 | claimed | claude/issue-970-preserve-order-feature | 2026-11-02T03:17Z
