@@ -20,4 +20,4 @@
 #955 | skipped | model training/conversion lineage records follow-up to #942; needs maintainer/upstream data, docs/manifest only | 2026-11-01T08:00Z
 #970 | fixed | claude/issue-970-preserve-order-feature | 2026-11-02T03:46Z
 #973 | fixed | claude/issue-973-models-catalog | 2026-11-02T05:57Z
-#979 | claimed | claude/issue-979-calamine-0.38 | 2026-11-03T21:17Z
+#979 | fixed | claude/issue-979-calamine-0.38 | 2026-11-03T21:46Z
