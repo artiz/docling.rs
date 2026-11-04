@@ -21,3 +21,4 @@
 #970 | fixed | claude/issue-970-preserve-order-feature | 2026-11-02T03:46Z
 #973 | fixed | claude/issue-973-models-catalog | 2026-11-02T05:57Z
 #979 | fixed | claude/issue-979-calamine-0.38 | 2026-11-03T21:46Z
+#984 | claimed | claude/issue-984-text-layer-order | 2026-11-04T21:59Z
