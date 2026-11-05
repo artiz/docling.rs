@@ -22,4 +22,4 @@
 #973 | fixed | claude/issue-973-models-catalog | 2026-11-02T05:57Z
 #979 | fixed | claude/issue-979-calamine-0.38 | 2026-11-03T21:46Z
 #984 | fixed | claude/issue-984-text-layer-order | 2026-11-05T05:50Z
-#987 | claimed | claude/issue-987-hybrid-table-overflow | 2026-11-05T20:04Z
+#987 | fixed | claude/issue-987-hybrid-table-overflow | 2026-11-05T20:17Z
