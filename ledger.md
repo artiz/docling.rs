@@ -23,4 +23,4 @@
 #979 | fixed | claude/issue-979-calamine-0.38 | 2026-11-03T21:46Z
 #984 | fixed | claude/issue-984-text-layer-order | 2026-11-05T05:50Z
 #987 | fixed | claude/issue-987-hybrid-table-overflow | 2026-11-05T20:17Z
-#990 | claimed | claude/issue-990-tableformer-bbox-chunks | 2026-11-06T01:16Z
+#990 | fixed | claude/issue-990-tableformer-bbox-chunks | 2026-11-06T05:46Z
