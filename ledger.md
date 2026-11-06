@@ -24,3 +24,4 @@
 #984 | fixed | claude/issue-984-text-layer-order | 2026-11-05T05:50Z
 #987 | fixed | claude/issue-987-hybrid-table-overflow | 2026-11-05T20:17Z
 #990 | fixed | claude/issue-990-tableformer-bbox-chunks | 2026-11-06T05:46Z
+#994 | claimed | claude/issue-994-form-cache | 2026-11-06T21:16Z
