@@ -30,3 +30,5 @@
 #1000 | fixed | claude/issue-1000-tf-degenerate | 2026-11-07T20:51Z
 #1001 | fixed | claude/issue-1001-pdf-text-normalize | 2026-11-07T21:15Z
 #1002 | claimed | claude/issue-1002-pua-bullets | 2026-11-07T21:16Z
+#1003 | skipped | U+FFFD for unmapped glyphs moves PDF baselines (redp5110 snapshot/groundtruth); needs .models + docling-parse shim to re-run pdf_conformance/pdf_groundtruth, absent here | 2026-11-07T21:21Z
+#1004 | claimed | claude/issue-1004-heading-keywords | 2026-11-07T21:21Z
