@@ -25,7 +25,7 @@
 #987 | fixed | claude/issue-987-hybrid-table-overflow | 2026-11-05T20:17Z
 #990 | fixed | claude/issue-990-tableformer-bbox-chunks | 2026-11-06T05:46Z
 #994 | fixed | claude/issue-994-form-cache | 2026-11-06T22:13Z
-#998 | claimed | claude/issue-998-reading-order | 2026-11-07T19:16Z
+#998 | fixed | claude/issue-998-reading-order | 2026-11-07T20:24Z
 #999 | skipped | needs .models (layout/OCR/TableFormer) + scanned fixture to reproduce and validate the auto-mode bitmap OCR merge; none in this container | 2026-11-07T19:19Z
 #1000 | claimed | claude/issue-1000-tf-degenerate | 2026-11-07T19:19Z
 #1001 | claimed | claude/issue-1001-pdf-text-normalize | 2026-11-07T19:33Z
