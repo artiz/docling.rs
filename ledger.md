@@ -28,3 +28,4 @@
 #998 | claimed | claude/issue-998-reading-order | 2026-11-07T19:16Z
 #999 | skipped | needs .models (layout/OCR/TableFormer) + scanned fixture to reproduce and validate the auto-mode bitmap OCR merge; none in this container | 2026-11-07T19:19Z
 #1000 | claimed | claude/issue-1000-tf-degenerate | 2026-11-07T19:19Z
+#1001 | claimed | claude/issue-1001-pdf-text-normalize | 2026-11-07T19:33Z
