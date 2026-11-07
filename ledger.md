@@ -32,3 +32,4 @@
 #1002 | fixed | claude/issue-1002-pua-bullets | 2026-11-07T21:56Z
 #1003 | skipped | docling-parse 7 probes the embedded glyph outline (blank -> space, inked -> U+FFFD, text.h add_cell); needs glyph-ink detection for Type1/CFF/TrueType in textparse + baseline refresh, larger than the issue's scope | 2026-11-07T21:21Z
 #1004 | fixed | claude/issue-1004-heading-keywords | 2026-11-07T22:26Z
+#1005 | claimed | claude/issue-1005-script-position | 2026-11-07T23:16Z
