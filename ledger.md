@@ -25,3 +25,4 @@
 #987 | fixed | claude/issue-987-hybrid-table-overflow | 2026-11-05T20:17Z
 #990 | fixed | claude/issue-990-tableformer-bbox-chunks | 2026-11-06T05:46Z
 #994 | fixed | claude/issue-994-form-cache | 2026-11-06T22:13Z
+#998 | claimed | claude/issue-998-reading-order | 2026-11-07T19:16Z
