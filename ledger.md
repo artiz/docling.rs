@@ -81,3 +81,5 @@
 #1025 | fixed | claude/issues-1024-1025-asciidoc | 2026-11-08T17:58Z
 #1041 | duplicate | fixed upstream meanwhile by PR #1062 (claude/issue-1041-chunker-caption-refs) | 2026-11-08T18:03Z
 #1029 | claimed | claude/issue-1029-text-decoding | 2026-11-08T18:04Z
+#1029 | claimed | claude/issue-1029-text-decoding | 2026-11-08T18:13Z
+#1030 | claimed | claude/issue-1030-bare-relative-images | 2026-11-08T18:13Z
