@@ -55,3 +55,4 @@
 #1028 | claimed | claude/issue-1028-uspto-sigma | 2026-11-08T09:04Z
 #1015 | claimed | claude/issue-1015-jats-content | 2026-11-08T09:16Z
 #1015 | fixed | claude/issue-1015-jats-content | 2026-11-08T10:06Z
+#1016 | claimed | claude/issue-1016-rich-table-cells | 2026-11-08T10:07Z
