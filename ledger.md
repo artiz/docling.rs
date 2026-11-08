@@ -88,3 +88,4 @@
 #1031 | skipped | full port of upstream's Numbers backend (TST table tiles/cell storage, decimal128, dates/durations, charts, iWork'09 XML) with no TST reader in-tree; too large for a scheduled-run slot, needs a dedicated session | 2026-11-08T19:06Z
 #1032 | claimed | claude/issue-1032-icalendar | 2026-11-08T19:06Z
 #1033 | claimed | claude/issue-1033-boxnote | 2026-11-08T19:53Z
+#1029 | fixed | claude/issue-1029-text-decoding | 2026-11-08T20:06Z
