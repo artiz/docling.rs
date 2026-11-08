@@ -38,3 +38,4 @@
 #1008 | skipped | blocked on #997 (assigned): ticket says "After ticket A" — DocLang 0.9 whitespace/inline-group contract comes from A; doing it first would conflict with claude/issue-996-997-inline-contract | 2026-11-08T03:16Z
 #1009 | claimed | claude/issues-1009-1010-footnotes | 2026-11-08T03:16Z
 #1010 | claimed | claude/issues-1009-1010-footnotes | 2026-11-08T03:16Z
+#1010 | skipped | blocked on #997 (assigned): upstream's JATS table notes are empty footnote wrappers over inline runs whose whitespace/printing follows A's InlineGroup contract (docling-core 2.106 prints the runs through the body walk); the footnote plumbing it needs lands with #1009 (claude/issues-1009-1010-footnotes) | 2026-11-08T03:40Z
