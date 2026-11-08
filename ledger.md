@@ -47,3 +47,4 @@
 #1013 | fixed | claude/issue-1013-latex-title-braces | 2026-11-08T07:46Z
 #1014 | claimed | claude/issues-1014-1042-docling-json-reader | 2026-11-08T07:50Z
 #1042 | claimed | claude/issues-1014-1042-docling-json-reader | 2026-11-08T07:50Z
+#1012 | fixed | claude/issue-1012-rich-heading-chunks | 2026-11-08T08:06Z
