@@ -68,3 +68,5 @@
 #1020 | fixed | claude/issue-1020-xlsx-errors-chart-cap | 2026-11-08T13:45Z
 #1021 | fixed | claude/issue-1021-latex-href | 2026-11-08T14:02Z
 #1019 | fixed | claude/issue-1019-xlsx-cell-images | 2026-11-08T14:34Z
+#1022 | claimed | claude/issues-1022-1040-md-reader | 2026-11-08T14:35Z
+#1040 | claimed | claude/issues-1022-1040-md-reader | 2026-11-08T14:35Z
