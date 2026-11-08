@@ -85,3 +85,5 @@
 #1023 | fixed | claude/issue-1023-html-caption-pre-tfoot | 2026-11-08T18:32Z
 #1027 | fixed | claude/issue-1027-epub-links-paths | 2026-11-08T18:32Z
 #1030 | fixed | claude/issue-1030-bare-relative-images | 2026-11-08T19:06Z
+#1031 | skipped | full port of upstream's Numbers backend (TST table tiles/cell storage, decimal128, dates/durations, charts, iWork'09 XML) with no TST reader in-tree; too large for a scheduled-run slot, needs a dedicated session | 2026-11-08T19:06Z
+#1032 | claimed | claude/issue-1032-icalendar | 2026-11-08T19:06Z
