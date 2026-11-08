@@ -64,3 +64,4 @@
 #1018 | fixed | claude/issue-1018-pptx-autonum-picfill | 2026-11-08T13:07Z
 #1020 | claimed | claude/issue-1020-xlsx-errors-chart-cap | 2026-11-08T13:10Z
 #1019 | claimed | claude/issue-1019-xlsx-cell-images | 2026-11-08T13:16Z
+#1021 | claimed | claude/issue-1021-latex-href | 2026-11-08T13:16Z
