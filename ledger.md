@@ -73,3 +73,5 @@
 #1023 | claimed | claude/issue-1023-html-caption-pre-tfoot | 2026-11-08T15:16Z
 #1022 | fixed | claude/issues-1022-1040-md-reader | 2026-11-08T15:40Z
 #1040 | fixed | claude/issues-1022-1040-md-reader | 2026-11-08T15:40Z
+#1024 | claimed | claude/issues-1024-1025-asciidoc | 2026-11-08T15:50Z
+#1025 | claimed | claude/issues-1024-1025-asciidoc | 2026-11-08T15:50Z
