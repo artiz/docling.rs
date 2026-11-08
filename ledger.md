@@ -53,3 +53,4 @@
 #1042 | fixed | claude/issues-1014-1042-docling-json-reader | 2026-11-08T08:06Z
 #1026 | fixed | claude/issue-1026-csv-sep-line | 2026-11-08T09:03Z
 #1028 | claimed | claude/issue-1028-uspto-sigma | 2026-11-08T09:04Z
+#1015 | claimed | claude/issue-1015-jats-content | 2026-11-08T09:16Z
