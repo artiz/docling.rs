@@ -61,3 +61,4 @@
 #1016 | fixed | claude/issue-1016-rich-table-cells | 2026-11-08T12:03Z
 #1017 | fixed | claude/issue-1017-docx-lvloverride | 2026-11-08T12:24Z
 #1018 | claimed | claude/issue-1018-pptx-autonum-picfill | 2026-11-08T12:26Z
+#1018 | fixed | claude/issue-1018-pptx-autonum-picfill | 2026-11-08T13:07Z
