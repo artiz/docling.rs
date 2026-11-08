@@ -43,3 +43,4 @@
 #1012 | claimed | claude/issue-1012-rich-heading-chunks | 2026-11-08T07:16Z
 #1009 | fixed | claude/issue-1009-footnotes | 2026-11-08T07:20Z
 #1011 | fixed | claude/issue-1011-html-escape-code | 2026-11-08T06:20Z
+#1013 | claimed | claude/issue-1013-latex-title-braces | 2026-11-08T07:21Z
