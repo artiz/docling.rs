@@ -83,3 +83,4 @@
 #1029 | claimed | claude/issue-1029-text-decoding | 2026-11-08T18:04Z
 #1030 | claimed | claude/issue-1030-bare-relative-images | 2026-11-08T18:13Z
 #1023 | fixed | claude/issue-1023-html-caption-pre-tfoot | 2026-11-08T18:32Z
+#1027 | fixed | claude/issue-1027-epub-links-paths | 2026-11-08T18:32Z
