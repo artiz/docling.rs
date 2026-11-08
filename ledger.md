@@ -45,3 +45,5 @@
 #1011 | fixed | claude/issue-1011-html-escape-code | 2026-11-08T06:20Z
 #1013 | claimed | claude/issue-1013-latex-title-braces | 2026-11-08T07:21Z
 #1013 | fixed | claude/issue-1013-latex-title-braces | 2026-11-08T07:46Z
+#1014 | claimed | claude/issues-1014-1042-docling-json-reader | 2026-11-08T07:50Z
+#1042 | claimed | claude/issues-1014-1042-docling-json-reader | 2026-11-08T07:50Z
