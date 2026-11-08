@@ -77,3 +77,5 @@
 #1025 | claimed | claude/issues-1024-1025-asciidoc | 2026-11-08T15:50Z
 #1041 | claimed | claude/issue-1041-chunker-table-caption-refs | 2026-11-08T16:02Z
 #1027 | claimed | claude/issue-1027-epub-links-paths | 2026-11-08T17:16Z
+#1024 | fixed | claude/issues-1024-1025-asciidoc | 2026-11-08T17:58Z
+#1025 | fixed | claude/issues-1024-1025-asciidoc | 2026-11-08T17:58Z
