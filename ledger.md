@@ -57,3 +57,4 @@
 #1015 | fixed | claude/issue-1015-jats-content | 2026-11-08T10:06Z
 #1016 | claimed | claude/issue-1016-rich-table-cells | 2026-11-08T10:07Z
 #1028 | fixed | claude/issue-1028-uspto-sigma | 2026-11-08T10:36Z
+#1017 | claimed | claude/issue-1017-docx-lvloverride | 2026-11-08T11:16Z
