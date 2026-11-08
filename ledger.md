@@ -79,3 +79,4 @@
 #1027 | claimed | claude/issue-1027-epub-links-paths | 2026-11-08T17:16Z
 #1024 | fixed | claude/issues-1024-1025-asciidoc | 2026-11-08T17:58Z
 #1025 | fixed | claude/issues-1024-1025-asciidoc | 2026-11-08T17:58Z
+#1041 | duplicate | fixed upstream meanwhile by PR #1062 (claude/issue-1041-chunker-caption-refs) | 2026-11-08T18:03Z
