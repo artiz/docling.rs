@@ -75,3 +75,4 @@
 #1040 | fixed | claude/issues-1022-1040-md-reader | 2026-11-08T15:40Z
 #1024 | claimed | claude/issues-1024-1025-asciidoc | 2026-11-08T15:50Z
 #1025 | claimed | claude/issues-1024-1025-asciidoc | 2026-11-08T15:50Z
+#1041 | claimed | claude/issue-1041-chunker-table-caption-refs | 2026-11-08T16:02Z
