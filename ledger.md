@@ -41,3 +41,4 @@
 #1010 | skipped | blocked on #997 (assigned): upstream's JATS table notes are empty footnote wrappers over inline runs whose whitespace/printing follows A's InlineGroup contract (docling-core 2.106 prints the runs through the body walk); the footnote plumbing it needs lands with #1009 (claude/issues-1009-1010-footnotes) | 2026-11-08T03:40Z
 #1011 | claimed | claude/issue-1011-html-escape-code | 2026-11-08T05:16Z
 #1012 | claimed | claude/issue-1012-rich-heading-chunks | 2026-11-08T07:16Z
+#1009 | fixed | claude/issue-1009-footnotes | 2026-11-08T07:20Z
