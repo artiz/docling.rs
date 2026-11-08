@@ -34,3 +34,4 @@
 #1004 | fixed | claude/issue-1004-heading-keywords | 2026-11-07T22:26Z
 #1005 | skipped | blocked on #997 (assigned): upstream's script runs are an InlineGroup held by the text item (docling-core 2.106 schema); our flat JSON/HTML export renders InlineGroup as plain text, so <sup>/<sub> cannot surface until #997 lands | 2026-11-07T23:18Z
 #1006 | claimed | claude/issue-1006-broken-text-layer | 2026-11-07T23:18Z
+#1007 | claimed | claude/issue-1007-embedded-picture-images | 2026-11-08T01:17Z
