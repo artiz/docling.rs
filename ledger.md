@@ -35,3 +35,6 @@
 #1005 | skipped | blocked on #997 (assigned): upstream's script runs are an InlineGroup held by the text item (docling-core 2.106 schema); our flat JSON/HTML export renders InlineGroup as plain text, so <sup>/<sub> cannot surface until #997 lands | 2026-11-07T23:18Z
 #1006 | claimed | claude/issue-1006-broken-text-layer | 2026-11-07T23:18Z
 #1007 | claimed | claude/issue-1007-embedded-picture-images | 2026-11-08T01:17Z
+#1008 | skipped | blocked on #997 (assigned): ticket says "After ticket A" — DocLang 0.9 whitespace/inline-group contract comes from A; doing it first would conflict with claude/issue-996-997-inline-contract | 2026-11-08T03:16Z
+#1009 | claimed | claude/issues-1009-1010-footnotes | 2026-11-08T03:16Z
+#1010 | claimed | claude/issues-1009-1010-footnotes | 2026-11-08T03:16Z
