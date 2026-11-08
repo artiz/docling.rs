@@ -49,3 +49,5 @@
 #1042 | claimed | claude/issues-1014-1042-docling-json-reader | 2026-11-08T07:50Z
 #1012 | fixed | claude/issue-1012-rich-heading-chunks | 2026-11-08T08:06Z
 #1026 | claimed | claude/issue-1026-csv-sep-line | 2026-11-08T08:07Z
+#1014 | fixed | claude/issues-1014-1042-docling-json-reader | 2026-11-08T08:06Z
+#1042 | fixed | claude/issues-1014-1042-docling-json-reader | 2026-11-08T08:06Z
