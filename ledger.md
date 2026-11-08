@@ -70,3 +70,4 @@
 #1019 | fixed | claude/issue-1019-xlsx-cell-images | 2026-11-08T14:34Z
 #1022 | claimed | claude/issues-1022-1040-md-reader | 2026-11-08T14:35Z
 #1040 | claimed | claude/issues-1022-1040-md-reader | 2026-11-08T14:35Z
+#1023 | claimed | claude/issue-1023-html-caption-pre-tfoot | 2026-11-08T15:16Z
