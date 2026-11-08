@@ -82,3 +82,4 @@
 #1041 | duplicate | fixed upstream meanwhile by PR #1062 (claude/issue-1041-chunker-caption-refs) | 2026-11-08T18:03Z
 #1029 | claimed | claude/issue-1029-text-decoding | 2026-11-08T18:04Z
 #1030 | claimed | claude/issue-1030-bare-relative-images | 2026-11-08T18:13Z
+#1023 | fixed | claude/issue-1023-html-caption-pre-tfoot | 2026-11-08T18:32Z
