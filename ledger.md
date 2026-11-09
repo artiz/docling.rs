@@ -94,3 +94,4 @@
 #1065 | claimed | claude/issue-1065-chunker-dollar | 2026-11-08T21:18Z
 #1034 | claimed | claude/issue-1034-afp | 2026-11-09T01:18Z
 #1065 | claimed | claude/issue-1065-chunker-dollar | 2026-11-09T03:17Z
+#1065 | fixed | claude/issue-1065-chunker-dollar | 2026-11-09T05:52Z
