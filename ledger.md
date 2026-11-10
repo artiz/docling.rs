@@ -98,3 +98,5 @@
 #1034 | duplicate | a parallel run pushed claude/issue-1034-afp (631fb45) first; this run's equivalent port (local f986636) not pushed | 2026-11-09T06:04Z
 #1034 | fixed | claude/issue-1034-afp | 2026-11-09T06:06Z
 #1033 | fixed | claude/issue-1033-boxnote | 2026-11-09T06:25Z
+#1090 | claimed | claude/issue-1090-docx-numbered-heading-after-list | 2026-11-10T13:25Z
+#1092 | skipped | design question to the maintainer (whether/how to port docling#4276 reading-order separators; geometry source choice) — needs their decision, not a scheduled-run fix | 2026-11-10T13:25Z
