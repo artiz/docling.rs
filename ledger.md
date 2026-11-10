@@ -104,3 +104,5 @@
 #1090 | fixed | claude/issue-1090-docx-numbered-heading-after-list | 2026-11-10T15:05Z
 #1091 | fixed | claude/issue-1091-pdf-docindex-caption-labels | 2026-11-10T16:20Z
 #1093 | skipped | design question to the maintainer (image page size from DPI: full docling parity incl. downsampling vs. geometry-only) — needs their decision | 2026-11-10T16:25Z
+#1101 | claimed | claude/issue-1101-pdf-contained-text-clusters | 2026-11-10T23:16Z
+#1102 | claimed | claude/issue-1102-winansi-bullet | 2026-11-10T23:16Z
