@@ -100,3 +100,4 @@
 #1033 | fixed | claude/issue-1033-boxnote | 2026-11-09T06:25Z
 #1090 | claimed | claude/issue-1090-docx-numbered-heading-after-list | 2026-11-10T13:25Z
 #1092 | skipped | design question to the maintainer (whether/how to port docling#4276 reading-order separators; geometry source choice) — needs their decision, not a scheduled-run fix | 2026-11-10T13:25Z
+#1091 | claimed | claude/issue-1091-pdf-docindex-caption-labels | 2026-11-10T14:20Z
