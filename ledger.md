@@ -103,3 +103,4 @@
 #1091 | claimed | claude/issue-1091-pdf-docindex-caption-labels | 2026-11-10T14:20Z
 #1090 | fixed | claude/issue-1090-docx-numbered-heading-after-list | 2026-11-10T15:05Z
 #1091 | fixed | claude/issue-1091-pdf-docindex-caption-labels | 2026-11-10T16:20Z
+#1093 | skipped | design question to the maintainer (image page size from DPI: full docling parity incl. downsampling vs. geometry-only) — needs their decision | 2026-11-10T16:25Z
