@@ -108,3 +108,4 @@
 #1102 | claimed | claude/issue-1102-winansi-bullet | 2026-11-10T23:16Z
 #1101 | fixed | claude/issue-1101-pdf-contained-text-clusters | 2026-11-11T01:03Z
 #1102 | fixed | claude/issue-1102-winansi-bullet | 2026-11-11T01:03Z
+#1103 | claimed | claude/issue-1103-doclang-unpaired-caption | 2026-11-11T01:20Z
