@@ -110,3 +110,4 @@
 #1102 | fixed | claude/issue-1102-winansi-bullet | 2026-11-11T01:03Z
 #1103 | claimed | claude/issue-1103-doclang-unpaired-caption | 2026-11-11T01:20Z
 #1103 | fixed | claude/issue-1103-doclang-unpaired-caption | 2026-11-11T01:58Z
+#1113 | skipped | design question to the maintainer (port docling-parse 7.25 symbolic-font decoding now vs. after docling regenerates groundtruth; author offers to prepare the PR) — needs their decision | 2026-11-12T01:21Z
