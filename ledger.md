@@ -115,3 +115,4 @@
 #1127 | fixed | claude/issue-1127-pdf-cross-page-prov | 2026-11-14T20:05Z
 #1129 | claimed | claude/issue-1129-pdf-table-cells | 2026-11-14T21:16Z
 #1129 | skipped | assigned meanwhile (fix pushed: claude/issue-1129-pdf-table-cells) | 2026-11-14T22:39Z
+#1130 | claimed | claude/issue-1130-pdf-lzw-inherited-resources | 2026-11-15T01:16Z
