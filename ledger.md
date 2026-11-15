@@ -118,3 +118,4 @@
 #1130 | claimed | claude/issue-1130-pdf-lzw-inherited-resources | 2026-11-15T01:16Z
 #1130 | fixed | claude/issue-1130-pdf-lzw-inherited-resources | 2026-11-15T01:58Z
 #1133 | claimed | claude/issue-1133-pdf-ocr-crop-dedupe | 2026-11-15T11:16Z
+#1133 | fixed | claude/issue-1133-pdf-ocr-crop-dedupe | 2026-11-15T12:08Z
