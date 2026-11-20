@@ -121,3 +121,4 @@
 #1133 | fixed | claude/issue-1133-pdf-ocr-crop-dedupe | 2026-11-15T12:08Z
 #1137 | claimed | claude/issue-1137-djvu-rs-0.45 | 2026-11-16T23:16Z
 #1137 | fixed | claude/issue-1137-djvu-rs-0.45 | 2026-11-16T23:59Z
+#1210 | claimed | claude/issue-1210-ocr-unavailable-status | 2026-11-20T13:20Z
