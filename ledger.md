@@ -126,3 +126,4 @@
 #1219 | claimed | claude/issue-1219-pdf-picture-ocr | 2026-11-21T11:17Z
 #1219 | fixed | claude/issue-1219-pdf-picture-ocr | 2026-11-21T12:32Z
 #1226 | claimed | claude/issue-1226-typst-output | 2026-11-22T13:16Z
+#1226 | fixed | claude/issue-1226-typst-output | 2026-11-22T14:26Z
