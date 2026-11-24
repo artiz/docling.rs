@@ -128,3 +128,4 @@
 #1226 | claimed | claude/issue-1226-typst-output | 2026-11-22T13:16Z
 #1226 | fixed | claude/issue-1226-typst-output | 2026-11-22T14:26Z
 #1231 | claimed | claude/issue-1231-rich-cell-nested-tables | 2026-11-24T01:17Z
+#1231 | fixed | claude/issue-1231-rich-cell-nested-tables | 2026-11-24T02:09Z
