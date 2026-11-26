@@ -131,3 +131,4 @@
 #1231 | fixed | claude/issue-1231-rich-cell-nested-tables | 2026-11-24T02:09Z
 #1235 | claimed | claude/issue-1235-tounicode-hex-whitespace | 2026-11-26T05:18Z
 #1236 | claimed | claude/issue-1236-ooxml-main-part | 2026-11-26T05:18Z
+#1235 | fixed | claude/issue-1235-tounicode-hex-whitespace | 2026-11-26T06:17Z
