@@ -134,3 +134,4 @@
 #1235 | fixed | claude/issue-1235-tounicode-hex-whitespace | 2026-11-26T06:17Z
 #1236 | fixed | claude/issue-1236-ooxml-main-part | 2026-11-26T07:07Z
 #1246 | claimed | claude/issue-1246-python-parsed-pages | 2026-11-27T07:16Z
+#1246 | fixed | claude/issue-1246-python-parsed-pages | 2026-11-27T08:44Z
