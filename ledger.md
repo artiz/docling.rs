@@ -136,3 +136,4 @@
 #1246 | claimed | claude/issue-1246-python-parsed-pages | 2026-11-27T07:16Z
 #1246 | fixed | claude/issue-1246-python-parsed-pages | 2026-11-27T08:44Z
 #1249 | skipped | dependency proposal by the crate's own author (heifer: 7 weeks old, single owner, 0.8.0 published today, unaudited HEVC decoder sub-crates heifer-hevc-dec/-isobmff) — supply-chain + security decision for the maintainer, not a scheduled-run change | 2026-11-27T11:20Z
+#1250 | claimed | claude/issue-1250-picture-ocr-strips | 2026-11-27T13:18Z
